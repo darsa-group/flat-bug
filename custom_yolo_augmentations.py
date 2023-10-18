@@ -26,7 +26,7 @@ from ultralytics.utils.torch_utils import de_parallel
 
 
 from ultralytics.data import YOLODataset
-from ultralytics.data.augment import RandomFlip, RandomHSV, Compose, Format, LetterBox
+from ultralytics.data.augment import RandomFlip, RandomHSV, Compose, Format, LetterBox, RandomPerspective
 from ultralytics.utils.instance import Instances
 
 HELP_URL = 'See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
@@ -181,10 +181,13 @@ class MyYOLODataset(YOLODataset):
         return self.ims[i], self.im_hw0[i], self.im_hw[i]  # im, hw_original, hw_resized
 
     def build_transforms(self, hyp=None):
+        import torchvision.transforms as T
         return Compose([
             RandomHSV(hgain=hyp.hsv_h, sgain=hyp.hsv_s, vgain=hyp.hsv_v),
             RandomFlip(direction="vertical", p=hyp.flipud),
             RandomFlip(direction="horizontal", p=hyp.fliplr),
+            # T.RandomRotation(180),
+            RandomPerspective(degrees=180, scale=0, translate=0),
             RandomCrop(self.imgsz),
             # MyAlbumentations(self.imgsz),
             # LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False),
@@ -205,6 +208,7 @@ class MyYOLODataset(YOLODataset):
         return out
 
 class MyYOLOValidationDataset(MyYOLODataset):
+    keep_every = 3
     def __init__(self, *args, **kwargs):
 
         super().__init__(*args, **kwargs)
@@ -217,26 +221,27 @@ class MyYOLOValidationDataset(MyYOLODataset):
         new_ims = []
         self.crops = []
         for i in range(len(self)):
-            h, w = self.load_image(i)[1]
+            if i % self.keep_every == 0:
+                h, w = self.load_image(i)[1]
 
-            h_padding = self.imgsz - (h % self.imgsz)
-            w_padding = self.imgsz - (w % self.imgsz)
-            n_y = (h + h_padding) // self.imgsz
-            n_x = (w + w_padding) // self.imgsz
-            lab = self.labels[i]
-            lab["shape"] = (h,w)
-            for n in range(n_x):
-                for m in range(n_y):
-                    new_labels.append(copy.copy(lab))
-                    new_im_files.append(copy.copy(self.im_files[i]))
-                    new_npy_files.append(copy.copy(self.npy_files[i]))
-                    new_ims.append(copy.copy(self.ims[i]))
-                    d = {"x0": n * self.imgsz,
-                         "y0": m * self.imgsz,
-                         "w_padding": w_padding,
-                         "h_padding": h_padding,
-                         }
-                    self.crops.append(d)
+                h_padding = self.imgsz - (h % self.imgsz)
+                w_padding = self.imgsz - (w % self.imgsz)
+                n_y = (h + h_padding) // self.imgsz
+                n_x = (w + w_padding) // self.imgsz
+                lab = self.labels[i]
+                lab["shape"] = (h,w)
+                for n in range(n_x):
+                    for m in range(n_y):
+                        new_labels.append(copy.copy(lab))
+                        new_im_files.append(copy.copy(self.im_files[i]))
+                        new_npy_files.append(copy.copy(self.npy_files[i]))
+                        new_ims.append(copy.copy(self.ims[i]))
+                        d = {"x0": n * self.imgsz,
+                             "y0": m * self.imgsz,
+                             "w_padding": w_padding,
+                             "h_padding": h_padding,
+                             }
+                        self.crops.append(d)
         self.im_files, self.labels, self.npy_files, self.ims = new_im_files, new_labels, new_npy_files, new_ims
 
         self.ni = len(self.labels)  # number of images
@@ -351,7 +356,8 @@ overrides = {
     "batch": 8,
     # "imgsz": 1216,
     "imgsz": 1024,
-    "model": "yolov8s-seg.pt",
+    "model": "/home/quentin/repos/flat-bug-git/runs/segment/train12/weights/best.pt",
+    # "model": "yolov8s-seg.pt",
     "task": "detect",
     "epochs": 1000,
     "device": "cuda",
