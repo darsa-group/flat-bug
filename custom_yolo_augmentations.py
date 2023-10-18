@@ -37,16 +37,60 @@ RANK = int(os.getenv('RANK', -1))
 PIN_MEMORY = str(os.getenv('PIN_MEMORY', True)).lower() == 'true'  # global pin_memory for dataloaders
 
 
+class MyRandomPerspective(RandomPerspective):
+    fill_value = (0, 0, 0)
+
+    def affine_transform(self, img, border):
+        """Center."""
+        C = np.eye(3, dtype=np.float32)
+
+        C[0, 2] = -img.shape[1] / 2  # x translation (pixels)
+        C[1, 2] = -img.shape[0] / 2  # y translation (pixels)
+
+        # Perspective
+        P = np.eye(3, dtype=np.float32)
+        P[2, 0] = random.uniform(-self.perspective, self.perspective)  # x perspective (about y)
+        P[2, 1] = random.uniform(-self.perspective, self.perspective)  # y perspective (about x)
+
+        # Rotation and Scale
+        R = np.eye(3, dtype=np.float32)
+        a = random.uniform(-self.degrees, self.degrees)
+        # a += random.choice([-180, -90, 0, 90])  # add 90deg rotations to small rotations
+        s = random.uniform(1 - self.scale, 1 + self.scale)
+        # s = 2 ** random.uniform(-scale, scale)
+        R[:2] = cv2.getRotationMatrix2D(angle=a, center=(0, 0), scale=s)
+
+        # Shear
+        S = np.eye(3, dtype=np.float32)
+        S[0, 1] = math.tan(random.uniform(-self.shear, self.shear) * math.pi / 180)  # x shear (deg)
+        S[1, 0] = math.tan(random.uniform(-self.shear, self.shear) * math.pi / 180)  # y shear (deg)
+
+        # Translation
+        T = np.eye(3, dtype=np.float32)
+        T[0, 2] = random.uniform(0.5 - self.translate, 0.5 + self.translate) * self.size[0]  # x translation (pixels)
+        T[1, 2] = random.uniform(0.5 - self.translate, 0.5 + self.translate) * self.size[1]  # y translation (pixels)
+
+        # Combined rotation matrix
+        M = T @ S @ R @ P @ C  # order of operations (right to left) is IMPORTANT
+        # Affine image
+        if (border[0] != 0) or (border[1] != 0) or (M != np.eye(3)).any():  # image changed
+            if self.perspective:
+                img = cv2.warpPerspective(img, M, dsize=self.size, borderValue=self.fill_value)
+            else:  # affine
+                img = cv2.warpAffine(img, M[:2], dsize=self.size, borderValue=self.fill_value)
+        return img, M, s
+
+
 class RandomCrop:
+    bg_fill = (0,0,0)
     def __init__(self, imsize):
         self._imsize = imsize
 
-
     def crop_labels(self, labels, start_x, start_y, pad_before=None):
 
-        img = labels["img"]
-
-        h, w = img.shape[:2]
+        or_img = labels["img"]
+        debug = os.path.basename(labels["im_file"]) == "5595c586.2020-07-15_01-18-24.jpg"
+        h, w = or_img.shape[:2]
         instances = labels.pop("instances")
 
         instances.convert_bbox(format="xywh")
@@ -58,46 +102,69 @@ class RandomCrop:
             py0 = int(math.floor(py / 2))
             px1 = int(math.ceil(px / 2))
             py1 = int(math.ceil(py / 2))
-            img = cv2.copyMakeBorder(img, py0, py1, px0, px1, cv2.BORDER_CONSTANT, value=(0, 0, 0))
 
+            or_img = cv2.copyMakeBorder(or_img, py0, py1, px0, px1, cv2.BORDER_CONSTANT, value=self.bg_fill)
         else:
             px0, py0 = 0, 0
             # px1, py1 = 0, 0
 
-        img = img[start_y: start_y + self._imsize, start_x: start_x + self._imsize, :]
+        img = or_img[start_y: start_y + self._imsize, start_x: start_x + self._imsize, :]
+
+
         if img.shape != (self._imsize, self._imsize, 3):
             print("shape:", img.shape)
             print(labels["im_file"])
 
         assert img.shape == (self._imsize, self._imsize, 3), print(img.shape, self._imsize)
 
-
         labels["ori_shape"] = (self._imsize, self._imsize)
         labels["resized_shape"] = labels["ori_shape"]
         labels["img"] = np.copy(np.ascontiguousarray(img))
 
         labels['ratio_pad'] = ((1.0, 1.0), (0.0, 0.0))
-        instances._bboxes.add([-start_x + px0, -start_y + py0, 0, 0])
-        # remove partial or out instances,
-        # fixme, should crop them instead?
-        b = instances._bboxes.bboxes
+        x_offset = -start_x + px0
+        y_offset = -start_y + py0
+
+        # positions in the cropped image
+        instances._bboxes.add([x_offset, y_offset, 0, 0])
+
+        for s in instances.segments:
+            s[:, 0] += x_offset
+            s[:, 1] += y_offset
 
         # print(start_x, start_y, self._imsize)
+        b = instances._bboxes.bboxes
 
         if b.shape[0] == 0:
             labels["instances"] = Instances(np.empty([0, 4], dtype=np.float32), np.empty([0, 2], dtype=np.float32),
                                             normalized=False)
             labels["cls"] = []
             return labels
-        #
-        # b[:, 0] += px0
-        # b[:, 1] += py0
 
         valid = np.all([(b[:, 0] - b[:, 2] / 2) > 0,
                         (b[:, 1] - b[:, 3] / 2) > 0,
                         (b[:, 0] + b[:, 2] / 2) < self._imsize,
                         (b[:, 1] + b[:, 3] / 2) < self._imsize], axis=0)
 
+        # here, we paint the edge cases (partially outside the image, as (0,0,0)),
+        # this should help learning. Indeed it would be very confusing if an image if an insect that is
+        # 10% outside is flagged as NOT insect!
+        invalid = np.bitwise_not(valid)
+
+        invalid_i = np.nonzero(invalid)[0]
+        invalid_segments = instances.segments[invalid_i]
+        invalid_segments = [np.array(s, dtype=np.int32) for s in invalid_segments]
+        if len(invalid_segments):
+            cv2.drawContours(or_img,
+                             invalid_segments,
+                             contourIdx=-1,
+                             color=self.bg_fill,
+                             thickness=-1,
+                             lineType=cv2.LINE_4,
+                             offset=(px0-x_offset, py0-y_offset)
+                             )
+
+            cv2.imwrite(f"/tmp/{os.path.basename(labels['im_file'])}", or_img)
         valid_i = np.nonzero(valid)[0]
 
         if len(valid_i) == 0:
@@ -107,13 +174,10 @@ class RandomCrop:
             return labels
 
         instances.segments = instances.segments[valid_i]
-        # fixme, shoule be                                 b[valid_i, :] ?!
+        # fixme, should be                                 b[valid_i, :] ?!
         instances._bboxes.bboxes = b[valid_i, :]
         labels["cls"] = labels["cls"][valid_i]
         # print(os.path.basename(labels["im_file"]), labels["cls"] = labels["cls"][valid_i])
-        for s in instances.segments:
-            s[:, 0] -= start_x - px0
-            s[:, 1] -= start_y - py0
 
         labels["instances"] = instances
         # print(labels)
@@ -151,14 +215,13 @@ class MyYOLODataset(YOLODataset):
             # print((x+w, y+h))
             n = cv2.rectangle(n, (x - w // 2, y - w // 2), (x + w // 2, y + h // 2), (255), 3)
         # n = n + m/3
-        cv2.imwrite("/tmp/test/%i-img.jpg" % index, n + m /3)
+        cv2.imwrite("/tmp/test/%i-img.jpg" % index, n + m / 3)
         # cv2.imwrite("/tmp/test/%i-mask.jpg" % index, m)
 
     def load_image(self, i):
         # Loads 1 image from dataset index 'i', returns (im, resized hw)
 
         im, f, fn = self.ims[i], self.im_files[i], self.npy_files[i]
-
 
         if im is None:  # not cached in RAM
             if fn.exists():  # load npy
@@ -187,7 +250,7 @@ class MyYOLODataset(YOLODataset):
             RandomFlip(direction="vertical", p=hyp.flipud),
             RandomFlip(direction="horizontal", p=hyp.fliplr),
             # T.RandomRotation(180),
-            RandomPerspective(degrees=180, scale=0, translate=0),
+            MyRandomPerspective(degrees=180, scale=0, translate=0),
             RandomCrop(self.imgsz),
             # MyAlbumentations(self.imgsz),
             # LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False),
@@ -201,14 +264,16 @@ class MyYOLODataset(YOLODataset):
         ])
 
     def __getitem__(self, index):
-        out =  self.transforms(self.get_image_and_label(index))
+        out = self.transforms(self.get_image_and_label(index))
         dbg = os.path.basename(out["im_file"]) == "PureBarleySample_p1-20230801_104337.jpg"
         if dbg:
             self._debug_write_loaded_images(out, index)
         return out
 
+
 class MyYOLOValidationDataset(MyYOLODataset):
     keep_every = 3
+
     def __init__(self, *args, **kwargs):
 
         super().__init__(*args, **kwargs)
@@ -229,7 +294,7 @@ class MyYOLOValidationDataset(MyYOLODataset):
                 n_y = (h + h_padding) // self.imgsz
                 n_x = (w + w_padding) // self.imgsz
                 lab = self.labels[i]
-                lab["shape"] = (h,w)
+                lab["shape"] = (h, w)
                 for n in range(n_x):
                     for m in range(n_y):
                         new_labels.append(copy.copy(lab))
@@ -247,6 +312,7 @@ class MyYOLOValidationDataset(MyYOLODataset):
         self.ni = len(self.labels)  # number of images
 
         self.set_rectangle()
+
     def build_transforms(self, hyp=None):
         return Compose([
             Format(bbox_format="xywh",
@@ -260,7 +326,8 @@ class MyYOLOValidationDataset(MyYOLODataset):
 
     def get_image_and_label(self, index, print_me=False):
         """Get and return label information from the dataset."""
-        label = copy.deepcopy(self.labels[index])  # requires deepcopy() https://github.com/ultralytics/ultralytics/pull/1948
+        label = copy.deepcopy(
+            self.labels[index])  # requires deepcopy() https://github.com/ultralytics/ultralytics/pull/1948
         label.pop('shape', None)  # shape is for rect, remove it
         label['img'], label['ori_shape'], label['resized_shape'] = self.load_image(index)
         label['ratio_pad'] = (label['resized_shape'][0] / label['ori_shape'][0],
@@ -278,7 +345,8 @@ class MyYOLOValidationDataset(MyYOLODataset):
     def __getitem__(self, index):
         out00 = self.get_image_and_label(index)
         cr = self.crops[index]
-        out0 = self._custom_crop.crop_labels(copy.deepcopy(out00), cr["x0"], cr["y0"], pad_before=(cr["w_padding"], cr["h_padding"]))
+        out0 = self._custom_crop.crop_labels(copy.deepcopy(out00), cr["x0"], cr["y0"],
+                                             pad_before=(cr["w_padding"], cr["h_padding"]))
         out = self.transforms(copy.deepcopy(out0))
         return out
 
@@ -353,16 +421,16 @@ class MySegmentationTrainer(SegmentationTrainer):
 
 overrides = {
     "data": "./data.yaml",
-    "batch": 8,
+    "batch": 6,
     # "imgsz": 1216,
     "imgsz": 1024,
-    "model": "/home/quentin/repos/flat-bug-git/runs/segment/train12/weights/best.pt",
-    # "model": "yolov8s-seg.pt",
+    # "model": "/home/quentin/repos/flat-bug-git/runs/segment/train12/weights/best.pt",
+    "model": "yolov8m-seg.pt",
     "task": "detect",
     "epochs": 1000,
     "device": "cuda",
     "patience": 100,
-    "workers":1 #fixme
+    "workers": 4  # fixme
 
 }
 
