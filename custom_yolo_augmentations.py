@@ -164,7 +164,7 @@ class RandomCrop:
                              offset=(px0-x_offset, py0-y_offset)
                              )
 
-            cv2.imwrite(f"/tmp/{os.path.basename(labels['im_file'])}", or_img)
+            # cv2.imwrite(f"/tmp/{os.path.basename(labels['im_file'])}", or_img)
         valid_i = np.nonzero(valid)[0]
 
         if len(valid_i) == 0:
@@ -181,6 +181,7 @@ class RandomCrop:
 
         labels["instances"] = instances
         # print(labels)
+        labels["img"] = np.copy(np.ascontiguousarray(img))
         return labels
 
     def __call__(self, labels):
@@ -198,6 +199,17 @@ class RandomCrop:
 #         return out
 class MyCrop(RandomCrop):
     pass
+
+class RandomColorInv(object):
+
+    def __call__(self, labels):
+        img = labels['img']
+        r = random.uniform(0, 1)
+        if r > 0.5:
+            assert img.dtype == np.uint8
+            labels['img'] = 255 - img
+        return labels
+
 
 
 class MyYOLODataset(YOLODataset):
@@ -247,6 +259,7 @@ class MyYOLODataset(YOLODataset):
         import torchvision.transforms as T
         return Compose([
             RandomHSV(hgain=hyp.hsv_h, sgain=hyp.hsv_s, vgain=hyp.hsv_v),
+            RandomColorInv(),
             RandomFlip(direction="vertical", p=hyp.flipud),
             RandomFlip(direction="horizontal", p=hyp.fliplr),
             # T.RandomRotation(180),
@@ -424,12 +437,12 @@ overrides = {
     "batch": 6,
     # "imgsz": 1216,
     "imgsz": 1024,
-    # "model": "/home/quentin/repos/flat-bug-git/runs/segment/train12/weights/best.pt",
-    "model": "yolov8m-seg.pt",
+    "model": "/home/quentin/repos/flat-bug-git/runs/segment/train78/weights/last.pt",
+    # "model": "yolov8m-seg.pt",
     "task": "detect",
-    "epochs": 1000,
+    "epochs": 5000,
     "device": "cuda",
-    "patience": 100,
+    "patience": 200,
     "workers": 4  # fixme
 
 }

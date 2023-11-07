@@ -12,10 +12,13 @@ try:
     os.chdir(tmp_dir)
 
     # DATASET_DIR = "/home/quentin/Desktop/task_sticky-pi-2023_09_27_06_38_28-coco 1.0/annotations"
-    DATASET_DIR = "/tmp/task_pitfall-2023_10_11_13_38_31-coco 1.0/annotations"
+    # DATASET_DIR = "/tmp/task_pitfall-2023_10_11_13_38_31-coco 1.0/annotations"
+    DATASET_DIR = "/tmp/ami-pretrain/annotations"
 
-    RAW_IMAGE_DIR = "/home/quentin/Desktop/flat-bug_data"
-    OUT_TARGET = "/home/quentin/Desktop/flat-bug_dataset_yolo_pitfall"
+    # RAW_IMAGE_DIR = "/home/quentin/Desktop/flat-bug_data"
+    RAW_IMAGE_DIR = "/tmp/ami"
+
+    OUT_TARGET = "/tmp/ami/dataset"
 
     #-------------------------------------------------------------------#
     OUT_COCO_CONVERTER_BASE = "./yolo_labels"
