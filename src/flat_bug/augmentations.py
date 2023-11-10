@@ -59,7 +59,7 @@ class RandomCrop:
     def crop_labels(self, labels, start_x, start_y, pad_before=None):
 
         or_img = labels["img"]
-        debug = os.path.basename(labels["im_file"]) == "5595c586.2020-07-15_01-18-24.jpg"
+        # debug = os.path.basename(labels["im_file"]) == "5595c586.2020-07-15_01-18-24.jpg"
         h, w = or_img.shape[:2]
         instances = labels.pop("instances")
 

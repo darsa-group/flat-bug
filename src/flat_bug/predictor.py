@@ -11,7 +11,8 @@ from ultralytics import YOLO
 
 class Predictions(object):
     def __init__(self, image, original_image_path, contours, confs, classes, class_dict):
-
+        self._OVERVIEWS_DIR = "overviews"
+        self._CROPS_DIR = "crops"
         assert len(classes) == len(contours) == len(confs)
         self._class_dict = class_dict
         self._contours = contours
@@ -74,6 +75,9 @@ class Predictions(object):
     def make_crops(self, out_dir, draw_all_preds=True):
 
         os.makedirs(out_dir, exist_ok=True)
+        os.makedirs(os.path.join(out_dir, "crops"), exist_ok=True)
+        os.makedirs(os.path.join(out_dir, "overviews"), exist_ok=True)
+
         array = self._original_array
         if draw_all_preds:
             overall_img = np.copy(self._image)
@@ -94,7 +98,7 @@ class Predictions(object):
                              thickness=2, lineType=cv2.LINE_AA)
 
             basename = f"{self._img_name_prefix}.png"
-            out_file = os.path.join(out_dir, basename)
+            out_file = os.path.join(out_dir, self._OVERVIEWS_DIR, basename)
             cv2.imwrite(out_file, overall_img)
 
         for i, (bb, ct, cf, cl) in enumerate(zip(self._bboxes, self._contours, self._confs, self._classes)):
@@ -127,7 +131,7 @@ class Predictions(object):
             else:
                 area_sqr_mm = 0
             basename = f"{self._img_name_prefix}_{i:0>4}_{x1}_{y1}_{area_sqr_mm:0>4}.jpg"
-            out_file = os.path.join(out_dir, basename)
+            out_file = os.path.join(out_dir, self._CROPS_DIR, basename)
             roi = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
             im = PIL.Image.fromarray(roi)
             im.save(out_file, dpi=self._dpis, quality=95)
@@ -157,7 +161,7 @@ class Predictions(object):
             annotation_info = {
                 "id": None,
                 "image_id": image_info["id"],
-                "category_id": cl + 1,  # draw from class +1 !
+                "category_id": cl,
                 "segmentation": segmentation,
                 "area": area,
                 "bbox": scaled_bbox,

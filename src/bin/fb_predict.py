@@ -29,7 +29,6 @@ if __name__ == '__main__':
 
     # fixme, build from pred._model!
     categories = {"id": 1, "name": "insect"}
-    os.makedirs(option_dict["results_dir"], exist_ok=True)
 
     coco_data = {
         "info": {},
@@ -48,9 +47,11 @@ if __name__ == '__main__':
         im_info["id"] = i + 1
         for a in annots:
             a["id"] = j
+            a["image_id"] = i + 1
             j += 1
 
         prediction.make_crops(out_dir=option_dict["results_dir"])
-
+        coco_data["images"].append(im_info)
+        coco_data["annotations"].extend(annots)
     with open(os.path.join(option_dict["results_dir"], "coco_dataset.json"), "w") as json_file:
         json.dump(coco_data, json_file)
