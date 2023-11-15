@@ -9,7 +9,6 @@ from ultralytics.data import YOLODataset
 from ultralytics.data.augment import RandomFlip, RandomHSV, Compose, Format
 from flat_bug.augmentations import MyCrop, RandomCrop, MyRandomPerspective, RandomColorInv
 
-
 HELP_URL = 'See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
 IMG_FORMATS = 'bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 'pfm'  # include image suffixes
 
@@ -60,7 +59,9 @@ class MyYOLODataset(YOLODataset):
             RandomFlip(direction="vertical", p=hyp.flipud),
             RandomFlip(direction="horizontal", p=hyp.fliplr),
             # T.RandomRotation(180),
-            MyRandomPerspective(degrees=180, scale=0, translate=0),
+            # MyRandomPerspective(degrees=180, scale=0, translate=0),
+            MyRandomPerspective(degrees=180, scale=(.5, 1), translate=0),
+            # MyRandomPerspective(degrees=180, scale=(0.25, 1), translate=0),
             RandomCrop(self.imgsz),
             # MyAlbumentations(self.imgsz),
             # LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False),
@@ -75,9 +76,6 @@ class MyYOLODataset(YOLODataset):
 
     def __getitem__(self, index):
         out = self.transforms(self.get_image_and_label(index))
-        dbg = os.path.basename(out["im_file"]) == "PureBarleySample_p1-20230801_104337.jpg"
-        if dbg:
-            self._debug_write_loaded_images(out, index)
         return out
 
 
@@ -94,19 +92,23 @@ class MyYOLOValidationDataset(MyYOLODataset):
         new_labels = []
         new_npy_files = []
         new_ims = []
-        self.crops = []
+        self.crops = {}
+        j = 0
+        # fixme ensure we have at least one per image?
+        # balance per image
         for i in range(len(self)):
-            if i % self.keep_every == 0:
-                h, w = self.load_image(i)[1]
 
-                h_padding = self.imgsz - (h % self.imgsz)
-                w_padding = self.imgsz - (w % self.imgsz)
-                n_y = (h + h_padding) // self.imgsz
-                n_x = (w + w_padding) // self.imgsz
-                lab = self.labels[i]
-                lab["shape"] = (h, w)
-                for n in range(n_x):
-                    for m in range(n_y):
+            h, w = self.load_image(i)[1]
+            h_padding = self.imgsz - (h % self.imgsz)
+            w_padding = self.imgsz - (w % self.imgsz)
+            n_y = (h + h_padding) // self.imgsz
+            n_x = (w + w_padding) // self.imgsz
+
+            lab = self.labels[i]
+            lab["shape"] = (h, w)
+            for n in range(n_x):
+                for m in range(n_y):
+                    if j % self.keep_every == 0:
                         new_labels.append(copy.copy(lab))
                         new_im_files.append(copy.copy(self.im_files[i]))
                         new_npy_files.append(copy.copy(self.npy_files[i]))
@@ -114,11 +116,16 @@ class MyYOLOValidationDataset(MyYOLODataset):
                         d = {"x0": n * self.imgsz,
                              "y0": m * self.imgsz,
                              "w_padding": w_padding,
-                             "h_padding": h_padding,
+                             "h_padding": h_padding
                              }
-                        self.crops.append(d)
-        self.im_files, self.labels, self.npy_files, self.ims = new_im_files, new_labels, new_npy_files, new_ims
 
+                        # if os.path.basename(self.im_files[i]) == "a_63-20190826004609-00.jpg":
+                        #     print(d, h, w)
+                        self.crops[self.im_files[i]] = d
+                    j += 1
+        self.im_files, self.labels, self.npy_files, self.ims = new_im_files, new_labels, new_npy_files, new_ims
+        # print("len(self.crops), len(self.im_files)")
+        # print(len(self.crops), len(self.im_files))
         self.ni = len(self.labels)  # number of images
 
         self.set_rectangle()
@@ -150,9 +157,10 @@ class MyYOLOValidationDataset(MyYOLODataset):
 
     def __getitem__(self, index):
         out00 = self.get_image_and_label(index)
-        cr = self.crops[index]
+        cr = self.crops[self.im_files[index]]
+        # debug = os.path.basename(self.im_files[index]) == "a_63-20190826004609-00.jpg"
         out0 = self._custom_crop.crop_labels(copy.deepcopy(out00), cr["x0"], cr["y0"],
-                                             pad_before=(cr["w_padding"], cr["h_padding"]))
+                                             pad_before=(cr["w_padding"], cr["h_padding"]), apply_max_targets=False)
         out = self.transforms(copy.deepcopy(out0))
         return out
 

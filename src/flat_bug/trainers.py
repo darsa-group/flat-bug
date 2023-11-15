@@ -9,9 +9,8 @@ class MySegmentationTrainer(SegmentationTrainer):
             overrides = {}
         overrides['task'] = 'segment'
 
-        print(cfg)
         super().__init__(cfg, overrides, _callbacks)
-        print(self.args)
+
     def build_dataset(self, img_path, mode='train', batch=None):
 
         if mode == "train":

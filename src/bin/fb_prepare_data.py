@@ -24,6 +24,7 @@ OUT_COCO_CONVERTER_IMAGES = "./yolo_labels/images/default/"
 JSON_FILE_BASENAME = "instances_default.json"
 DATASET_NAME = "insects"
 
+#fixme: hardcoded datasets!
 
 out_structure = """
 ├── data.yaml
@@ -51,7 +52,7 @@ if __name__ == '__main__':
     args = args_parse.parse_args()
     option_dict = vars(args)
 
-    datasets = {"sticky-pi", "pitfall"}
+    datasets = {"sticky-pi", "pitfall", "scanned-sticky-cards", "AMI-traps"}
 
     data_yaml = {"path": DATASET_NAME,
                  "train": "images/train",

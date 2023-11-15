@@ -1,12 +1,12 @@
 import argparse
 import logging
-import os
-import glob
+
 from flat_bug.trainers import MySegmentationTrainer
-from ultralytics import YOLO, settings
+from ultralytics import  settings
 
 settings.update({'datasets_dir': "/home/quentin/Desktop/flat-bug-sorted-data/yolo"})
 data= "/home/quentin/Desktop/flat-bug-sorted-data/yolo/data.yaml"
+
 if __name__ == '__main__':
     args_parse = argparse.ArgumentParser()
 
@@ -15,12 +15,14 @@ if __name__ == '__main__':
         "batch": 6,
         # "imgsz": 1216,
         "imgsz": 1024,
-        "model": "/home/quentin/repos/flat-bug-git/runs/segment/train78/weights/last.pt",
+        "model": "/home/quentin/repos/flat-bug-git/runs/segment/train24/weights/last.pt",
         # "model": "yolov8m-seg.pt",
         "task": "detect",
-        "epochs": 5000,
+        "epochs": 4000,
         "device": "cuda",
-        "patience": 200,
+        "patience": 500,
+        "lr0": 0.01,
+        "lrf": 0.0005,
         "workers": 4  # fixme
     }
 

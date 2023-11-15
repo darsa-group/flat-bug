@@ -7,6 +7,7 @@ import random
 from ultralytics.data.augment import RandomPerspective
 from ultralytics.utils.instance import Instances
 
+
 class MyRandomPerspective(RandomPerspective):
     fill_value = (0, 0, 0)
 
@@ -26,7 +27,8 @@ class MyRandomPerspective(RandomPerspective):
         R = np.eye(3, dtype=np.float32)
         a = random.uniform(-self.degrees, self.degrees)
         # a += random.choice([-180, -90, 0, 90])  # add 90deg rotations to small rotations
-        s = random.uniform(1 - self.scale, 1 + self.scale)
+        s = random.uniform(self.scale[0], self.scale[1])
+
         # s = 2 ** random.uniform(-scale, scale)
         R[:2] = cv2.getRotationMatrix2D(angle=a, center=(0, 0), scale=s)
 
@@ -52,15 +54,20 @@ class MyRandomPerspective(RandomPerspective):
 
 
 class RandomCrop:
-    bg_fill = (0,0,0)
+    bg_fill = (0, 0, 0)
+    min_size = 20  # px
+    max_targets = 50  # randomely inpaint when too many targets?! # fixme implement
+
     def __init__(self, imsize):
         self._imsize = imsize
 
-    def crop_labels(self, labels, start_x, start_y, pad_before=None):
+    def crop_labels(self, labels, start_x, start_y, pad_before=None, apply_max_targets=False):
 
         or_img = labels["img"]
-        # debug = os.path.basename(labels["im_file"]) == "5595c586.2020-07-15_01-18-24.jpg"
+        debug = os.path.basename(labels["im_file"]) == "a_63-20190826004609-00.jpg"
+
         h, w = or_img.shape[:2]
+
         instances = labels.pop("instances")
 
         instances.convert_bbox(format="xywh")
@@ -72,18 +79,19 @@ class RandomCrop:
             py0 = int(math.floor(py / 2))
             px1 = int(math.ceil(px / 2))
             py1 = int(math.ceil(py / 2))
-
             or_img = cv2.copyMakeBorder(or_img, py0, py1, px0, px1, cv2.BORDER_CONSTANT, value=self.bg_fill)
+
         else:
             px0, py0 = 0, 0
             # px1, py1 = 0, 0
 
         img = or_img[start_y: start_y + self._imsize, start_x: start_x + self._imsize, :]
 
-
         if img.shape != (self._imsize, self._imsize, 3):
             print("shape:", img.shape)
-            print(labels["im_file"])
+            print("or-shape:", or_img.shape)
+            print("x,y:", start_x, start_y)
+            print(labels["im_file"])  # fixme, this is also done during validation?!
 
         assert img.shape == (self._imsize, self._imsize, 3), print(img.shape, self._imsize)
 
@@ -114,11 +122,22 @@ class RandomCrop:
         valid = np.all([(b[:, 0] - b[:, 2] / 2) > 0,
                         (b[:, 1] - b[:, 3] / 2) > 0,
                         (b[:, 0] + b[:, 2] / 2) < self._imsize,
-                        (b[:, 1] + b[:, 3] / 2) < self._imsize], axis=0)
+                        (b[:, 1] + b[:, 3] / 2) < self._imsize,
+                        b[:, 2] > self.min_size,
+                        b[:, 3] > self.min_size],
+                       axis=0)
 
         # here, we paint the edge cases (partially outside the image, as (0,0,0)),
         # this should help learning. Indeed it would be very confusing if an image if an insect that is
         # 10% outside is flagged as NOT insect!
+
+        if apply_max_targets:
+            if np.sum(valid) > self.max_targets:
+                w = np.where(valid)[0]
+                kept = np.random.choice(w, size=self.max_targets, replace=False)
+                valid.fill(False)
+                valid[kept] = True
+
         invalid = np.bitwise_not(valid)
 
         invalid_i = np.nonzero(invalid)[0]
@@ -131,7 +150,7 @@ class RandomCrop:
                              color=self.bg_fill,
                              thickness=-1,
                              lineType=cv2.LINE_4,
-                             offset=(px0-x_offset, py0-y_offset)
+                             offset=(px0 - x_offset, py0 - y_offset)
                              )
 
             # cv2.imwrite(f"/tmp/{os.path.basename(labels['im_file'])}", or_img)
@@ -157,13 +176,13 @@ class RandomCrop:
     def __call__(self, labels):
         h, w = labels["img"].shape[:2]
         start_x = np.random.randint(w - self._imsize, size=1)[0]
-
         start_y = np.random.randint(h - self._imsize, size=1)[0]
-        return self.crop_labels(labels, start_x, start_y)
+        return self.crop_labels(labels, start_x, start_y, apply_max_targets=True)
 
 
 class MyCrop(RandomCrop):
     pass
+
 
 class RandomColorInv(object):
 
@@ -174,4 +193,3 @@ class RandomColorInv(object):
             assert img.dtype == np.uint8
             labels['img'] = 255 - img
         return labels
-
