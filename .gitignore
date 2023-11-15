@@ -163,5 +163,6 @@ runs/
 *.pt
 *.pth
 *.jpg
+*.yaml
 datasets/
 

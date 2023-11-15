@@ -26,6 +26,8 @@ DATASET_NAME = "insects"
 
 #fixme: hardcoded datasets!
 
+
+# A help sting
 out_structure = """
 ├── data.yaml
 └── insects
@@ -45,6 +47,7 @@ if __name__ == '__main__':
                                  "Each sub-dataset contains a single json file named 'instances_default.json' "
                                  "and the associated images"
                             )
+
     args_parse.add_argument("-o", "--output-dir", dest="prepared_data_target",
                             help="The output compiled YOLO dataset joining together all sub-datasets in a single dataset with the structure:"
                                  f"{out_structure}")
@@ -52,7 +55,7 @@ if __name__ == '__main__':
     args = args_parse.parse_args()
     option_dict = vars(args)
 
-    datasets = {"sticky-pi", "pitfall", "scanned-sticky-cards", "AMI-traps"}
+
 
     data_yaml = {"path": DATASET_NAME,
                  "train": "images/train",
@@ -67,12 +70,14 @@ if __name__ == '__main__':
     os.makedirs(PREPARED_DATA_TARGET_SUBDIR, exist_ok=True)
     with open(os.path.join(PREPARED_DATA_TARGET, "data.yaml"), "w") as f:
         yaml.dump(data_yaml, f)
-
-    for d in datasets:
+    datasets = []
+    for d in os.listdir(COCO_DATA_ROOT):
         source_dir = os.path.join(COCO_DATA_ROOT, d)
-        assert os.path.isdir(source_dir)
-        assert os.path.isfile(os.path.join(source_dir, JSON_FILE_BASENAME))
-
+        if os.path.isdir(source_dir):
+            if os.path.isfile(os.path.join(source_dir, JSON_FILE_BASENAME)):
+                logging.info(f"Registering dataset: {d}")
+                datasets.append(d)
+    assert len(datasets) > 0, f"Did not find any datasets in {COCO_DATA_ROOT}"
     for d in datasets:
         source_dir = os.path.join(COCO_DATA_ROOT, d)
         tmp_dir = tempfile.mkdtemp()
