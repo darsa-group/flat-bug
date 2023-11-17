@@ -65,11 +65,16 @@ class Predictions(object):
     def get_dpis(self, input):
         # fixme, this is a fallback to use jfif instead of exif!
         import exiftool
-        with exiftool.ExifToolHelper() as et:
-            metadata = et.get_metadata(input)
-            x_res = metadata[0]['JFIF:XResolution']
-            y_res = metadata[0]['JFIF:YResolution']
-
+        try:
+            with exiftool.ExifToolHelper() as et:
+                metadata = et.get_metadata(input)
+                x_res = metadata[0]['JFIF:XResolution']
+                y_res = metadata[0]['JFIF:YResolution']
+        except Exception as e:
+            logging.error(e)
+            x_res = y_res = 0
+        if x_res == 0 or y_res == 0:
+            return None
         return x_res, y_res
 
     def make_crops(self, out_dir, draw_all_preds=True):
@@ -134,7 +139,11 @@ class Predictions(object):
             out_file = os.path.join(out_dir, self._CROPS_DIR, basename)
             roi = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
             im = PIL.Image.fromarray(roi)
-            im.save(out_file, dpi=self._dpis, quality=95)
+            if self._dpis:
+                im.save(out_file, dpi=self._dpis, quality=95)
+            else:
+                im.save(out_file, quality=95)
+
 
     def coco_entry(self):
 
@@ -219,15 +228,6 @@ class Predictor(object):
         for i, ((m, n), o) in enumerate(offsets):
             im_1 = array[o[1]: (o[1] + 1024), o[0]: (o[0] + 1024)]
             all_tiles.append(im_1)
-
-        # batched inference does not run faster, but uses more memory... not promissing
-        # n = self.BATCH_SIZE
-        # all_tile_batches = [all_tiles[i * n:(i + 1) * n] for i in range((len(all_tiles) + n - 1) // n)]
-        #
-        # all_preds = []
-        # for tiles in  all_tile_batches:
-        #     preds = self._model(tiles)
-        #     all_preds.extend(preds)
 
         for i, ((m, n), o) in enumerate(offsets):
             # logging.info(f"{img.filename}, {i}/{len(offsets)}")

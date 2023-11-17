@@ -24,7 +24,6 @@ OUT_COCO_CONVERTER_IMAGES = "./yolo_labels/images/default/"
 JSON_FILE_BASENAME = "instances_default.json"
 DATASET_NAME = "insects"
 
-#fixme: hardcoded datasets!
 
 
 # A help sting
@@ -38,6 +37,7 @@ out_structure = """
         ├── train
         ├── val
 """
+# fixme, now, we ignores BG images!
 
 if __name__ == '__main__':
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
@@ -51,6 +51,10 @@ if __name__ == '__main__':
     args_parse.add_argument("-o", "--output-dir", dest="prepared_data_target",
                             help="The output compiled YOLO dataset joining together all sub-datasets in a single dataset with the structure:"
                                  f"{out_structure}")
+
+    args_parse.add_argument("-p", "--validation-proportion", dest="validation_proportion",
+                            help="the proportion of data allocated to the validation set, based on md5 (pseudorandom)",
+                            default=0.15)
 
     args = args_parse.parse_args()
     option_dict = vars(args)
@@ -105,7 +109,8 @@ if __name__ == '__main__':
                 assert os.path.isfile(im_path)
                 s = bytes(os.path.basename(os.path.splitext(f)[0]), 'ascii')
                 d = hashlib.md5(s).hexdigest()
-                if d < "5":
+                p = int(d[0:4], 16) / int("ffff", 16)
+                if p < option_dict["validation_proportion"]:
                     subset = "val/"
                 else:
                     subset = "train/"

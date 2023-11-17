@@ -18,7 +18,9 @@ if __name__ == '__main__':
     args_parse.add_argument("-w", "--model-weights", dest="model_weights",
                             help="The .pt file")
     args_parse.add_argument("-s", "--scale-before", dest="scale_before", default=1.0, type=float,
-                            help="Downscale the image before detection, but crops from the original image")
+                            help="Downscale the image before detection, but crops from the original image."
+                                 "Note that the COCO dataset dimentions match the scaled image" # fixme, is that true?!
+                            )
 
     args = args_parse.parse_args()
     option_dict = vars(args)

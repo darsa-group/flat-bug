@@ -20,7 +20,7 @@ DEFAULT_CONF = {
     "lrf": 0.005,
     "workers": 4  # fixme
 }
-
+# fixme, resume should continue on the same "run folder"
 if __name__ == '__main__':
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
@@ -31,6 +31,10 @@ if __name__ == '__main__':
     args_parse.add_argument("-c", "--config-file", dest="config_file",
                             help="A YAML-formatted config file that overrides the default training meta-parameters",
                             default=None)
+    args_parse.add_argument("-r", "--resume", dest="resume",
+                            help="resume training",
+                            action='store_true')
+
 
     args = args_parse.parse_args()
     option_dict = vars(args)
@@ -50,4 +54,5 @@ if __name__ == '__main__':
 
     overrides["data"] = data
     t = MySegmentationTrainer(overrides=overrides)
+    # t.model.resume = option_dict["resume"]
     t.train()
