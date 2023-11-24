@@ -55,7 +55,10 @@ if __name__ == '__main__':
     args_parse.add_argument("-p", "--validation-proportion", dest="validation_proportion",
                             help="the proportion of data allocated to the validation set, based on md5 (pseudorandom)",
                             default=0.15)
-
+    
+    args_parse.add_argument("-f", "--force", dest="delete_target_before",
+                            help="Delete output directory before, this avoids duplicating data etc",
+                            action="store_true")
     args = args_parse.parse_args()
     option_dict = vars(args)
 
@@ -70,8 +73,15 @@ if __name__ == '__main__':
 
     COCO_DATA_ROOT = option_dict["coco_data_root"]
     PREPARED_DATA_TARGET = option_dict["prepared_data_target"]
+
     PREPARED_DATA_TARGET_SUBDIR = os.path.join(PREPARED_DATA_TARGET, DATASET_NAME)
+    
+    if option_dict["delete_target_before"]:
+        logging.warning("Removing old ouput data directory")
+        shutil.rmtree(PREPARED_DATA_TARGET)
+
     os.makedirs(PREPARED_DATA_TARGET_SUBDIR, exist_ok=True)
+
     with open(os.path.join(PREPARED_DATA_TARGET, "data.yaml"), "w") as f:
         yaml.dump(data_yaml, f)
     datasets = []
@@ -100,23 +110,28 @@ if __name__ == '__main__':
 
             for f in glob.glob(os.path.join(OUT_COCO_CONVERTER, "*.txt")):
 
-                expected_image_basename = os.path.splitext(os.path.basename(f))[0] + ".jpg"
+                basename_sans_ext = os.path.splitext(os.path.basename(f))[0]
+                expected_image_basename = basename_sans_ext + ".jpg"
                 if expected_image_basename not in images:
                     logging.warning("Missing image: " + expected_image_basename)
                     os.remove(f)
                     continue
                 im_path = os.path.join(source_dir, expected_image_basename)
                 assert os.path.isfile(im_path)
-                s = bytes(os.path.basename(os.path.splitext(f)[0]), 'ascii')
-                d = hashlib.md5(s).hexdigest()
-                p = int(d[0:4], 16) / int("ffff", 16)
+
+                with open(im_path, 'rb') as file_obj:
+                    file_hash = hashlib.md5(file_obj.read()).hexdigest()
+
+                # s = bytes(basename_sans_ext, 'ascii')
+                p = int(file_hash[0:4], 16) / int("ffff", 16)
                 if p < option_dict["validation_proportion"]:
                     subset = "val/"
                 else:
                     subset = "train/"
                 logging.info(f"{expected_image_basename} -> {subset}")
-                shutil.move(f, os.path.join(OUT_COCO_CONVERTER, subset))
-                shutil.copy(im_path, os.path.join(OUT_COCO_CONVERTER_IMAGES, subset))
+                new_bn_se = f"{d}_{basename_sans_ext}"
+                shutil.move(f, os.path.join(OUT_COCO_CONVERTER, os.path.join(subset, new_bn_se + ".txt")))
+                shutil.copy(im_path, os.path.join(OUT_COCO_CONVERTER_IMAGES, subset, new_bn_se + ".jpg"))
 
             collapse_in_parent_dir(OUT_COCO_CONVERTER)
             collapse_in_parent_dir(OUT_COCO_CONVERTER_IMAGES)
