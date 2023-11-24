@@ -102,7 +102,7 @@ class Predictions(object):
             cv2.drawContours(image=overall_img, contours=self._contours, contourIdx=-1, color=(255, 0, 0),
                              thickness=2, lineType=cv2.LINE_AA)
 
-            basename = f"{self._img_name_prefix}.png"
+            basename = f"overview_{self._img_name_prefix}.jpg"
             out_file = os.path.join(out_dir, self._OVERVIEWS_DIR, basename)
             cv2.imwrite(out_file, overall_img)
 
@@ -128,17 +128,22 @@ class Predictions(object):
             cv2.drawContours(image=mask, contours=[ct], contourIdx=-1, color=(255, 255, 255), thickness=-1,
                              lineType=cv2.LINE_8, offset=(-x1, -y1))
 
-            roi = cv2.bitwise_and(roi, mask)
+
             if self._dpis:
                 area_sqr_in = np.count_nonzero(mask) / (self._dpis[0] * self._dpis[1])
                 area_sqr_mm = area_sqr_in * 645.16
                 area_sqr_mm = round(area_sqr_mm)
             else:
                 area_sqr_mm = 0
-            basename = f"{self._img_name_prefix}_{i:0>4}_{x1}_{y1}_{area_sqr_mm:0>4}.jpg"
+            basename = f"{self._img_name_prefix}_{i:0>4}_{x1}_{y1}_{area_sqr_mm:0>4}.png"
             out_file = os.path.join(out_dir, self._CROPS_DIR, basename)
             roi = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
-            im = PIL.Image.fromarray(roi)
+            # roi = cv2.bitwise_and(roi, mask)
+            mask = PIL.Image.fromarray(mask).convert('L')
+
+            im  = PIL.Image.fromarray(roi).convert('RGB')
+            im.putalpha(mask)
+
             if self._dpis:
                 im.save(out_file, dpi=self._dpis, quality=95)
             else:
