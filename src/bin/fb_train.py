@@ -9,7 +9,7 @@ from ultralytics import settings
 DEFAULT_CONF = {
     "batch": 6,
     "imgsz": 1024,
-    # "model": "/home/quentin/repos/flat-bug-git/runs/segment/train24/weights/last.pt",
+    "optimizer":'SGD',
     "model": "yolov8m-seg.pt",
     "task": "detect",
     # "task": "segment",
@@ -53,6 +53,10 @@ if __name__ == '__main__':
             overrides.update(yaml_config)
 
     overrides["data"] = data
+    print (overrides)
     t = MySegmentationTrainer(overrides=overrides)
-    # t.model.resume = option_dict["resume"]
+
+    # if not option_dict["resume"]:
+    #     t.start_epoch = 0
+
     t.train()
