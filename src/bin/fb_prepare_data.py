@@ -75,9 +75,9 @@ if __name__ == '__main__':
     PREPARED_DATA_TARGET = option_dict["prepared_data_target"]
 
     PREPARED_DATA_TARGET_SUBDIR = os.path.join(PREPARED_DATA_TARGET, DATASET_NAME)
-    
+
     if option_dict["delete_target_before"]:
-        logging.warning("Removing old ouput data directory")
+        logging.warning("Removing old output data directory")
         shutil.rmtree(PREPARED_DATA_TARGET)
 
     os.makedirs(PREPARED_DATA_TARGET_SUBDIR, exist_ok=True)
