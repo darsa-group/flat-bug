@@ -17,7 +17,7 @@ import morphsnakes as ms
 DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 MODEL_TYPE = "vit_h"
 # CHECKPOINT_PATH = "sam_vit_h_4b8939.pth"
-BASE_PATH="/home/quentin/Desktop/flat-bug-sorted-data/pre-pro/pitfall/"
+BASE_PATH="/home/quentin/Desktop/flat-bug-sorted-data/pre-pro/CollembolAI"
 COCO_ANNOTS = os.path.join(BASE_PATH, "instances_default.json")
 COCO_ANNOTS_REFINED = os.path.join(BASE_PATH, "instances_default_refined.json")
 
@@ -94,10 +94,7 @@ def refine_contour(img, ct, size=400, offset=None):
     img = cv2.resize(img, (size, size))
     # img = cv2.medianBlur(img,3)
     mask = cv2.resize(mask, (size, size), interpolation=cv2.INTER_NEAREST)
-    mask = cv2.erode(mask, kernel=np.ones((3,3), np.uint8))
-
-
-
+    # mask = cv2.erode(mask, kernel=np.ones((3,3), np.uint8))
 
 
     means =  []
@@ -156,7 +153,7 @@ def refine_contour(img, ct, size=400, offset=None):
 
     # print(largest)
 
-    return cv2.approxPolyDP(largest, .5, closed=True)
+    return cv2.approxPolyDP(largest, 1, closed=True)
 
 
 
@@ -172,17 +169,30 @@ def refine_contour(img, ct, size=1024, offset=None):
 
 
     img = cv2.resize(img, (size, size))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))
 
-
+    img = cv2.dilate(img, kernel=kernel)
+    img = cv2.erode(img, kernel=kernel)
+    img = cv2.blur(img, (5,5))
+    # cv2.imshow("display_pit-b", img[:,:,0])
+    # cv2.imshow("display_pit-g", img[:,:,1])
+    # cv2.imshow("display_pit-r", img[:,:,2])
     img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    img = cv2.erode(img, kernel=np.ones((3, 3), np.uint8))
-    img = cv2.medianBlur(img, 5)
+    img = 255 - img
+    # img = cv2.subtract(img[:, :, 0], img[:, :, 2])
+    # blured = cv2.medianBlur(img, 75)
+    # edges = cv2.subtract(blured,img)
+    # edges = cv2.threshold(img, None, 50, cv2.THRESH_OTSU | cv2.THRESH_BINARY_INV)
+    # img = cv2.subtract(img, edges)
     cv2.imshow("display_pit", img)
+
     val, o = cv2.threshold(img,None, 255, cv2.THRESH_OTSU | cv2.THRESH_BINARY_INV)
     print (val)
-    val, o = cv2.threshold(img, val + 40, 255,cv2.THRESH_BINARY_INV)
+    val, o = cv2.threshold(img, val+20 , 255,cv2.THRESH_BINARY_INV)
 
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (51, 51))
+    o = cv2.dilate(o, kernel=kernel)
+    o = cv2.erode(o, kernel=kernel)
     o = cv2.resize(o, (w, h), interpolation=cv2.INTER_NEAREST)
 
 
@@ -201,7 +211,7 @@ def refine_contour(img, ct, size=1024, offset=None):
 
     # print(largest)
 
-    return cv2.approxPolyDP(largest, .5, closed=True)
+    return cv2.approxPolyDP(largest, 2, closed=True)
 
 # mask_generator = SamAutomaticMaskGenerator(sam)
 
@@ -218,9 +228,7 @@ image_file_map_rev = {im["file_name"]:im["id"] for im in coco["images"]}
 cache_fn = ""
 for ann in coco["annotations"]:
     im_filename = image_file_map[ann["image_id"]]
-    if image_file_map_rev[im_filename] < 31:
-        print(f"skipping {im_filename}")
-        continue
+
     # todo we can cache here
     if im_filename != cache_fn:
         im = cv2.imread(os.path.join(root_dir, im_filename))
@@ -263,11 +271,15 @@ for ann in coco["annotations"]:
 
                 ann["segmentation"] = [contour.flatten().tolist()]
                 ann["refined"] = True
+                print("refined")
             else:
                 cv2.drawContours(roi, [contour], -1, (0, 0, 255), 2, lineType=cv2.LINE_AA, offset=(-int(x), -int(y)))
                 ann["refined"] = False
+
             cv2.imshow("display3", roi)
             cv2.waitKey(1)
+        else:
+            print("WOrse contour!!")
         # refine_mask(roi, contour, offset=(-int(x),-int(y)))
     assert im is not None
 
