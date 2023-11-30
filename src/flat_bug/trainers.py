@@ -4,8 +4,6 @@ from ultralytics.models.yolo.segment import SegmentationTrainer
 from flat_bug.datasets import MyYOLODataset, MyYOLOValidationDataset
 from ultralytics.utils import yaml_load, DEFAULT_CFG, RANK, LOGGER
 
-
-
 import math
 import os
 import subprocess
@@ -34,23 +32,26 @@ from ultralytics.utils.files import get_latest_run, increment_path
 from ultralytics.utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, init_seeds, one_cycle, select_device,
                                            strip_optimizer)
 
-
 import inspect
 
+
 class MySegmentationTrainer(SegmentationTrainer):
-    def __init__(self, cfg=DEFAULT_CFG, overrides=None, _callbacks=None, *args, **kwargs):
+    def __init__(self, cfg=DEFAULT_CFG, overrides=None, _callbacks=None, val_every=5, *args, **kwargs):
         """Initialize a SegmentationTrainer object with given arguments."""
-        if overrides is None:
-            overrides = {}
-        overrides['task'] = 'segment'
 
         super().__init__(cfg, overrides, _callbacks, *args, **kwargs)
+        if overrides["resume"]:
+            self.args.resume = True
         self.add_callback("on_train_epoch_start", MySegmentationTrainer.log_lr)
 
+        self._val_metrics = None
+        self._val_fitness = None
+        self._val_every = val_every
 
     @staticmethod
     def log_lr(self):
-        LOGGER.info(f"LR: {self.scheduler.get_last_lr()}")
+        LOGGER.info(f"LR: {self.scheduler.get_last_lr()}, {self.optimizer}")
+
 
     def setup_model(self):
         if isinstance(self.model, torch.nn.Module):  # if model is loaded beforehand. No setup needed
@@ -67,6 +68,7 @@ class MySegmentationTrainer(SegmentationTrainer):
         if not self.args.resume:
             return None
         return ckpt
+
     def build_dataset(self, img_path, mode='train', batch=None):
 
         if mode == "train":
@@ -102,3 +104,21 @@ class MySegmentationTrainer(SegmentationTrainer):
             )
 
         return dataset
+
+    def validate(self):
+        """
+        Runs validation on test set using self.validator. The returned dict is expected to contain "fitness" key.
+        """
+        if self.epoch % self._val_every == 0 or self._val_metrics is None:
+            LOGGER.info(f"Validation at epoch {self.epoch}!")
+            metrics = self.validator(self)
+            fitness = metrics.pop('fitness',
+                                  -self.loss.detach().cpu().numpy())  # use loss as fitness measure if not found
+            if not self.best_fitness or self.best_fitness < fitness:
+                self.best_fitness = fitness
+            self._val_metrics, self._val_fitness = metrics, fitness
+
+        else:
+            metrics, fitness = self._val_metrics, self._val_fitness
+            LOGGER.info(f"Skipped validation at epoch {self.epoch}, using old values")
+        return metrics, fitness

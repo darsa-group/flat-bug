@@ -6,22 +6,24 @@ import yaml
 from flat_bug.trainers import MySegmentationTrainer
 from ultralytics import settings
 
-DEFAULT_CONF = {
-    "batch": 6,
-    "imgsz": 1024,
-    "optimizer":'SGD',
-    "model": "yolov8m-seg.pt",
-    "task": "detect",
-    # "task": "segment",
-    "epochs": 1000,
-    "device": "cuda",
-    "patience": 100,
-    "lr0": 0.01,
-    "lrf": 0.005,
-    "workers": 4  # fixme
-}
 # fixme, resume should continue on the same "run folder"
 if __name__ == '__main__':
+    DEFAULT_CONF = {
+        "batch": 8,
+        "imgsz": 1024,
+
+        "model": "yolov8m-seg.pt",
+        "task": "detect",
+        # "task": "segment",
+        "epochs": 1000,
+        "device": "cuda",
+        "patience": 100,
+        "optimizer": 'auto',
+        # "optimizer": 'SGD',
+        # "lr0": 0.01,
+        # "lrf": 0.005,
+        "workers": 4  # fixme
+    }
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
     args_parse.add_argument("-d", "--data-dir", dest="data_dir",
@@ -53,10 +55,12 @@ if __name__ == '__main__':
             overrides.update(yaml_config)
 
     overrides["data"] = data
-    print (overrides)
+    if option_dict["resume"]:
+        assert os.path.isfile(overrides["model"]), f"Trying to resume from a model that does not seem to be a valid file: {overrides['model']}"
+        overrides["resume"] = overrides["model"]
+
     t = MySegmentationTrainer(overrides=overrides)
 
-    # if not option_dict["resume"]:
-    #     t.start_epoch = 0
-
+    if not option_dict["resume"]:
+        t.start_epoch = 0
     t.train()
