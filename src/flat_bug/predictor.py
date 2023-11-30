@@ -123,7 +123,7 @@ class Predictions(object):
             mask = np.zeros_like(roi)
             #
 
-            ct = np.divide(ct.astype(np.float), self._xy_scales).astype(np.int32)
+            ct = np.divide(ct.astype(float), self._xy_scales).astype(np.int32)
 
             cv2.drawContours(image=mask, contours=[ct], contourIdx=-1, color=(255, 255, 255), thickness=-1,
                              lineType=cv2.LINE_8, offset=(-x1, -y1))
@@ -164,9 +164,9 @@ class Predictions(object):
 
         for ct, bb, cl, conf in zip(self._contours, self._bboxes, self._classes, self._confs):
 
-            scaled_ct = np.divide(ct.astype(np.float), self._xy_scales).astype(np.int32)
+            scaled_ct = np.divide(ct.astype(float), self._xy_scales).astype(np.int32)
             xs, ys = self._xy_scales
-            scaled_bbox = np.divide(np.array(bb, np.float),[xs,ys,xs,ys]).astype(np.int32).tolist()
+            scaled_bbox = np.divide(np.array(bb, float),[xs,ys,xs,ys]).astype(np.int32).tolist()
             area = cv2.contourArea(scaled_ct)
             segmentation = [scaled_ct.flatten().tolist()]
 
@@ -266,7 +266,7 @@ class Predictor(object):
 
             # fixme, this could be parallelised
             for i in range(len(p)):
-                poly = p[i].masks.xy[0] + np.array(o, dtype=np.float)
+                poly = p[i].masks.xy[0] + np.array(o, dtype=float)
                 if poly is not None:
                     poly_for_one_inst.append(poly)
                     classes_for_one_inst.append(
