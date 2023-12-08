@@ -21,7 +21,7 @@ setup(
         'torch',
         'shapely',
         'torchvision',
-        'sklearn'],
+        'scikit-learn'],
     extras_require={
         'test': ['nose', 'pytest', 'pytest-cov', 'codecov', 'coverage'],
     },
