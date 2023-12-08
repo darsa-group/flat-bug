@@ -17,6 +17,7 @@ setup(
     install_requires=[
         'ultralytics',
         'numpy',
+        'pyexiftool',
         'opencv_python',
         'torch',
         'shapely',
