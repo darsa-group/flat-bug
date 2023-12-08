@@ -4,6 +4,7 @@ import math
 import logging
 import numpy as np
 import PIL.Image
+import exiftool
 import cv2
 from shapely.geometry import Polygon
 from ultralytics import YOLO
@@ -64,7 +65,7 @@ class Predictions(object):
 
     def get_dpis(self, input):
         # fixme, this is a fallback to use jfif instead of exif!
-        import exiftool
+
         try:
             with exiftool.ExifToolHelper() as et:
                 metadata = et.get_metadata(input)
@@ -189,10 +190,10 @@ class Predictions(object):
 
 
 class Predictor(object):
-    MIN_MAX_OBJ_SIZE = (16, 512)
+    MIN_MAX_OBJ_SIZE = (16, 1024)
     MINIMUM_TILE_OVERLAP = 256
     EDGE_CASE_MARGIN = 128
-    SCORE_THRESHOLD = 0.7
+    SCORE_THRESHOLD = 0.5
     IOU_THRESHOLD = 0.5
 
     def __init__(self, model_path):
@@ -224,19 +225,23 @@ class Predictor(object):
             y_n_tiles = math.ceil(1 + (array.shape[0] - 1024) / (1024 - self.MINIMUM_TILE_OVERLAP))
             y_stride = (array.shape[0] - 1024) // (y_n_tiles - 1)
             y_range = [r for r in range(0, array.shape[0] - 1023, y_stride)]
+
         offsets = []
         for n, j in enumerate(y_range):
             for m, i in enumerate(x_range):
                 offsets.append(((m, n), (i, j)))
 
-        all_tiles = []
-        for i, ((m, n), o) in enumerate(offsets):
-            im_1 = array[o[1]: (o[1] + 1024), o[0]: (o[0] + 1024)]
-            all_tiles.append(im_1)
+        # all_tiles = []
+        # for i, ((m, n), o) in enumerate(offsets):
+        #     im_1 = array[o[1]: (o[1] + 1024), o[0]: (o[0] + 1024)]
+        #     all_tiles.append(im_1)
 
         for i, ((m, n), o) in enumerate(offsets):
             # logging.info(f"{img.filename}, {i}/{len(offsets)}")
             im_1 = array[o[1]: (o[1] + 1024), o[0]: (o[0] + 1024)]
+
+            # cv2.imshow("test", im_1)
+            # cv2.waitKey(-1)
             p = self._model(im_1, verbose=False)[
                 0]  # fixme, if we have spare memory, we can run batch inference here!!!
             # p = all_preds[i]
@@ -322,7 +327,8 @@ class Predictor(object):
             v["contour"] /= scale
         return all_valid
 
-    def pyramid_predictions(self, image, scale_increment=2 / 3, scale_before=1):
+    def pyramid_predictions(self, image, scale_increment=2 / 3, scale_before=1, add_border=False):
+
         if isinstance(image, str):
             im = cv2.imread(image)
             path = image
@@ -330,25 +336,39 @@ class Predictor(object):
             path = None
             im = image
         h, w = im.shape[0], im.shape[1]
+
+
         if scale_before != 1:
             im = cv2.resize(im, dsize=(int(w * scale_before), int(h * scale_before)))
+        if add_border: # fixme, this is broken
+            if w > h:
+                im = cv2.copyMakeBorder(im, (w-h)//2, math.ceil((w-h)/2), 0, 0, cv2.BORDER_CONSTANT, (0,0,0))
+                border_offset = (0, (w-h)//2)
+            if h > w:
+                im = cv2.copyMakeBorder(im, 0, 0, (h-w)//2, math.ceil((h-w)/2),  cv2.BORDER_CONSTANT, (0,0,0))
+                border_offset = ((h-w) // 2, 0)
+
 
         assert len(im.shape) == 3, f"Image{image} is not 3-dimentional"
         assert im.shape[2] == 3, f"Image{image} does not have 3 channels"
 
         h, w = im.shape[0], im.shape[1]
         min_dim = min(h, w)
+        print("min_dim", min_dim)
         # fixme, what to do if the image is too small?
         # 0-pad
         scales = []
-        s = 1
-        while min_dim * s >= 1024:
+        s = 1024 / min_dim
+
+        while s < 1.0:
             scales.append(s)
-            s *= scale_increment
+            s /= scale_increment
+
         logging.info(f"Running inference on scales: {scales}")
 
         all_preds = []
-        for s in reversed(scales):
+        for s in scales:
+
             preds = self._detect_instances(im, scale=s)
             for p in preds:
                 add = True
@@ -370,6 +390,13 @@ class Predictor(object):
         confs = [p["confs"] for p in all_preds]
         classes = [p["class"] for p in all_preds]
 
+
+        if add_border:
+            for c in cts:
+                print("-----------------------------------------------")
+                print(border_offset,c)
+                c -= border_offset
+                print( c)
         out = Predictions(im, path, cts, confs, classes,
                           self._model.names
                           )

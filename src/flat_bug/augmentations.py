@@ -56,7 +56,7 @@ class MyRandomPerspective(RandomPerspective):
 class RandomCrop:
     bg_fill = (0, 0, 0)
     min_size = 20  # px
-    max_targets = 50  # randomely inpaint when too many targets?! # fixme implement
+    max_targets = 100  # randomly inpaint when too many targets?! # fixme implement
 
     def __init__(self, imsize):
         self._imsize = imsize
@@ -143,6 +143,7 @@ class RandomCrop:
         invalid_i = np.nonzero(invalid)[0]
         invalid_segments = instances.segments[invalid_i]
         invalid_segments = [np.array(s, dtype=np.int32) for s in invalid_segments]
+
         if len(invalid_segments):
             cv2.drawContours(or_img,
                              invalid_segments,
@@ -152,7 +153,7 @@ class RandomCrop:
                              lineType=cv2.LINE_4,
                              offset=(px0 - x_offset, py0 - y_offset)
                              )
-
+        labels["img"] = np.copy(np.ascontiguousarray(img))
             # cv2.imwrite(f"/tmp/{os.path.basename(labels['im_file'])}", or_img)
         valid_i = np.nonzero(valid)[0]
 
@@ -170,7 +171,7 @@ class RandomCrop:
 
         labels["instances"] = instances
         # print(labels)
-        labels["img"] = np.copy(np.ascontiguousarray(img))
+
         return labels
 
     def __call__(self, labels):

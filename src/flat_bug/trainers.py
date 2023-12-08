@@ -117,6 +117,7 @@ class MySegmentationTrainer(SegmentationTrainer):
             if not self.best_fitness or self.best_fitness < fitness:
                 self.best_fitness = fitness
             self._val_metrics, self._val_fitness = metrics, fitness
+            print("metrics", metrics, fitness)
 
         else:
             metrics, fitness = self._val_metrics, self._val_fitness

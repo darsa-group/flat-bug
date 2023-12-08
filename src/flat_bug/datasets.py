@@ -60,7 +60,7 @@ class MyYOLODataset(YOLODataset):
             RandomFlip(direction="horizontal", p=hyp.fliplr),
             # T.RandomRotation(180),
             # MyRandomPerspective(degrees=180, scale=0, translate=0),
-            MyRandomPerspective(degrees=180, scale=(.5, 1), translate=0),
+            MyRandomPerspective(degrees=180, scale=(.1, 1), translate=0),
             # MyRandomPerspective(degrees=180, scale=(0.25, 1), translate=0),
             RandomCrop(self.imgsz),
             # MyAlbumentations(self.imgsz),

@@ -58,7 +58,9 @@ if __name__ == '__main__':
     if option_dict["resume"]:
         assert os.path.isfile(overrides["model"]), f"Trying to resume from a model that does not seem to be a valid file: {overrides['model']}"
         overrides["resume"] = overrides["model"]
-
+    else:
+        overrides["resume"] = False
+    print(settings)
     t = MySegmentationTrainer(overrides=overrides)
 
     if not option_dict["resume"]:
