@@ -129,7 +129,6 @@ class Predictions(object):
             cv2.drawContours(image=mask, contours=[ct], contourIdx=-1, color=(255, 255, 255), thickness=-1,
                              lineType=cv2.LINE_8, offset=(-x1, -y1))
 
-
             if self._dpis:
                 area_sqr_in = np.count_nonzero(mask) / (self._dpis[0] * self._dpis[1])
                 area_sqr_mm = area_sqr_in * 645.16
@@ -142,14 +141,13 @@ class Predictions(object):
             # roi = cv2.bitwise_and(roi, mask)
             mask = PIL.Image.fromarray(mask).convert('L')
 
-            im  = PIL.Image.fromarray(roi).convert('RGB')
+            im = PIL.Image.fromarray(roi).convert('RGB')
             im.putalpha(mask)
 
             if self._dpis:
                 im.save(out_file, dpi=self._dpis, quality=95)
             else:
                 im.save(out_file, quality=95)
-
 
     def coco_entry(self):
 
@@ -164,10 +162,9 @@ class Predictions(object):
         }
 
         for ct, bb, cl, conf in zip(self._contours, self._bboxes, self._classes, self._confs):
-
             scaled_ct = np.divide(ct.astype(float), self._xy_scales).astype(np.int32)
             xs, ys = self._xy_scales
-            scaled_bbox = np.divide(np.array(bb, float),[xs,ys,xs,ys]).astype(np.int32).tolist()
+            scaled_bbox = np.divide(np.array(bb, float), [xs, ys, xs, ys]).astype(np.int32).tolist()
             area = cv2.contourArea(scaled_ct)
             segmentation = [scaled_ct.flatten().tolist()]
 
@@ -186,7 +183,6 @@ class Predictions(object):
             annotations.append(annotation_info)
 
         return image_info, annotations
-
 
 
 class Predictor(object):
@@ -229,6 +225,7 @@ class Predictor(object):
         offsets = []
         for n, j in enumerate(y_range):
             for m, i in enumerate(x_range):
+
                 offsets.append(((m, n), (i, j)))
 
         # all_tiles = []
@@ -239,45 +236,49 @@ class Predictor(object):
         for i, ((m, n), o) in enumerate(offsets):
             # logging.info(f"{img.filename}, {i}/{len(offsets)}")
             im_1 = array[o[1]: (o[1] + 1024), o[0]: (o[0] + 1024)]
-
-            # cv2.imshow("test", im_1)
-            # cv2.waitKey(-1)
-            p = self._model(im_1, verbose=False)[
-                0]  # fixme, if we have spare memory, we can run batch inference here!!!
-            # p = all_preds[i]
-            p_bt = p.boxes.xyxy
-
-            big_enough = torch.zeros_like(p_bt[:, 0], dtype=torch.bool)
-            big_enough = big_enough.__or__(p_bt[:, 2] - p_bt[:, 0] > self.MIN_MAX_OBJ_SIZE[0])
-            big_enough = big_enough.__or__(p_bt[:, 3] - p_bt[:, 1] > self.MIN_MAX_OBJ_SIZE[0])
-
-            non_edge_cases = torch.ones_like(p_bt[:, 0], dtype=torch.bool)
-
-            if m > 0:
-                non_edge_cases = non_edge_cases.__and__(p_bt[:, 0] > self.EDGE_CASE_MARGIN)
-            if m < x_n_tiles - 1:
-                non_edge_cases = non_edge_cases.__and__(p_bt[:, 2] < 1024 - self.EDGE_CASE_MARGIN)
-
-            if n > 0:
-                non_edge_cases = non_edge_cases.__and__(p_bt[:, 1] > self.EDGE_CASE_MARGIN)
-            if n < y_n_tiles - 1:
-                non_edge_cases = non_edge_cases.__and__(p_bt[:, 3] < 1024 - self.EDGE_CASE_MARGIN)
-
-            p = p[non_edge_cases.__and__(big_enough)]
-            p = p[p.boxes.conf > self.SCORE_THRESHOLD]
             classes_for_one_inst = []
             poly_for_one_inst = []
             confs_for_one_inst = []
+            # if we are adding borders to the images, these will be zeros
+            if np.count_nonzero(np.sum(im_1, axis=2)) > 0:
+                # cv2.imshow("test", im_1)
+                # cv2.waitKey(-1)
+                # fixme, if we have spare memory, we can run batch inference here!!!
 
-            # fixme, this could be parallelised
-            for i in range(len(p)):
-                poly = p[i].masks.xy[0] + np.array(o, dtype=float)
-                if poly is not None:
-                    poly_for_one_inst.append(poly)
-                    classes_for_one_inst.append(
-                        int(p[i].boxes.cls[0]) + 1)  # as we want one-indexed classes
-                    confs_for_one_inst.append(float(p[i].boxes.conf[0]))
+                p = self._model(im_1, verbose=False)[0]
+                # p = all_preds[i]
+                p_bt = p.boxes.xyxy
 
+                big_enough = torch.zeros_like(p_bt[:, 0], dtype=torch.bool)
+                big_enough = big_enough.__or__(p_bt[:, 2] - p_bt[:, 0] > self.MIN_MAX_OBJ_SIZE[0])
+                big_enough = big_enough.__or__(p_bt[:, 3] - p_bt[:, 1] > self.MIN_MAX_OBJ_SIZE[0])
+
+                non_edge_cases = torch.ones_like(p_bt[:, 0], dtype=torch.bool)
+
+                if m > 0:
+                    non_edge_cases = non_edge_cases.__and__(p_bt[:, 0] > self.EDGE_CASE_MARGIN)
+                if m < x_n_tiles - 1:
+                    non_edge_cases = non_edge_cases.__and__(p_bt[:, 2] < 1024 - self.EDGE_CASE_MARGIN)
+
+                if n > 0:
+                    non_edge_cases = non_edge_cases.__and__(p_bt[:, 1] > self.EDGE_CASE_MARGIN)
+                if n < y_n_tiles - 1:
+                    non_edge_cases = non_edge_cases.__and__(p_bt[:, 3] < 1024 - self.EDGE_CASE_MARGIN)
+
+                p = p[non_edge_cases.__and__(big_enough)]
+                p = p[p.boxes.conf > self.SCORE_THRESHOLD]
+
+
+                # fixme, this could be parallelised
+                for i in range(len(p)):
+                    poly = p[i].masks.xy[0] + np.array(o, dtype=float)
+                    if poly is not None:
+                        poly_for_one_inst.append(poly)
+                        classes_for_one_inst.append(
+                            int(p[i].boxes.cls[0]) + 1)  # as we want one-indexed classes
+                        confs_for_one_inst.append(float(p[i].boxes.conf[0]))
+            else:
+                print("skipping")
             polys.append(poly_for_one_inst)
             confs.append(classes_for_one_inst)
             classes.append(classes_for_one_inst)
@@ -327,7 +328,7 @@ class Predictor(object):
             v["contour"] /= scale
         return all_valid
 
-    def pyramid_predictions(self, image, scale_increment=2 / 3, scale_before=1, add_border=False):
+    def pyramid_predictions(self, image, scale_increment=2 / 3, scale_before=1, add_border=True):
 
         if isinstance(image, str):
             im = cv2.imread(image)
@@ -337,24 +338,27 @@ class Predictor(object):
             im = image
         h, w = im.shape[0], im.shape[1]
 
+        im_b = np.copy(im)
+        border_offset = (0, 0)
 
         if scale_before != 1:
-            im = cv2.resize(im, dsize=(int(w * scale_before), int(h * scale_before)))
-        if add_border: # fixme, this is broken
+            im_b = cv2.resize(im, dsize=(int(w * scale_before), int(h * scale_before)))
+        if add_border:  # fixme, this is broken
             if w > h:
-                im = cv2.copyMakeBorder(im, (w-h)//2, math.ceil((w-h)/2), 0, 0, cv2.BORDER_CONSTANT, (0,0,0))
-                border_offset = (0, (w-h)//2)
+                im_b = cv2.copyMakeBorder(im, (w - h) // 2, math.ceil((w - h) / 2), 0, 0, cv2.BORDER_CONSTANT, (0, 0, 0))
+                border_offset = (0, (w - h) // 2)
+                # border_offset = ((w - h) // 2, 0)
             if h > w:
-                im = cv2.copyMakeBorder(im, 0, 0, (h-w)//2, math.ceil((h-w)/2),  cv2.BORDER_CONSTANT, (0,0,0))
-                border_offset = ((h-w) // 2, 0)
+                im_b = cv2.copyMakeBorder(im, 0, 0, (h - w) // 2, math.ceil((h - w) / 2), cv2.BORDER_CONSTANT, (0, 0, 0))
+                border_offset = ((h - w) // 2, 0)
 
 
-        assert len(im.shape) == 3, f"Image{image} is not 3-dimentional"
-        assert im.shape[2] == 3, f"Image{image} does not have 3 channels"
+        assert len(im_b.shape) == 3, f"Image{image} is not 3-dimentional"
+        assert im_b.shape[2] == 3, f"Image{image} does not have 3 channels"
 
-        h, w = im.shape[0], im.shape[1]
+        h, w = im_b.shape[0], im_b.shape[1]
         min_dim = min(h, w)
-        print("min_dim", min_dim)
+
         # fixme, what to do if the image is too small?
         # 0-pad
         scales = []
@@ -369,7 +373,7 @@ class Predictor(object):
         all_preds = []
         for s in scales:
 
-            preds = self._detect_instances(im, scale=s)
+            preds = self._detect_instances(im_b, scale=s)
             for p in preds:
                 add = True
                 p_shape = Polygon(np.squeeze(p["contour"]))
@@ -390,13 +394,11 @@ class Predictor(object):
         confs = [p["confs"] for p in all_preds]
         classes = [p["class"] for p in all_preds]
 
-
         if add_border:
             for c in cts:
-                print("-----------------------------------------------")
-                print(border_offset,c)
                 c -= border_offset
-                print( c)
+
+
         out = Predictions(im, path, cts, confs, classes,
                           self._model.names
                           )
