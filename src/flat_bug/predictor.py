@@ -436,7 +436,7 @@ class Predictor(object):
             path = None
             im = image
         h, w = im.shape[0], im.shape[1]
-
+        h0, w0 = h,w
         im_b = np.copy(im)
         border_offset = (0, 0)
 
@@ -502,6 +502,12 @@ class Predictor(object):
         for c in cts:
             if add_border:
                 c -= border_offset
+                c[c[:,0] < 0, 0] = 0
+                c[c[:, 0] > (w -1), 0] = w-1
+
+                c[c[:, 1] < 0, 1] = 0
+                c[c[:, 1] > (h - 1), 1] = h - 1
+
             c /= (scale_before, scale_before)
 
         out = Predictions(im, path, cts, confs, classes,
