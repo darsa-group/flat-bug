@@ -94,9 +94,6 @@ class MyYOLOValidationDatasetEndToEnd(MyYOLODataset):
 class MyYOLOValidationDataset(MyYOLODataset):
 
     _resample_n = 5
-    def __init__(self, *args, **kwargs):
-
-        super().__init__(*args, **kwargs)
 
     def build_transforms(self, hyp=None):
         return Compose([
@@ -112,7 +109,7 @@ class MyYOLOValidationDataset(MyYOLODataset):
         ])
     def __len__(self):
         return super().__len__() * self._resample_n
-
+    #
 
     def __getitem__(self, index):
         i = index % super().__len__()

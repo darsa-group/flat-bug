@@ -1,5 +1,5 @@
 from ultralytics.models.yolo.segment import SegmentationTrainer
-from flat_bug.datasets import MyYOLODataset, MyYOLOValidationDatasetEndToEnd
+from flat_bug.datasets import MyYOLODataset, MyYOLOValidationDataset
 from ultralytics.utils import yaml_load, DEFAULT_CFG, RANK, LOGGER
 
 import torch
@@ -152,7 +152,7 @@ class MySegmentationTrainer(SegmentationTrainer):
                 use_segments=True
             )
         else:
-            dataset = MyYOLOValidationDatasetEndToEnd(
+            dataset = MyYOLOValidationDataset(
                 data=yaml_load(self.args.data),
                 img_path=img_path,
                 imgsz=self.args.imgsz,
