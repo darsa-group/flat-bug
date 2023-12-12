@@ -56,10 +56,13 @@ class MyRandomPerspective(RandomPerspective):
 class RandomCrop:
     bg_fill = (0, 0, 0)
     min_size = 20  # px
-    max_targets = 100  # randomly inpaint when too many targets?! # fixme implement
 
-    def __init__(self, imsize):
+
+    def __init__(self, imsize,
+                 max_targets = 150   # randomly inpaint when too many targets?! # fixme implement
+                 ):
         self._imsize = imsize
+        self.max_targets = max_targets
 
     def crop_labels(self, labels, start_x, start_y, pad_before=None, apply_max_targets=False):
 

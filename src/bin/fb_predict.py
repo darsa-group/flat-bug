@@ -42,17 +42,24 @@ if __name__ == '__main__':
 
     j = 1
     for i, f in enumerate(glob.glob(os.path.join(option_dict["input_dir"], "*.jpg"))):
+
         logging.info(f"Processing {os.path.basename(f)}")
-        prediction = pred.pyramid_predictions(f, scale_before=option_dict["scale_before"])
+        try:
+            prediction = pred.pyramid_predictions(f, scale_before=option_dict["scale_before"])
 
-        im_info, annots = prediction.coco_entry()
-        im_info["id"] = i + 1
-        for a in annots:
-            a["id"] = j
-            a["image_id"] = i + 1
-            j += 1
+            im_info, annots = prediction.coco_entry()
+            im_info["id"] = i + 1
+            for a in annots:
+                a["id"] = j
+                a["image_id"] = i + 1
+                j += 1
 
-        prediction.make_crops(out_dir=option_dict["results_dir"])
+            prediction.make_crops(out_dir=option_dict["results_dir"])
+        except Exception as e:
+            logging.error(f"Issue whilst processing {f}")
+            #fixme, what is going on with /home/quentin/todo/toup/20221008_16-01-04-226084_raw_jpg.rf.0b8d397da3c47408694eeaab2cde06e5.jpg?
+            logging.error(e)
+            raise e
         coco_data["images"].append(im_info)
         coco_data["annotations"].extend(annots)
     with open(os.path.join(option_dict["results_dir"], "coco_dataset.json"), "w") as json_file:

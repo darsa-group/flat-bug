@@ -1,3 +1,4 @@
+import copy
 import os.path
 import torch
 import math
@@ -6,8 +7,14 @@ import numpy as np
 import PIL.Image
 import exiftool
 import cv2
+import ultralytics
 from shapely.geometry import Polygon
+from flat_bug.ml_utils import iou_match_pairs, iou
 from ultralytics import YOLO
+from ultralytics.nn.tasks import SegmentationModel
+from ultralytics.nn.autobackend import AutoBackend
+from ultralytics.models.yolo.segment import SegmentationPredictor
+
 
 
 class Predictions(object):
@@ -47,6 +54,62 @@ class Predictions(object):
             array = self._image
             self._xy_scales = (1, 1)
         self._original_array = array
+
+    @property
+    def contours(self):
+        return self._contours
+
+    def compare(self, ref, iou_threshold,
+                # obj_class # fixme, do that PER CLASS!!
+                ):
+        # print(self._class_dict.values())
+        obj_class = 0 # fixme
+
+
+
+        out = []
+        if len(self) == 0:
+            if len(ref) == 0:
+                return {}
+            pairs = [(i, None) for i, _ in enumerate(ref.contours)]
+
+        elif len(ref) == 0:
+            pairs = [(None, i) for i, _ in enumerate(self.contours)]
+
+        else:
+            arr = np.zeros((len(ref), len(self)), dtype=float)
+            for m, g in enumerate(ref.contours):
+                g_shape = Polygon(np.squeeze(g))
+                for n, c in enumerate(self.contours):
+                    i_shape = Polygon(np.squeeze(c))
+                    # todo check bounding box overlap
+                    iou_val = iou(g_shape, i_shape)
+                    arr[m, n] = iou_val
+
+            pairs = iou_match_pairs(arr, iou_threshold)
+
+        for g_a, i_a in pairs:
+            if i_a is not None:
+                in_im = True
+            else:
+                in_im = False
+
+            if g_a is not None:
+                area = cv2.contourArea(ref.contours[g_a])
+                in_gt = True
+
+            else:
+                in_gt = False
+                area = cv2.contourArea(self.contours[i_a])
+
+            assert sum([in_gt, in_im]) > 0, 'Occurence should exist either in gt or im!'
+
+            out.append({'area': area,
+                        'in_gt': in_gt,
+                        'in_im': in_im,
+                        'class': obj_class,
+                        'filename': self._original_image_path})
+        return out
 
     def __getitem__(self, i):
         return Predictions(self._image,
@@ -118,7 +181,8 @@ class Predictions(object):
             y2 /= self._xy_scales[1]
 
             x1, x2, y1, y2 = int(x1), int(x2), int(y1), int(y2)
-
+            assert x1<  x2
+            assert y1 < y2
             roi = np.copy(array[y1:y2, x1:x2])
 
             mask = np.zeros_like(roi)
@@ -184,6 +248,28 @@ class Predictions(object):
 
         return image_info, annotations
 
+class LabelPredictions(Predictions):
+    def __init__(self, label, class_dict):
+        # dict_keys(['im_file', 'cls', 'bboxes', 'segments', 'keypoints', 'normalized', 'bbox_format'])
+
+        # self._CROPS_DIR = "crops"
+        #
+        # self._class_dict = class_dict
+        # self._classes = label["cls"]
+        #
+        # self._original_image_path = label["im_file"]
+        # make bounding boxes for all contours fixme
+
+        label = copy.deepcopy(label)
+        confs = np.ones((len(label["cls"])), float)
+        im = cv2.imread(label["im_file"])
+        cts = label["segments"]
+        h, w = im.shape[0], im.shape[1]
+        for c in cts:
+            c *= (w, h)
+
+        super().__init__(im, label["im_file"], cts, confs, label["cls"], class_dict)
+
 
 class Predictor(object):
     MIN_MAX_OBJ_SIZE = (16, 1024)
@@ -192,8 +278,13 @@ class Predictor(object):
     SCORE_THRESHOLD = 0.5
     IOU_THRESHOLD = 0.5
 
-    def __init__(self, model_path):
-        self._model = YOLO(model_path)
+    def __init__(self, model, cfg=None):
+        if isinstance(model, torch.nn.Module):
+            self._model = model
+            self._yolo_predictor = SegmentationPredictor(cfg=cfg)
+        else:
+            self._model = YOLO(model)
+            self._yolo_predictor = None
 
     def _detect_instances(self, ori_array, scale=1.0):
         polys = []
@@ -225,7 +316,6 @@ class Predictor(object):
         offsets = []
         for n, j in enumerate(y_range):
             for m, i in enumerate(x_range):
-
                 offsets.append(((m, n), (i, j)))
 
         # all_tiles = []
@@ -243,9 +333,18 @@ class Predictor(object):
             if np.count_nonzero(np.sum(im_1, axis=2)) > 0:
                 # cv2.imshow("test", im_1)
                 # cv2.waitKey(-1)
-                # fixme, if we have spare memory, we can run batch inference here!!!
 
-                p = self._model(im_1, verbose=False)[0]
+                #fixme verbose only works when inference from file-loaded model?!
+
+                if self._yolo_predictor:
+                    from ultralytics.utils import LOGGER
+                    l = LOGGER.level
+                    LOGGER.setLevel("WARNING")
+                    p = self._yolo_predictor(im_1, self._model, verbose=False)[0]
+                    LOGGER.setLevel(l)
+                else:
+                    p = self._model(im_1, verbose=False)[0]
+                # p = self._model(im_1)[0]
                 # p = all_preds[i]
                 p_bt = p.boxes.xyxy
 
@@ -268,7 +367,6 @@ class Predictor(object):
                 p = p[non_edge_cases.__and__(big_enough)]
                 p = p[p.boxes.conf > self.SCORE_THRESHOLD]
 
-
                 # fixme, this could be parallelised
                 for i in range(len(p)):
                     poly = p[i].masks.xy[0] + np.array(o, dtype=float)
@@ -277,8 +375,7 @@ class Predictor(object):
                         classes_for_one_inst.append(
                             int(p[i].boxes.cls[0]) + 1)  # as we want one-indexed classes
                         confs_for_one_inst.append(float(p[i].boxes.conf[0]))
-            else:
-                print("skipping")
+
             polys.append(poly_for_one_inst)
             confs.append(classes_for_one_inst)
             classes.append(classes_for_one_inst)
@@ -311,6 +408,7 @@ class Predictor(object):
 
                     # todo check bounding box overlap
                     try:
+                        # fixme, use iou()
                         iou = p_shape_1.intersection(p_shape_2).area / p_shape_1.union(p_shape_2).area
                     except Exception as e:
                         iou = 1  # fixme topological exception
@@ -333,6 +431,7 @@ class Predictor(object):
         if isinstance(image, str):
             im = cv2.imread(image)
             path = image
+            assert im is not None, f"Cannot read image {image}"
         else:
             path = None
             im = image
@@ -345,11 +444,14 @@ class Predictor(object):
             im_b = cv2.resize(im, dsize=(int(w * scale_before), int(h * scale_before)))
         if add_border:  # fixme, this is broken
             if w > h:
-                im_b = cv2.copyMakeBorder(im, (w - h) // 2, math.ceil((w - h) / 2), 0, 0, cv2.BORDER_CONSTANT, (0, 0, 0))
+                im_b = cv2.copyMakeBorder(im_b, (w - h) // 2, math.ceil((w - h) / 2), 0, 0, cv2.BORDER_CONSTANT,
+                                          (0, 0, 0))
                 border_offset = (0, (w - h) // 2)
+
                 # border_offset = ((w - h) // 2, 0)
             if h > w:
-                im_b = cv2.copyMakeBorder(im, 0, 0, (h - w) // 2, math.ceil((h - w) / 2), cv2.BORDER_CONSTANT, (0, 0, 0))
+                im_b = cv2.copyMakeBorder(im_b, 0, 0, (h - w) // 2, math.ceil((h - w) / 2), cv2.BORDER_CONSTANT,
+                                          (0, 0, 0))
                 border_offset = ((h - w) // 2, 0)
 
 
@@ -371,7 +473,8 @@ class Predictor(object):
         logging.info(f"Running inference on scales: {scales}")
 
         all_preds = []
-        for s in scales:
+        #fixme, if not reveser, looks like we have a weird offset at large scales and shapes are poor
+        for s in reversed(scales):
 
             preds = self._detect_instances(im_b, scale=s)
             for p in preds:
@@ -385,6 +488,7 @@ class Predictor(object):
                         iou = 1  # fixme topological exception?
                         logging.warning("Topological exception")
                     if iou > self.IOU_THRESHOLD:
+                        # print(p, val_p)
                         add = False
                         continue
                 if add:
@@ -394,10 +498,11 @@ class Predictor(object):
         confs = [p["confs"] for p in all_preds]
         classes = [p["class"] for p in all_preds]
 
-        if add_border:
-            for c in cts:
-                c -= border_offset
 
+        for c in cts:
+            if add_border:
+                c -= border_offset
+            c /= (scale_before, scale_before)
 
         out = Predictions(im, path, cts, confs, classes,
                           self._model.names
