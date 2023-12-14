@@ -1,3 +1,8 @@
+## Install
+
+```commandline
+pip install -e src
+```
 
 ## Downloading data
 ```sh
