@@ -73,7 +73,7 @@ if __name__ == '__main__':
             # These parameters are all related to file-indexing and filtering on the remote server
             override = False, # Should the file-index be re-generated? (has to be False if store is False - otherwise an error will be thrown)
             store = False, # This is important if we do not want to add files to the remote server (i.e. we only want to read them), if this is True, then the function will "cache" the file list in the directory in a file in the remote directory called "file_index.txt"
-            pattern = r"^[^\/][^\.]+(\.jpg$|\.png$|\.jpeg$|\.JPG$|\.PNG$|\.JPEG)$", # TODO: Support more image formats, requires that the dataloader supports it! Currently as a hack, we skip files in subdirectories i.e. files with a '/' in their name, this is not ideal, as they are still read from the remote server
+            pattern = r"^[^\/\.]+(\.jpg$|\.png$|\.jpeg$|\.JPG$|\.PNG$|\.JPEG)$", # TODO: Support more image formats, requires that the dataloader supports it! Currently as a hack, we skip files in subdirectories i.e. files with a '/' in their name, this is not ideal, as they are still read from the remote server
         )
         
         # Apply nmax, by truncating the list of remote paths if nmax != -1
