@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 ## OBS
 # For this to work you have to:
 #
@@ -22,6 +23,77 @@ import json
 from pyremotedata.implicit_mount import *
 from pyremotedata.dataloader import *
 from tqdm import tqdm
+import cv2
+import numpy as np
+
+import noise
+from sklearn.decomposition import PCA
+
+
+# PSA: This is just an experiment
+def noise_pad(path: str, factor: Tuple[Union[int, float], Union[int, float]], n_components=3) -> None:
+    """
+    Pad an image with noise based on the first N principal components of the image colors, combined using a weighted sum.
+
+    Args:
+        - path: The path to the image to pad
+        - factor: The factor to pad the image by
+        - n_components: Number of principal components to use
+    
+    Returns:
+        - None
+    """
+    image = cv2.imread(path)
+    height, width = image.shape[:2]
+    new_height, new_width = int(height * factor[1]), int(width * factor[0])
+
+    # Reshape the image for PCA
+    reshaped_image = image.reshape((-1, 3)) / 255 - 0.5
+
+    # Perform PCA
+    pca = PCA(n_components=n_components)
+    pca_scores = pca.fit_transform(reshaped_image)
+    eigenvalues = pca.explained_variance_
+
+    # Initialize an array for the combined noise
+    combined_noise = np.zeros((new_height, new_width))
+
+    # Calculate empirical quantiles and generate noise for each PC
+    for i in range(n_components):
+        pc_scores = pca_scores[:, i]
+        quantiles = (np.argsort(np.argsort(pc_scores)) + 1) / len(pc_scores)
+
+        # Generate simplex noise
+        simplex_noise = generate_simplex_noise(new_height, new_width)
+        noise_quantiles = np.interp(simplex_noise, [simplex_noise.min(), simplex_noise.max()], [0, 1])
+
+        # Sort the noise quantiles according to the quantiles of pc_scores
+        sorted_indices = np.argsort(quantiles)
+        noise_sorted = noise_quantiles.flatten()[sorted_indices.argsort()].reshape(new_height, new_width)
+
+        # Map these sorted noise values to the sorted pc_scores
+        noise_layer = np.interp(noise_sorted, np.linspace(0, 1, len(pc_scores)), np.sort(pc_scores))
+
+        combined_noise += noise_layer * eigenvalues[i]
+
+    # Normalize and reshape the combined noise
+    combined_noise = combined_noise / np.sum(eigenvalues)
+    combined_noise_rescaled = np.interp(combined_noise, [combined_noise.min(), combined_noise.max()], [0, 255])
+
+    # Create the padded image and replace the central part with the original image
+    padded_image = np.tile(combined_noise_rescaled[..., None], (1, 1, 3)).astype(np.uint8)
+    pad_height, pad_width = (new_height - height) // 2, (new_width - width) // 2
+    padded_image[pad_height:pad_height + height, pad_width:pad_width + width] = image
+    padded_image += 1
+    padded_image /= 2
+    padded_image = np.clip(padded_image * 255, 0, 255).astype(np.uint8)
+
+    # Save the image with PCA-based noise padding
+    cv2.imwrite(path, padded_image)
+
+def generate_simplex_noise(height, width, scale=0.01):
+    return np.array([[noise.pnoise2(i*scale, j*scale) for j in range(width)] for i in range(height)])
+
 
 if __name__ == '__main__':
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
@@ -40,14 +112,16 @@ if __name__ == '__main__':
                                  "Note that the COCO dataset dimentions match the scaled image" # fixme, is that true?!
                             )
     args_parse.add_argument("-n", "--nmax", type=int, default=-1, help="Number of images to process\nSet to -1 to process all")
+    args_parse.add_argument("-p", "--input-pad", type=int, default=1, help="Number of times to pad the image before prediction")
+    args_parse.add_argument("-v", "--verbose", action="store_true", help="Increase output verbosity")
 
     args = args_parse.parse_args()
     option_dict = vars(args)
-
+    print("Read user arguments.")
     # assert os.path.isdir(option_dict["input_dir"])
     assert os.path.isfile(option_dict["model_weights"])
     pred = Predictor(option_dict["model_weights"])
-
+    print("Loaded model.")
     # fixme, build from pred._model!
     categories = {"id": 1, "name": "insect"}
 
@@ -58,10 +132,11 @@ if __name__ == '__main__':
         "annotations": [],
         "categories": [categories]  # Your category
     }
-
+    print("Finished setup.")
     with IOHandler(verbose = False, clean = False) as io:
+        print("Opened remote.")
         io.cd(option_dict["input_dir"])
-
+        print("Moved to remote project directory.")
         path_iterator = RemotePathIterator(
             io_handler = io,
             # These are basically network-performance parameters
@@ -75,17 +150,20 @@ if __name__ == '__main__':
             store = False, # This is important if we do not want to add files to the remote server (i.e. we only want to read them), if this is True, then the function will "cache" the file list in the directory in a file in the remote directory called "file_index.txt"
             pattern = r"^[^\/\.]+(\.jpg$|\.png$|\.jpeg$|\.JPG$|\.PNG$|\.JPEG)$", # TODO: Support more image formats, requires that the dataloader supports it! Currently as a hack, we skip files in subdirectories i.e. files with a '/' in their name, this is not ideal, as they are still read from the remote server
         )
-        
+        print("Initiated remote iterator.")
         # Apply nmax, by truncating the list of remote paths if nmax != -1
         if option_dict["nmax"] != -1:
             assert option_dict["nmax"] > 0, ValueError(f"'--nmax'/'-n' must be positive not {option_dict['nmax']}") # It is not allowed to set nmax to any values less than 1, except -1 (which means all)
             path_iterator.remote_paths = path_iterator.remote_paths[:option_dict["nmax"]]  
-        
+        print("Sliced remote iterator.")
         errors = 0
-        for i, (local, remote) in tqdm(enumerate(path_iterator), desc="Processing images", total=len(path_iterator)):
+        for i, (local, remote) in tqdm(enumerate(path_iterator), desc="Processing images", total=len(path_iterator), dynamic_ncols=True):
+            if option_dict["input_pad"] > 1:
+                noise_pad(local, (option_dict["input_pad"], option_dict["input_pad"]))
+            
             logging.info(f"Processing {os.path.basename(local)}")
             try:
-                prediction = pred.pyramid_predictions(local, scale_before=option_dict["scale_before"])
+                prediction = pred.pyramid_predictions(local, scale_increment=1/2, scale_before=option_dict["scale_before"])
 
                 im_info, annots = prediction.coco_entry()
                 im_info["id"] = i - errors
@@ -102,6 +180,9 @@ if __name__ == '__main__':
                 raise e
             coco_data["images"].append(im_info)
             coco_data["annotations"].extend(annots)
+        print("Finished predicting.")
         with open(os.path.join(option_dict["results_dir"], "coco_dataset.json"), "w") as json_file:
             json.dump(coco_data, json_file)
+        print("Wrote json-file.")
+    print("Finished script.")
 
