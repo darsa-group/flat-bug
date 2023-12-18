@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import glob
 import os
 from ultralytics.data.converter import convert_coco
