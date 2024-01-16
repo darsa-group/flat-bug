@@ -49,12 +49,12 @@ def find_contours(neighbors):
 
 def find_neighbors(mask, pos):
     raise NotImplementedError("Seems to be some bug with this function, but I cannot reproduce it at the moment. Only happens on real data, as far as I have been able to find.")
-    nmask = torch.zeros((mask.shape[0]+2, mask.shape[1]+2), dtype=torch.long, device=mask.device)
-    nmask[*(pos + 1).T] = torch.arange(len(pos), device=mask.device, dtype=torch.long) + 1
-    nidx = torch.arange(3, device=mask.device, dtype=torch.long).unsqueeze(0).repeat(len(pos), 3) - 1
-    nidx += (pos[:, 0].unsqueeze(1) + 1) + (pos[:, 1].unsqueeze(1) + 1) * nmask.shape[0]
-    nidx[:, :3] -= nmask.shape[0]
-    nidx[:, -3:] += nmask.shape[0]
+    # nmask = torch.zeros((mask.shape[0]+2, mask.shape[1]+2), dtype=torch.long, device=mask.device)
+    # nmask[*(pos + 1).T] = torch.arange(len(pos), device=mask.device, dtype=torch.long) + 1
+    # nidx = torch.arange(3, device=mask.device, dtype=torch.long).unsqueeze(0).repeat(len(pos), 3) - 1
+    # nidx += (pos[:, 0].unsqueeze(1) + 1) + (pos[:, 1].unsqueeze(1) + 1) * nmask.shape[0]
+    # nidx[:, :3] -= nmask.shape[0]
+    # nidx[:, -3:] += nmask.shape[0]
     # assert (nmask.flatten()[nidx[:, 4]].sort().values == torch.arange(len(pos), device=mask.device, dtype=torch.long) + 1).all(), f"Centers {nidx[:, 4].sort().values} do not match {nmask.flatten().nonzero(as_tuple=False).flatten().sort().values}"
 
     return [neighbors[neighbors != 0] - 1 for neighbors in nmask.flatten()[nidx]]
