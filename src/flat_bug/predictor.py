@@ -10,9 +10,11 @@ import cv2
 import ultralytics
 import json
 from shapely.geometry import Polygon
+from PIL import Image
+import io
 from flat_bug.ml_utils import iou_match_pairs, iou
 from flat_bug.yolo_helpers import *
-from flat_bug.geometry_simples import find_contigs, expand_mask
+from flat_bug.geometry_simples import find_contours, contours_to_masks, interpolate_contour, create_contour_mask
 from ultralytics import YOLO
 from ultralytics.nn.tasks import SegmentationModel
 from ultralytics.nn.autobackend import AutoBackend
@@ -64,9 +66,9 @@ class Prepared_Results:
 # Class for containing the results from multiple _detect_instances calls
 class TensorPredictions:
     BOX_IS_EQUAL_MARGIN = 10 # How many pixels the boxes can differ by and still be considered equal? Used for removing duplicates before merging overlapping masks.
-    CONSTANTS = ["device", "dtype", "image", "image_path", "time", "CONSTANTS", "BOX_IS_EQUAL"] # Attributes that should not be changed after initialization
+    CONSTANTS = ["device", "dtype", "image", "image_path", "time", "CONSTANTS", "BOX_IS_EQUAL"] # Attributes that should not be changed after initialization - should 'contours' be here?
 
-    def __init__(self, predictions : list[Prepared_Results], image : torch.Tensor, image_path = str, device=None, dtype=None, antialias=False, time=False):
+    def __init__(self, predictions : Union[list[Prepared_Results], None]=None, image : [torch.Tensor, None]=None, image_path = Union[str, None], device=None, dtype=None, antialias=False, time=False):
         # Timing could probably be hidden in a decorator...
         self.time = time
         if self.time and len(predictions) > 0:
@@ -75,21 +77,29 @@ class TensorPredictions:
             end = torch.cuda.Event(enable_timing=True)
             start.record()
 
+        no_predictions = predictions is None or len(predictions) == 0
+        if not no_predictions:
         # Check that all predictions have the same device and dtype
-        if device is None:
-            device = predictions[0].device
-        if dtype is None:
-            dtype = predictions[0].dtype
-        for pi, p in enumerate(predictions):
-            assert p.device == device, RuntimeError(f"predictions[{pi}].device {p.device} != device {device}")
-            assert p.dtype == dtype, RuntimeError(f"predictions[{pi}].dtype {p.dtype} != dtype {dtype}")
+            if device is None:
+                device = predictions[0].device
+            if dtype is None:
+                dtype = predictions[0].dtype
+            for pi, p in enumerate(predictions):
+                assert p.device == device, RuntimeError(f"predictions[{pi}].device {p.device} != device {device}")
+                assert p.dtype == dtype, RuntimeError(f"predictions[{pi}].dtype {p.dtype} != dtype {dtype}")
+        else:
+            # If there are no predictions, set device and dtype to defaults (cpu/float32)
+            if device is None:
+                device = torch.device("cpu")
+            if dtype is None:
+                dtype = torch.float32
         # Set attributes
         self.device = device
         self.dtype = dtype
         self.image = image
         self.image_path = image_path
         # Combine the predictions
-        if len(predictions) > 0:
+        if not no_predictions:
             self._combine_predictions(predictions, antialias=antialias)
         else:
             # If there are no predictions, set other attributes to None
@@ -116,6 +126,8 @@ class TensorPredictions:
             # Initialize timing calculations
             start = torch.cuda.Event(enable_timing=True)
             end = torch.cuda.Event(enable_timing=True)
+            end_duplication_removal = torch.cuda.Event(enable_timing=True)
+            end_mask_combination = torch.cuda.Event(enable_timing=True)
             start.record()
         self.boxes = torch.cat([p.boxes for p in predictions]) # Nx4
         self.confs = torch.cat([p.confs for p in predictions]) # N
@@ -131,13 +143,19 @@ class TensorPredictions:
         max_indices = cumsum(n_detections)
         non_duplicates_chunked = [non_duplicates[(non_duplicates < max_indices[i]) & (non_duplicates >= (max_indices[i-1] if i > 0 else 0))] - (max_indices[i] - n_detections[i]) for i in range(len(predictions))]
 
+        if self.time:
+            end_duplication_removal.record()
+
         # For the remaining attributes we remove the duplicates before combining them
         self.masks = stack_masks([p.masks.data[nd] for p, nd in zip(predictions, non_duplicates_chunked)], antialias=antialias) # NxMHxMW - MH and MW are proportional to the original image size
+
+        if self.time:
+            end_mask_combination.record()
+
         self.masks.orig_shape = self.image.shape[1:] # Set the target shape of the masks to the shape of the image passed to the TensorPredictions object
         self.classes = torch.cat([p.classes[nd] for p, nd in zip(predictions, non_duplicates_chunked)]) # N
         self.scales = [predictions[i].scale for i, p in enumerate(non_duplicates_chunked) for _ in range(len(p))] # N
-        # Check that everything is the correct size
-        assert len(self) == len(self.contours), RuntimeError(f"len(self) {len(self)} != len(self.contours) {len(self.contours)}")
+        # # Check that everything is the correct size
         assert len(self) == len(self.boxes), RuntimeError(f"len(self) {len(self)} != len(self.boxes) {len(self.boxes)}")
         assert len(self) == len(self.confs), RuntimeError(f"len(self) {len(self)} != len(self.confs) {len(self.confs)}")
         assert len(self) == len(self.classes), RuntimeError(f"len(self) {len(self)} != len(self.classes) {len(self.classes)}")
@@ -145,7 +163,12 @@ class TensorPredictions:
         if self.time:
             end.record()
             torch.cuda.synchronize()
-            print(f'Combining predictions took {start.elapsed_time(end)/1000:.3f} s')
+            total = start.elapsed_time(end) / 1000
+            duplication_removal = start.elapsed_time(end_duplication_removal) / 1000
+            mask_combination = end_duplication_removal.elapsed_time(end_mask_combination) / 1000
+            print(f'Combining {len(predictions)} predictions into a single TensorPredictions object took {total:.3f} s | Duplication removal: {duplication_removal:.3f} s | Mask combination: {mask_combination:.3f} s')
+
+            # print(f'Combining predictions took {start.elapsed_time(end)/1000:.3f} s')
 
     def offset_scale_pad(self, offset : torch.Tensor, scale : float, pad : int = 0) -> "TensorPredictions":
         """
@@ -216,10 +239,27 @@ class TensorPredictions:
         """
         This function is copied from ultralytics.engine.results.Masks.xy, which unfortunately uses caching, meaning that after updating the data in self.masks, the contours will not be updated (unless the cache is cleared, how?).
         """
-        return [ops.scale_coords(self.masks.data.shape[1:], x, self.masks.orig_shape, normalize=False, padding=False) for x in ops.masks2segments(self.masks.data)]
+        return [find_contours(m, largest_only=True) for m in self.masks.data]
+
+    def contour_to_image_coordinates(self, contour : torch.Tensor, interpolate : bool=False):
+        """
+        Converts a contour from mask coordinates to image coordinates. 
+        """
+        mask_hw = self.masks.data.shape[1:]
+        image_hw = self.image.shape[1:]
+        # We use a fixed precision of torch.float32 to avoid numerical issues (unless the image is **really** large)
+        mask_to_image_scale = torch.tensor([image_hw[0] / mask_hw[0], image_hw[1] / mask_hw[1]], device=self.device, dtype=torch.float32)
+        # After scaling the coordinates, round and cast to long, we offset the contour by 1/2 before scaling to ensure that the scaled contour is in the "center" of the mask boundary
+        center_offset = 1/2 * (mask_to_image_scale > 1).float() - 1 * (mask_to_image_scale < 1).float()
+        scaled_contour = ((contour + center_offset) * mask_to_image_scale).round().long() 
+
+        # Possibly interpolate the contour using integer linear interpolation
+        if interpolate:
+            scaled_contour = interpolate_contour(scaled_contour)
+        return scaled_contour
 
     def __len__(self):
-        return len(self.masks)
+        return len(self.masks.data)
     
     def new(self):
         return TensorPredictions([], **{k : self.__dict__[k] for k in self.CONSTANTS if k in self.__dict__})
@@ -342,6 +382,11 @@ class TensorPredictions:
             end = torch.cuda.Event(enable_timing=True)
             start.record()
             len_before = len(self)
+
+        # Skip if there are no elements to merge
+        if len(self) <= 1:
+            return self
+        
         # To account for the case where a bigger mask overlaps a smaller mask, we adjust the confidences by the scale of the mask.
         sqrt_areas = self.masks.data.sum(dim=(1, 2)).to(dtype=self.dtype).sqrt()
         weights = sqrt_areas.min() / sqrt_areas     
@@ -391,11 +436,6 @@ class TensorPredictions:
 
         # Plot the image
         ax.imshow(_image)
-
-        # Plot the masks
-        if masks:
-            for contour in _contours:
-                ax.fill(contour[:, 0], contour[:, 1], color='red', alpha=0.15)
         
         # Plot the boxes
         if boxes:
@@ -404,6 +444,12 @@ class TensorPredictions:
                 ax.add_patch(rect)
                 if conf:
                     ax.text(box[0], box[1] - 5, f"{conf*100:.3g}%", color='red', fontsize=12 * (100 / dpi) ** (1/2), clip_on=True)
+
+        # Plot the masks
+        if masks:
+            for contour in _contours:
+                contour = self.contour_to_image_coordinates(contour).cpu().float().numpy()
+                ax.fill(contour[:, 1], contour[:, 0], color='red', alpha=0.15)
 
         # Remove axis margins and turn off the axis
         ax.margins(0)
@@ -423,25 +469,54 @@ class TensorPredictions:
         else:
             plt.show()
 
-    def plot_opencv(self, masks=True, boxes=True, conf=True, outpath=None):
+    def plot_opencv(self, linewidth=2, masks=True, boxes=True, conf=True, outpath=None, scale=1):
         # Convert torch tensor to numpy array
-        image = self.image.permute(1, 2, 0).cpu().numpy().astype(np.uint8)
+        image = self.image.round().to(torch.uint8).permute(1, 2, 0).cpu().numpy()
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        if scale != 1:
+            image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
 
         # Draw masks
         if masks:
-            for contour in self.contours:
-                cv2.fillPoly(image, pts=contour.reshape(-1, 1, 2).astype(np.int32), color=(255, 0, 0))  # Red mask
+            overlay = image.copy()
+            contours = [None] * len(self.masks.data)
+            for i, mask in enumerate(self.masks.data):
+                contour = cv2.findContours(mask.to(torch.uint8).cpu().numpy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+                # Calculate areas of each contour
+                areas = np.array([cv2.contourArea(c) for c in contour])
+                # Select the largest contour and convert it to a tensor
+                contour = torch.tensor(contour[np.argmax(areas)], device=self.device).long().squeeze(1)
+                # Convert contour to image coordinates
+                contour = self.contour_to_image_coordinates(contour * scale, interpolate=False).cpu().numpy()
+                # Append contour to list of contours
+                contours[i] = contour
+                # Fill the contours with a semi-transparent red overlay
+                cv2.fillPoly(overlay, pts=[contour], color=(0, 0, 255))
+            # Add the overlay to the image
+            cv2.addWeighted(overlay, 0.3, image, 0.7, 0, image)
+            # Draw the contours
+            cv2.polylines(image, pts=contours, isClosed=True, color=(0, 0, 255), thickness=linewidth)
 
         # Draw boxes and confidences
         if boxes:
             for box, conf in zip(self.boxes, self.confs):
+                box = (box * scale)
+                box[:2] = box[:2].floor()
+                box[2:] = box[2:].ceil()
+                box = box.long()
                 start_point = (int(box[0]), int(box[1]))
                 end_point = (int(box[2]), int(box[3]))
-                cv2.rectangle(image, start_point, end_point, (0, 0, 255), 2)  # Red box
+                cv2.rectangle(image, start_point, end_point, (0, 0, 0), linewidth)  # Red box
                 if conf:
-                    cv2.putText(image, f"{conf*100:.3g}%", (start_point[0], start_point[1] - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                    cv2.putText(
+                        img =       image, 
+                        text =      f"{conf*100:.3g}%", 
+                        org =       (start_point[0], start_point[1] - round(10 * scale)),
+                        fontFace =  cv2.FONT_HERSHEY_SIMPLEX, 
+                        fontScale = 1 * scale, 
+                        color =     (0, 0, 0), 
+                        thickness = max(1, round(2 * scale))
+                    )
 
         # Save or show the image
         if outpath:
@@ -455,21 +530,37 @@ class TensorPredictions:
         """
         Draws bounding boxes and masks on the image tensor and saves it to outpath.
 
-        Only uses PyTorch operations, so it should be faster than plot_opencv, but it is also less flexible.
+        Only uses PyTorch operations, so it is a bit slower than plot_opencv, but it is also more flexible.
 
         Args:
             image (torch.Tensor): The image tensor to draw on.
             masks (bool): Whether to draw the masks. Defaults to True.
             boxes (bool): Whether to draw the boxes. Defaults to True.
             outpath (str, optional): If not None, saves the image to the given path. Defaults to None.
+            lienwidth (int, optional): The width of the lines used to draw the boxes and masks. Defaults to 3.
+            scale (float, optional): The scale of the image. Defaults to 1.
         
         Returns:
             None
         """
+        if self.time:
+            start = torch.cuda.Event(enable_timing=True)
+            end_image_scaling = torch.cuda.Event(enable_timing=True)
+            end_box_drawing = torch.cuda.Event(enable_timing=True)
+            end_mask_drawing = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
+            start.record()
+
         # Copy the image tensor
         image = self.image.clone()
         if scale != 1:
             image = torchvision.transforms.functional.resize(image, (int(image.shape[1] * scale), int(image.shape[2] * scale)), interpolation=torchvision.transforms.InterpolationMode.BILINEAR, antialias=False)
+        # Convert to uint8
+        image = image.round().to(torch.uint8)
+
+        if self.time:
+            end_image_scaling.record()
+        
         h, w = torch.tensor(image.shape[1:], dtype=torch.long)
         box_linewidth = linewidth
         box_expansion = math.ceil((box_linewidth - 1) / 2)
@@ -479,32 +570,36 @@ class TensorPredictions:
             if boxes:
                 # Draw the box
                 x1, y1, x2, y2 = (box * scale).round().long().cpu().tolist()
-                x1e, y1e, x2e, y2e = (max(0, x1 - box_expansion), min(w, x1 + box_expansion)), (max(0, y1 - box_expansion), min(h, y1 + box_expansion)), (max(0, x2 - box_expansion), min(w, x2 + box_expansion)), (max(0, y2 - box_expansion), min(h, y2 + box_expansion))
+                x1e, y1e, x2e, y2e = (max(0, x1 - box_expansion), min(w, x1 + box_expansion + 1)), (max(0, y1 - box_expansion), min(h, y1 + box_expansion + 1)), (max(0, x2 - box_expansion), min(w, x2 + box_expansion + 1)), (max(0, y2 - box_expansion), min(h, y2 + box_expansion + 1))
                 image[:, y1e[0]:y2e[1], x2e[0]:x2e[1]] = 0
                 image[:, y1e[0]:y1e[1], x1e[0]:x2e[1]] = 0
                 image[:, y2e[0]:y2e[1], x1e[0]:x2e[1]] = 0
                 image[:, y1e[0]:y2e[1], x1e[0]:x1e[1]] = 0
+            if self.time:
+                end_box_drawing.record()
             if masks:
-                # This part may lead to overflow issues if there are *many* overlapping masks, this could be fixed easily, but with a performance penalty
-                mask = find_contigs(mask.data)
-                if len(mask) == 1: ## Only one region
-                    mask = mask[0]
-                else:
-                    mask = mask[mask.sum(dim=(1, 2)).argmax()] ## Select the largest region
-                mask = torchvision.transforms.functional.resize(mask.unsqueeze(0), (h.item(), w.item()), interpolation=torchvision.transforms.InterpolationMode.NEAREST, antialias=False).squeeze(0).squeeze(0)
+                mask = torchvision.transforms.functional.resize(mask.data.unsqueeze(0), (h.item(), w.item()), interpolation=torchvision.transforms.InterpolationMode.NEAREST, antialias=False).squeeze(0).squeeze(0)
                 # Draw the mask
-                image[0, mask] += 85
+                # Subtracting and adding from uint8 is a bit more complicated, since we need to ensure that the result is in the range [0, 255] so the numbers don't over/underflow
+                image[0, mask] += (255 - image[0, mask]).clamp(max=50)
+                image[1:, mask] -= image[1:, mask].clamp(max=30)
                 # Draw the contour
-                expanded_mask = expand_mask(mask, n = linewidth)
-                contour_mask = expanded_mask & ~mask
-                image[0, contour_mask] += 255
-                image[1:, contour_mask] = 0
-        
-        # Clamp the image to the range [0, 255]
-        image = image.clamp(0, 255) / 255
-        
-        # Save the image
-        torchvision.utils.save_image(image, outpath)
+                contour_mask = create_contour_mask(mask, width=linewidth)
+                image[:, contour_mask] = 0
+                image[0, contour_mask] = 255
+            if self.time:
+                end_mask_drawing.record()
+                
+        # Save the image (this is copied from the source-code for torchvision.utils.save_image, but bypassing the float-to-uint8 conversion, since we already have uint8)
+        Image.fromarray(image.permute(1, 2, 0).cpu().numpy()).save(outpath)
+        if self.time:
+            end.record()
+            torch.cuda.synchronize()
+            total = start.elapsed_time(end) / 1000
+            image_scaling = start.elapsed_time(end_image_scaling) / 1000
+            box_drawing = end_image_scaling.elapsed_time(end_box_drawing) / 1000
+            mask_drawing = end_box_drawing.elapsed_time(end_mask_drawing) / 1000
+            print(f'Drawing predictions took {total:.3f} s | Image scaling: {image_scaling:.3f} s |Box drawing: {box_drawing:.3f} s | Mask drawing: {mask_drawing:.3f} s')
 
     def save_crops(self, outdir=None, image_path=None):
         if image_path is None:
@@ -525,37 +620,134 @@ class TensorPredictions:
             # Save the crop
             torchvision.utils.save_image(crop, os.path.join(outdir, crop_name))
 
-    def serialize(self, outpath=None):
+    def serialize(self, outpath : str=None, save_pt : bool=True, save_json : bool=True, save_image : bool=False, identifier : str=None, overwrite_basename : Union[str, None]=None, fast : bool=False):
         assert outpath is not None, RuntimeError("Cannot serialize without outpath")
         assert len(outpath) > 0, RuntimeError("Cannot serialize with empty outpath")
+        assert os.path.isdir(outpath), RuntimeError(f"outpath {outpath} is not a directory")
 
-        # Check for file-extension on the outpath, it should have none
+        if overwrite_basename is not None:
+            basename = overwrite_basename
+        else:
+            basename = os.path.splitext(os.path.basename(self.image_path))[0]
+
+        # Check for file-extension on the outpath, it should have none - not really necessary anymore due to the check for directory above
         outpath, ext = os.path.splitext(outpath)
         if ext != "":
             print(f"WARNING: serializer outpath ({outpath}) should not have a file-extension for 'TensorPredictions.serialize'!")
-        
-        ## First serialize as .pt file
-        pt_path = f'{outpath}.pt'
-        torch.save(self, pt_path)
 
-        ## Then serialize as .json file
-        json_path = f'{outpath}.json'
-        ## Clean up the data
-        normalizer = torch.tensor([self.image.shape[2], self.image.shape[1]], device=self.device, dtype=torch.float32)
-        # 1. Normalize the boxes to the range [0, 1]
-        boxes = self.boxes.to(dtype=torch.float32) / normalizer.repeat(2)
-        boxes = boxes.cpu().tolist()
-        # 2. Convert the masks to contours and normalize to the range [0, 1]
-        contours = self.contours / normalizer.cpu().numpy()
-        contours = contours.tolist()
-        # 3. Convert the confidences to floats
-        confs = self.confs.float().cpu().tolist()
-        # 4. Convert the classes to integers
-        classes = self.classes.cpu().long().tolist()
-        # 5. Convert the scales to floats
-        scales = self.scales.cpu().float().tolist()
-        with open(json_path, 'w') as f:
-            json.dump({"boxes" : boxes, "contours" : contours, "confs" : confs, "classes" : classes, "scales" : scales}, f)
+        # Add the basename to the outpath
+        outpath = os.path.join(outpath, basename)
+        
+        if save_pt:
+            ## First serialize as .pt file
+            pt_path = f'{outpath}.pt'
+            torch.save(self, pt_path)
+
+        if save_json:
+            ## Then serialize as .json file
+            json_path = f'{outpath}.json'
+            ## Clean up the data
+            # 1. Convert the boxes to list
+            boxes = self.boxes.cpu().tolist()
+            # 2. Convert the masks to contours as lists 
+            if not fast:
+                contours = [c.cpu().tolist() for c in self.contours]
+            else:
+                torch.save(self.masks.data, f'{outpath}_masks.pt')
+                contours = None
+            # 3. Convert the confidences to floats in a list
+            confs = self.confs.float().cpu().tolist()
+            # 4. Convert the classes to integers in a list
+            classes = self.classes.cpu().long().tolist()
+            # 5. Get the scales (already floats in a list)
+            scales = self.scales
+            json_data = {"boxes" : boxes, 
+                         "contours" : contours, 
+                         "confs" : confs, 
+                         "classes" : classes, 
+                         "scales" : scales, 
+                         "identifier" : identifier if identifier is not None else "", 
+                         "image_path" : self.image_path, 
+                         "image_width" : self.image.shape[2], 
+                         "image_height" : self.image.shape[1], 
+                         "mask_width" : self.masks.data.shape[2], 
+                         "mask_height" : self.masks.data.shape[1]}
+            with open(json_path, 'w') as f:
+                json.dump(json_data, f)
+        
+
+    def load(self, path : str, device=None, dtype=None):
+        assert isinstance(path, str) and os.path.isfile(path), RuntimeError(f"Invalid path: {path}")
+        # Check whether the path is a .pt file or a .json file
+        stripped_path, ext = os.path.splitext(path)
+        if ext == ".pt":
+            # When loading from .pt we get an exact copy of the saved TensorPredictions object
+            self = torch.load(path)
+            return self
+        elif ext == ".json":
+            with open(path, 'r') as f:
+                json_data = json.load(f)
+
+            if device is None:
+                device = torch.device("cpu")
+            if dtype is None:
+                dtype = torch.float32
+
+            empty_image = torch.zeros((3, json_data["image_height"], json_data["image_width"]), device=device, dtype=dtype)
+            new_tp = TensorPredictions(image=empty_image, device=device, dtype=dtype)
+
+            # Load the data
+            for k, v in json_data.items():
+                # Skip attributes in the json file that are not in the TensorPredictions object
+                if k in ["identifier", "image_width", "image_height", "mask_width", "mask_height"]:
+                    continue
+                if k in ["boxes"]:
+                    v = torch.tensor(v, device=new_tp.device, dtype=new_tp.dtype)
+                elif k in ["contours"]:
+                    # Check for masks in the same directory as the json file
+                    masks_path = f'{stripped_path}_masks.pt'
+                    if os.path.isfile(masks_path):
+                        v = torch.load(masks_path).to(device=new_tp.device)
+                    else:
+                        v = contours_to_masks(v, (json_data["mask_heigth"], json_data["mask_width"]))
+                    k = "masks"
+                elif k in ["confs", "classes"]:
+                    v = torch.tensor(v, device=new_tp.device, dtype=new_tp.dtype)
+                setattr(new_tp, k, v)
+
+            self = new_tp
+            return self
+        else:
+            raise RuntimeError(f"Unknown file-extension: {ext} for path: {path}")
+        
+    def save(self, output_directory : str, overview : bool=True, crops : bool=True, metadata : bool=True, fast : bool=False) -> str:
+        if not os.path.exists(output_directory):
+            raise ValueError(f"Output directory {output_directory} does not exist")
+        
+        base_name = os.path.splitext(os.path.basename(self.image_path))[0]
+        prediction_directory = os.path.join(output_directory, base_name)
+        if not os.path.exists(prediction_directory):
+            os.makedirs(prediction_directory)
+
+        if crops:
+            # Save crops
+            crop_directory = os.path.join(prediction_directory, "crops")
+            if not os.path.exists(crop_directory):
+                os.makedirs(crop_directory)
+
+            self.save_crops(crop_directory)
+        if overview:
+            # Save overview
+            overview_directory = os.path.join(prediction_directory, f"overview_{base_name}.jpg")
+            if not fast:
+                self.plot_opencv(outpath=overview_directory, linewidth=2, scale=1) 
+            else:
+                self.plot_opencv(outpath=overview_directory, linewidth=1, scale=1/2)
+        if metadata:
+            # Save json
+            self.serialize(prediction_directory, save_pt=False, save_image=False, fast=fast)
+
+        return prediction_directory
 
 class Predictions(object):
     def __init__(self, image, original_image_path, contours, confs, classes, class_dict):
@@ -835,9 +1027,9 @@ class LabelPredictions(Predictions):
 
 class Predictor(object):
     MIN_MAX_OBJ_SIZE = (32, 2048)
-    MINIMUM_TILE_OVERLAP = 512
+    MINIMUM_TILE_OVERLAP = 384
     EDGE_CASE_MARGIN = 8
-    SCORE_THRESHOLD = 0.1
+    SCORE_THRESHOLD = 0.2
     IOU_THRESHOLD = 0.25
     MAX_MASK_SIZE = 768
     TIME = False
@@ -1095,13 +1287,7 @@ class Predictor(object):
         all_preds = [self._detect_instances(im_b, scale=s) for s in reversed(scales)]
         if self.TIME:
             print(f'Total detection time: {self.total_detection_time:.3f}s ({self.total_forward_time / self.total_detection_time * 100:.3g}% forward)')
-        # all_preds = TensorPredictions(
-        #     all_preds, dtype=self._dtype, device=self._device
-        # ).merge_overlapping_masks( # Merging masks is pretty slow, and tentatively doesn't seem to improve the results much
-        #     iou_threshold=0.75
-        # ).non_max_suppression(
-        #     iou_threshold=self.IOU_THRESHOLD
-        # )
+
         all_preds = TensorPredictions(
             predictions = all_preds, 
             image       = im, 
@@ -1116,6 +1302,7 @@ class Predictor(object):
             scale   = 1 / scale_before,
             pad     = 5 # pad the boxes a bit to ensure they encapsulate the masks
         )#.fix_boxes() # The boxes don't necessarily match the masks, but this does not fix it. The discrepancy arises due to the way the masks are converted to contours.
+
         if self.TIME:
             # Finish timing calculations
             end_pyramid.record()

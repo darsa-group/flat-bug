@@ -43,22 +43,32 @@ if __name__ == '__main__':
                             help="Downscale the image before detection, but crops from the original image."
                                  "Note that the COCO dataset dimentions match the scaled image" # fixme, is that true?!
                             )
-    args_parse.add_argument("-n", "--nmax", type=int, default=-1, help="Number of images to process\nSet to -1 to process all")
-    args_parse.add_argument("-p", "--input-pad", type=int, default=1, help="Number of times to pad the image before prediction")
-    args_parse.add_argument("-v", "--verbose", action="store_true", help="Increase output verbosity")
+    args_parse.add_argument("-n", "--nmax", type=int, default=-1, help="Number of images to process\nSet to -1 to process all.")
+    args_parse.add_argument("-O", "--tile_overlap", type=int, default=384, help="Minimum overlap between tiles in pixels. Default is 384, lower is faster, but may miss larger instances.")
+    args_parse.add_argument("-c", "--conf_threshold", type=float, default=0.2, help="Confidence threshold for predictions. Default is 0.2 (20%), the larger the faster, but more instances will be missed. A very low value can result in many false positives.")
+    args_parse.add_argument("-p", "--input-pad", type=int, default=1, help="Number of times to pad the image before prediction.")
+    args_parse.add_argument("-v", "--verbose", action="store_true", help="Increase output verbosity.")
+    args_parse.add_argument("-f", "--fast", action="store_true", help="Use fast mode, which is faster, but may miss larger instances.")
 
-    dtype = torch.bfloat16
+    dtype = torch.float16
     device = torch.device("cuda:0")
 
     args = args_parse.parse_args()
     option_dict = vars(args)
     verbose = option_dict["verbose"]
+    fast = option_dict["fast"]
+    input_directory = option_dict["input_dir"]
+    output_directory = option_dict["results_dir"]
+    if not os.path.isdir(output_directory):
+        raise ValueError(f"Output directory '{output_directory}' does not exist.")
 
     if verbose:
         print("Read user arguments.")
     # assert os.path.isdir(option_dict["input_dir"])
     assert os.path.isfile(option_dict["model_weights"])
     pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype)
+    pred.MINIMUM_TILE_OVERLAP = option_dict["tile_overlap"]
+    pred.SCORE_THRESHOLD = option_dict["conf_threshold"]
     if verbose:
         print("Loaded model.")
     # fixme, build from pred._model!
@@ -76,10 +86,10 @@ if __name__ == '__main__':
     with IOHandler(verbose = False, clean = False) as io:
         if verbose:
             print("Opened remote.")
-        io.cd(option_dict["input_dir"])
+        io.cd(input_directory)
         "a".replace
         # Check for local file index
-        local_file_index = os.path.join(os.getcwd(), option_dict["results_dir"], f"{option_dict['input_dir'].replace('/', '_')}_file_index.txt")
+        local_file_index = os.path.join(os.getcwd(), output_directory, f"{option_dict['input_dir'].replace('/', '_')}_file_index.txt")
         if os.path.isfile(local_file_index):
             with open(local_file_index, "r") as file:
                 file_index = [line.strip() for line in file.readlines()]
@@ -119,38 +129,34 @@ if __name__ == '__main__':
         errors = 0
         for i, (image, remote_path, local_path) in tqdm(enumerate(dataset), desc="Processing images", total=len(path_iterator), dynamic_ncols=True):
             image_name = os.path.basename(remote_path)
-            name, ext = os.path.splitext(image_name)
-            image_folder_name = option_dict["results_dir"] + os.sep + os.sep.join(remote_path.split("/")[-3:-1])
-            if option_dict["input_pad"] > 1:
-                pass
-                # noise_pad(local, (option_dict["input_pad"], option_dict["input_pad"]))
-            
-            logging.info(f"Processing {os.path.basename(remote_path)}")
+            # Retrieve the subdirectory of the image, and replace the separator with the local separator
+            input_subdirectory = os.sep.join(re.sub(input_directory, "", remote_path).split("/")[:-1])
+            # Remove possible trailing & leading "/"
+            input_subdirectory = re.sub(r"^\/|\/$", "", input_subdirectory)
+            ## This doesn't make so much sense when the files may appear at different nested levels
+            # logging.info(f"Processing {os.path.basename(remote_path)}")
             try:
-                prediction = pred.pyramid_predictions(image / 255, local_path, scale_increment=3/4, scale_before=option_dict["scale_before"], add_border=False)
-
-                # im_info, annots = prediction.coco_entry()
-                # im_info["id"] = i - errors
-                # for a in annots:
-                #     a["id"] = i - errors
-                #     a["image_id"] = i
-                #     a["remote_path"] = remote_path
-                    
-                # prediction.make_crops(out_dir=option_dict["results_dir"] + os.sep + os.sep.join(remote_path.split("/")[-3:-1]), only_overview=False)
-
-                prediction.plot_torch(outpath=image_folder_name + os.sep + "overview_" + image_name, masks=False, linewidth=3, scale=1/2) # masks=True is **very** slow, set scale to one for original quality (a bit slower to save though)
-                prediction.save_crops(outdir=image_folder_name, image_path=image_name) # This is fast, but doesn't mask the crops at the moment, should be easy though
-                prediction.serialize(outpath=f'{image_folder_name}{os.sep}meta_{name}')
+                prediction = pred.pyramid_predictions(image, remote_path, scale_increment=3/4, scale_before=option_dict["scale_before"], add_border=False)
+                n = len(prediction)
+                # We create a subdirectory within the output directory for each subdirectory in the input directory, and then create subdirectories for every number of instances, within these subdirectories the results for each image is saved in separate folders with the name of the image. 
+                # I.e. if we are running the model on the folder 'RRR/insects' with the output directory 'LLL/output' and the image 'RRR/insects/ants/ant_1.jpg' has 3 instances, then the result will be saved in 'LLL/output/insects/3/ant_1'.
+                output_subdirectory = f'{output_directory}{os.sep}{input_subdirectory}{os.sep}{n}'
+                # Make sure the output directory exists
+                if not os.path.isdir(output_subdirectory):
+                    os.makedirs(output_subdirectory)
+                # Save the results
+                result_directory = prediction.save(output_subdirectory, fast=fast)
+                # Copy the original image to the result directory
+                shutil.copy(local_path, os.path.join(result_directory, "original_" + image_name))
             except Exception as e:
                 logging.error(f"Issue whilst processing {remote_path}")
                 #fixme, what is going on with /home/quentin/todo/toup/20221008_16-01-04-226084_raw_jpg.rf.0b8d397da3c47408694eeaab2cde06e5.jpg?
                 logging.error(e)
                 errors += 1
                 raise e
-            # coco_data["images"].append(im_info)
-            # coco_data["annotations"].extend(annots)
         if verbose:
             print("Finished predicting.")
+        ## This is done for each file instead now.
         # with open(os.path.join(option_dict["results_dir"], "coco_dataset.json"), "w") as json_file:
         #     json.dump(coco_data, json_file)
         # if verbose:
