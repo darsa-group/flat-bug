@@ -97,6 +97,39 @@ def merge_tile_results(results = list[Results], orig_img=None, box_offsetters=No
         raise NotImplementedError("'Keypoints' not implemented yet")
     return ResultsWithTiles(tiles=tile_indices, orig_img=orig_img, path=path, names=names, boxes=boxes, masks=masks, probs=None, keypoints=None)
 
+def smooth_mask(mask, kernel_size=7):
+    # Check kernel size parameter
+    if kernel_size == 1:
+        return mask
+    elif kernel_size < 1:
+        print(f"kernel_size ({kernel_size}) should be greater than or equal to 1")
+        return mask
+    elif kernel_size > 50:
+        print(f'Very large kernel_size ({kernel_size}) may cause memory issues')
+    
+    def gaussian_kernel(size):
+        if size % 2 == 0:
+            raise ValueError("Size must be an odd number")
+        w = size // 2
+        sigma = w / 3
+
+        # Create a coordinate grid
+        x, y = torch.meshgrid(torch.arange(size) - w, torch.arange(size) - w)
+
+        # Calculate the 2D Gaussian kernel
+        g = torch.exp(-(x**2 + y**2) / (2*sigma**2))
+        g[w, w] = 1
+
+        # Normalize the kernel to ensure the sum is 1
+        return g / g.sum()
+
+    # Create a 2D Gaussian kernel
+    kernel = gaussian_kernel(kernel_size).to(mask.device).unsqueeze(0).unsqueeze(0)
+
+    # Apply convolution separately to each mask
+    return torch.nn.functional.conv2d(mask.float().unsqueeze(1), kernel, padding=kernel_size // 2).squeeze(1) > 0.5
+
+
 def stack_masks(masks, orig_shape=None, antialias=False):
     """
     Stacks a list of ultralytics.engine.results.Masks objects (or torch.Tensor) into a single ultralytics.engine.results.Masks object.
@@ -124,8 +157,8 @@ def stack_masks(masks, orig_shape=None, antialias=False):
     max_h = max([m.shape[1] for m in masks])
     max_w = max([m.shape[2] for m in masks])
     masks_in_each = [len(m) for m in masks]
-    interpolation_method = torchvision.transforms.InterpolationMode.NEAREST if not antialias else torchvision.transforms.InterpolationMode.BILINEAR
-    resizer = torchvision.transforms.Resize((max_h, max_w), interpolation=interpolation_method,antialias=antialias)
+    interpolation_method = torchvision.transforms.InterpolationMode.NEAREST
+    resizer = torchvision.transforms.Resize((max_h, max_w), interpolation=interpolation_method, antialias=antialias)
 
     new_masks = torch.zeros((sum(masks_in_each), max_h, max_w), dtype=torch.bool, device=_device)
 
@@ -135,7 +168,10 @@ def stack_masks(masks, orig_shape=None, antialias=False):
             if not antialias:
                 m = resizer(m)
             else:
-                m = (resizer(m.float()) > 0.01)
+                smooth_radius = torch.ceil(torch.tensor([max_h, max_w]) / torch.tensor(m.shape[1:])).max().long().item() * 4
+                if smooth_radius % 2 == 0:
+                    smooth_radius += 1
+                m = smooth_mask(resizer(m), smooth_radius)
         new_masks[i:(i+n)] = m
         i += n
 
@@ -476,6 +512,28 @@ def iou_masks_2sets(m1s, m2s, a1s = None, a2s = None, dtype=torch.float32):
     
     return intersections / unions
 
+def ios_masks_2sets(m1s, m2s, a1s = None, a2s = None, dtype=torch.float32):
+    """
+    Computes IoU between all pairs between two sets of masks
+    """
+    if len(m1s.shape) == 2:
+        m1s = m1s.unsqueeze(0)
+    if len(m2s.shape) == 2:
+        m2s = m2s.unsqueeze(0)
+    if a1s is None:
+        a1s = m1s.sum(dim=(1, 2)).unsqueeze(0)
+        if a1s.shape[0] > 0:
+            a1s = a1s.T
+    if a2s is None:
+        a2s = m2s.sum(dim=(1, 2)).unsqueeze(0)
+    a1s = a1s.to(dtype)
+    a2s = a2s.to(dtype)
+    intersections = intersect_masks_2sets(m1s, m2s, dtype)
+
+    smaller_area = torch.min(a1s, a2s)
+    
+    return intersections / smaller_area
+
 def iou_masks(masks, areas = None, dtype=torch.float32):
     """
     Compute IoU between all pairs of masks
@@ -491,13 +549,20 @@ def iou_masks(masks, areas = None, dtype=torch.float32):
     ious = ious.fill_diagonal_(1)
     return ious
 
-def nms_masks(masks, scores, iou_threshold=0.5, return_indices=False, dtype=None):
+def nms_masks(masks, scores, iou_threshold=0.5, return_indices=False, dtype=None, metric="IoU"):
     """
     Wrapper for the standard non-maximum suppression algorithm.
     """
+    metric = metric.lower()
+    if metric == "iou":
+        metric = iou_masks_2sets
+    elif metric == "ios":
+        metric = ios_masks_2sets
+    else:
+        raise ValueError(f"metric must be one of ['IoU', 'IoS', 'IoS/D'], not {metric}")
     if dtype is None:
         raise ValueError("'dtype' must be specified for nms_masks")
-    return nms_(masks, iou_masks_2sets, scores, iou_threshold=iou_threshold, return_indices=return_indices, dtype=dtype)
+    return nms_(masks, metric, scores, iou_threshold=iou_threshold, return_indices=return_indices, dtype=dtype)
 
 def nms_boxes(boxes, scores, iou_threshold=0.5, strict=True, return_indices=False, debug=False):
     """
