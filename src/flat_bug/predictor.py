@@ -272,7 +272,7 @@ class LabelPredictions(Predictions):
 
 
 class Predictor(object):
-    MIN_MAX_OBJ_SIZE = (16, 1024)
+    MIN_MAX_OBJ_SIZE = (64, 1024)
     MINIMUM_TILE_OVERLAP = 256
     EDGE_CASE_MARGIN = 128
     SCORE_THRESHOLD = 0.5
@@ -286,7 +286,7 @@ class Predictor(object):
             self._model = YOLO(model)
             self._yolo_predictor = None
 
-    def _detect_instances(self, ori_array, scale=1.0):
+    def _detect_instances(self, ori_array, scale=1.0, min_obj_size=MIN_MAX_OBJ_SIZE[0]):
         polys = []
         classes = []
         confs = []
@@ -349,8 +349,8 @@ class Predictor(object):
                 p_bt = p.boxes.xyxy
 
                 big_enough = torch.zeros_like(p_bt[:, 0], dtype=torch.bool)
-                big_enough = big_enough.__or__(p_bt[:, 2] - p_bt[:, 0] > self.MIN_MAX_OBJ_SIZE[0])
-                big_enough = big_enough.__or__(p_bt[:, 3] - p_bt[:, 1] > self.MIN_MAX_OBJ_SIZE[0])
+                big_enough = big_enough.__or__(p_bt[:, 2] - p_bt[:, 0] > min_obj_size)
+                big_enough = big_enough.__or__(p_bt[:, 3] - p_bt[:, 1] > min_obj_size)
 
                 non_edge_cases = torch.ones_like(p_bt[:, 0], dtype=torch.bool)
 
@@ -473,10 +473,13 @@ class Predictor(object):
         logging.info(f"Running inference on scales: {scales}")
 
         all_preds = []
-        #fixme, if not reveser, looks like we have a weird offset at large scales and shapes are poor
-        for s in reversed(scales):
-
-            preds = self._detect_instances(im_b, scale=s)
+        #fixme, if not reversed, looks like we have a weird offset at large scales and shapes are poor
+        for i,s in enumerate(reversed(scales)):
+            if i == 0:
+                # the largest scale
+                preds = self._detect_instances(im_b, scale=s, min_obj_size=16)
+            else:
+                preds = self._detect_instances(im_b, scale=s)
             for p in preds:
                 add = True
                 p_shape = Polygon(np.squeeze(p["contour"]))
