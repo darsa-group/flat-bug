@@ -64,7 +64,7 @@ class RandomCrop:
         self._imsize = imsize
         self.max_targets = max_targets
 
-    def crop_labels(self, labels, start_x, start_y, pad_before=None, apply_max_targets=False):
+    def crop_labels(self, labels, start_x, start_y, apply_max_targets=False):
 
         or_img = labels["img"]
         debug = os.path.basename(labels["im_file"]) == "a_63-20190826004609-00.jpg"
@@ -76,8 +76,8 @@ class RandomCrop:
         instances.convert_bbox(format="xywh")
         instances.denormalize(w, h)
 
-        if pad_before:
-            px, py = pad_before
+        if h < self._imsize or w < self._imsize:
+            px, py = self._imsize - w, self._imsize - h
             px0 = int(math.floor(px / 2))
             py0 = int(math.floor(py / 2))
             px1 = int(math.ceil(px / 2))
@@ -179,8 +179,21 @@ class RandomCrop:
 
     def __call__(self, labels):
         h, w = labels["img"].shape[:2]
-        start_x = np.random.randint(w - self._imsize, size=1)[0]
-        start_y = np.random.randint(h - self._imsize, size=1)[0]
+        # print("TODEL, SIZE ERROR", h, w, self._imsize, labels["im_file"] ) #fixme
+        # cv2.imshow(os.path.basename(labels["im_file"]),labels["img"]),
+        # cv2.waitKey(-1)
+
+        # assert w >=  self._imsize and  h >= self._imsize, f"{labels['im_file']} too small: {w}x{h}"
+
+        if w < self._imsize:
+            start_x = 0
+        else:
+            start_x = np.random.randint(w - self._imsize, size=1)[0]
+        if h < self._imsize:
+            start_y = 0
+        else:
+            start_y = np.random.randint(h - self._imsize, size=1)[0]
+
         return self.crop_labels(labels, start_x, start_y, apply_max_targets=True)
 
 
