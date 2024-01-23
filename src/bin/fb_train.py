@@ -14,7 +14,7 @@ if __name__ == '__main__':
 
         "model": "yolov8m-seg.pt",
         "task": "detect",
-        # "task": "segment",
+        # "task": "segment", #fixme why not segment?!
         "epochs": 5000,
         "device": "cuda",
         "patience": 500,
@@ -46,6 +46,7 @@ if __name__ == '__main__':
 
     data = os.path.join(option_dict["data_dir"], "data.yaml")
 
+    #fixme issue when providing new dataset path, sill using old one?! see when i used pollen data
     settings.update({'datasets_dir': option_dict["data_dir"]})
 
     overrides = DEFAULT_CONF
@@ -61,7 +62,7 @@ if __name__ == '__main__':
         overrides["resume"] = overrides["model"]
     else:
         overrides["resume"] = False
-    print(settings)
+    # print(settings)
     t = MySegmentationTrainer(overrides=overrides)
 
     if not option_dict["resume"]:
