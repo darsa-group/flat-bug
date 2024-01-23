@@ -108,7 +108,7 @@ if __name__ == '__main__':
 
             assert len(images) > 0
             for f in glob.glob(os.path.join(OUT_COCO_CONVERTER, "*.txt")):
-                
+
                 basename_sans_ext = os.path.splitext(os.path.basename(f))[0]
                 expected_image_basename = basename_sans_ext + ".jpg"
                 if expected_image_basename not in images:
