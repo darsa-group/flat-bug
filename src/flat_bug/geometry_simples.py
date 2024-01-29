@@ -129,9 +129,9 @@ def find_contours(mask, largest_only=True):
     contour = cv2.findContours(mask.to(torch.uint8).cpu().numpy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
     if largest_only:
         # Calculate areas of each contour
-        lengths = np.array([cv2.contourArea(c) for c in contour])
+        areas = np.array([cv2.contourArea(c) for c in contour])
         # Select the largest contour and convert it to a tensor
-        contour = torch.tensor(contour[np.argmax(lengths)], device=mask.device).long().squeeze(1)
+        contour = torch.tensor(contour[np.argmax(areas)], device=mask.device).long().squeeze(1)
     else:
         # Convert the contours to tensors
         contour = [torch.tensor(c, device=mask.device).long().squeeze(1) for c in contour]

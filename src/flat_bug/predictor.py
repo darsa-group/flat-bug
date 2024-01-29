@@ -51,42 +51,62 @@ class Prepared_Results:
 
 # Class for containing the results from multiple _detect_instances calls
 class TensorPredictions:
-    BOX_IS_EQUAL_MARGIN = 20 # How many pixels the boxes can differ by and still be considered equal? Used for removing duplicates before merging overlapping masks.
-    CONSTANTS = ["device", "dtype", "image", "image_path", "time", "CONSTANTS", "BOX_IS_EQUAL"] # Attributes that should not be changed after initialization - should 'contours' be here?
+    """
+    Result handling class for combining the results from multiple YOLOv8 detections at different scales into a single object.
 
-    def __init__(self, predictions : Union[list[Prepared_Results], None]=None, image : [torch.Tensor, None]=None, image_path = Union[str, None], device=None, dtype=None, antialias=False, time=False):
+    `TensorPredictions` handles a rather complex merging procedure, resizing to remove image padding and scaling effects on the masks and boxes, and non-maximum suppression using mask-IoU or mask-IoS.
+
+    `TensorPredictions` also allows for easy conversion from mask to contours and back, plotting of the results, and (de-)serialization to save and load the results to/from disk.
+    """
+    BOX_IS_EQUAL_MARGIN = 5 # How many pixels the boxes can differ by and still be considered equal? Used for removing duplicates before merging overlapping masks.
+    # These are simply initialized here to decrease clutter in the __init__ function and arguments
+    mask_width = None 
+    mask_height = None
+    device = None
+    dtype = None
+    CONSTANTS = ["image", "image_path", "device", "dtype", "antialias", "time", "mask_height", "mask_width", "CONSTANTS", "BOX_IS_EQUAL_MARGIN"] # Attributes that should not be changed after initialization - should 'contours' be here?
+
+    def __init__(self, predictions : Union[list[Prepared_Results], None]=None, image : [torch.Tensor, None]=None, image_path = Union[str, None], antialias=False, time=False, **kwargs):
+        # Set option flags
+        self.time = time 
+        self.antialias = antialias 
+
         # Timing could probably be hidden in a decorator...
-        self.time = time
         if self.time and len(predictions) > 0:
             # Initialize timing calculations
             start = torch.cuda.Event(enable_timing=True)
             end = torch.cuda.Event(enable_timing=True)
             start.record()
+        
+        # Allow passing of keyword arguments to set attributes
+        for k, v in kwargs.items():
+            if k in self.CONSTANTS:
+                setattr(self, k, v)
+            else:
+                print(f"WARNING: Unknown keyword argument {k}={v} for TensorPredictions is ignored!")
 
+        # Device and dtype are None by default, but they may be set by the user or passwed by **kwargs, so we check if they are None and if so set them to the default values
+        # Then we check that they are the same for all predictions and the image (if they are not None)
         no_predictions = predictions is None or len(predictions) == 0
         if not no_predictions:
         # Check that all predictions have the same device and dtype
-            if device is None:
-                device = predictions[0].device
-            if dtype is None:
-                dtype = predictions[0].dtype
+            if self.device is None:
+                self.device = predictions[0].device
+            if self.dtype is None:
+                self.dtype = predictions[0].dtype
             for pi, p in enumerate(predictions):
-                assert p.device == device, RuntimeError(f"predictions[{pi}].device {p.device} != device {device}")
-                assert p.dtype == dtype, RuntimeError(f"predictions[{pi}].dtype {p.dtype} != dtype {dtype}")
-        else:
-            # If there are no predictions, set device and dtype to defaults (cpu/float32)
-            if device is None:
-                device = torch.device("cpu")
-            if dtype is None:
-                dtype = torch.float32
+                assert p.device == self.device, RuntimeError(f"predictions[{pi}].device {p.device} != device {self.device}")
+                assert p.dtype == self.dtype, RuntimeError(f"predictions[{pi}].dtype {p.dtype} != dtype {self.dtype}")
+            if not image is None:
+                assert image.device == self.device, RuntimeError(f"image.device {image.device} != device {self.device}")
+        
         # Set attributes
-        self.device = device
-        self.dtype = dtype
         self.image = image
         self.image_path = image_path
+        
         # Combine the predictions
         if not no_predictions:
-            self._combine_predictions(predictions, antialias=antialias)
+            self._combine_predictions(predictions)
         else:
             # If there are no predictions, set other attributes to None
             self.masks, self.boxes, self.confs, self.classes, self.scales = None, None, None, None, None
@@ -96,7 +116,7 @@ class TensorPredictions:
             torch.cuda.synchronize()
             print(f'Initializing TensorPredictions took {start.elapsed_time(end)/1000:.3f} s')
 
-    def _combine_predictions(self, predictions : list[Prepared_Results], antialias=False):
+    def _combine_predictions(self, predictions : list[Prepared_Results]):
         """
         Combines a list of Prepared_Results from multiple _detect_instances calls into a single TensorPredictions object.
 
@@ -133,7 +153,8 @@ class TensorPredictions:
             end_duplication_removal.record()
 
         # For the remaining attributes we remove the duplicates before combining them
-        self.masks = stack_masks([p.masks.data[nd] for p, nd in zip(predictions, non_duplicates_chunked)], antialias=antialias) # NxMHxMW - MH and MW are proportional to the original image size
+        self.masks = stack_masks([p.masks.data[nd] for p, nd in zip(predictions, non_duplicates_chunked)], antialias=self.antialias) # NxMHxMW - MH and MW are proportional to the original image size
+        self.mask_height, self.mask_width = self.masks.shape[1:]
 
         if self.time:
             end_mask_combination.record()
@@ -154,11 +175,14 @@ class TensorPredictions:
             mask_combination = end_duplication_removal.elapsed_time(end_mask_combination) / 1000
             print(f'Combining {len(predictions)} predictions into a single TensorPredictions object took {total:.3f} s | Duplication removal: {duplication_removal:.3f} s | Mask combination: {mask_combination:.3f} s')
 
-            # print(f'Combining predictions took {start.elapsed_time(end)/1000:.3f} s')
-
     def offset_scale_pad(self, offset : torch.Tensor, scale : float, pad : int = 0) -> "TensorPredictions":
         """
-        Since the image may be padded, the masks and boxes should be offset by the padding-width and scaled by the scale_before factor to match the original image size.
+        Since the image may be padded, the masks and boxes should be offset by the padding-width and scaled by the scale_before factor to match the original image size. Also pads the boxes by pad pixels to be safe.
+
+        Args:
+            offset (torch.Tensor): A vector of length 2 containing the x and y offset of the image. Useful for removing image-padding effects.
+            scale (float): The scale factor of the image.
+            pad (int, optional): The number of pixels to pad the boxes by. Defaults to 0. (Not to be confused with image-padding, this is about expanding the boxes a bit to ensure they cover the entire mask)
         """
         if self.time:
             # Initialize timing calculations
@@ -220,12 +244,47 @@ class TensorPredictions:
         self.boxes[:, 1:4:2] = self.boxes[:, 1:4:2].clamp(0, self.image.shape[1])
         return self
 
+    def non_max_suppression(self, iou_threshold, **kwargs):
+        """
+        Simply wraps the nms_masks function from yolo_helpers.py, and removes the elements that were not selected.
+        """
+        if self.time:
+            # Initialize timing calculations
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
+            start.record()
+            len_before = len(self)
+
+        # Skip if there are no elements to merge
+        if len(self) <= 1:
+            return self
+        
+        # Heuristics are ..., just train the model better
+        # # To account for the case where a bigger mask overlaps a smaller mask, we adjust the confidences by the scale of the mask.
+        # sqrt_areas = self.masks.data.sum(dim=(1, 2)).to(dtype=self.dtype).sqrt()
+        # weights = sqrt_areas.min() / sqrt_areas     
+        # adjusted_confidences = self.confs * weights
+
+        # Perform non-maximum suppression on the masks
+        nms_ind = nms_masks(self.masks.data, self.confs, iou_threshold=iou_threshold, return_indices=True, dtype=self.dtype, **kwargs)
+        # Remove the elements that were not selected
+        self = self[nms_ind]
+        if self.time:
+            end.record()
+            torch.cuda.synchronize()
+            print(f'Non-maximum suppression took {start.elapsed_time(end)/1000:.3f} s for removing {len_before - len(nms_ind)} elements of {len_before} elements')
+        return self
+
     @property
     def contours(self):
         """
-        This function is copied from ultralytics.engine.results.Masks.xy, which unfortunately uses caching, meaning that after updating the data in self.masks, the contours will not be updated (unless the cache is cleared, how?).
+        This function wraps the openCV.findContours function, and uses openCV.contourArea to select the largest contour for each mask.
         """
         return [find_contours(create_contour_mask(mask), largest_only=True) for mask in self.masks.data]
+    
+    @contours.setter
+    def contours(self, value):
+        self.masks = contours_to_masks(value, self.mask_height, self.mask_width).to(self.device)
 
     def contour_to_image_coordinates(self, contour : torch.Tensor, scale : float=1, interpolate : bool=False):
         """
@@ -312,37 +371,6 @@ class TensorPredictions:
                         raise RuntimeError(f"Unknown type for {k}: {type(v)}")
                 setattr(new_tp, k, new_value)
         return new_tp
-
-    def non_max_suppression(self, iou_threshold, **kwargs):
-        """
-        Simply wraps the nms_masks function from yolo_helpers.py, and removes the elements that were not selected.
-        """
-        if self.time:
-            # Initialize timing calculations
-            start = torch.cuda.Event(enable_timing=True)
-            end = torch.cuda.Event(enable_timing=True)
-            start.record()
-            len_before = len(self)
-
-        # Skip if there are no elements to merge
-        if len(self) <= 1:
-            return self
-        
-        # Heuristics are ..., just train the model better
-        # # To account for the case where a bigger mask overlaps a smaller mask, we adjust the confidences by the scale of the mask.
-        # sqrt_areas = self.masks.data.sum(dim=(1, 2)).to(dtype=self.dtype).sqrt()
-        # weights = sqrt_areas.min() / sqrt_areas     
-        # adjusted_confidences = self.confs * weights
-
-        # Perform non-maximum suppression on the masks
-        nms_ind = nms_masks(self.masks.data, self.confs, iou_threshold=iou_threshold, return_indices=True, dtype=self.dtype, **kwargs)
-        # Remove the elements that were not selected
-        self = self[nms_ind]
-        if self.time:
-            end.record()
-            torch.cuda.synchronize()
-            print(f'Non-maximum suppression took {start.elapsed_time(end)/1000:.3f} s for removing {len_before - len(nms_ind)} elements of {len_before} elements')
-        return self
     
     def plot_opencv(self, linewidth=2, masks=True, boxes=True, conf=True, outpath=None, scale=1):
         # Convert torch tensor to numpy array
@@ -482,20 +510,19 @@ class TensorPredictions:
             mask_drawing = end_box_drawing.elapsed_time(end_mask_drawing) / 1000
             print(f'Drawing predictions took {total:.3f} s | Image scaling: {image_scaling:.3f} s |Box drawing: {box_drawing:.3f} s | Mask drawing: {mask_drawing:.3f} s')
 
-    def save_crops(self, outdir=None, image_path=None, mask=False):
-        if image_path is None:
+    def save_crops(self, outdir=None, basename=None, mask=False, identifier=None):
+        if basename is None:
             assert self.image_path is not None, RuntimeError("Cannot save crops without image_path")
-            image_path = self.image_path
+            basename, _ = os.path.splitext(os.path.basename(self.image_path))
         assert outdir is not None, RuntimeError("Cannot save crops without outpath")
         assert os.path.isdir(outdir), RuntimeError(f"outpath {outdir} is not a directory")
-        image_name, image_ext = os.path.splitext(os.path.basename(self.image_path))
+        _, image_ext = os.path.splitext(os.path.basename(self.image_path))
 
         # For each bounding box, save the corresponding crop
-        for i, (_box, _mask, _conf) in enumerate(zip(self.boxes, self.masks, self.confs)):
-            # Define name of the crop using the pattern {image_name}_{x1}_{y1}_{x2}_{y2}_{confidence}{image_ext}
+        for i, (_box, _mask) in enumerate(zip(self.boxes, self.masks)):
+            # Define name of the crop 
             x1, y1, x2, y2 = _box.long().cpu().tolist()
-            confidence = int(_conf * 100)
-            crop_name = f"crop_{image_name}_{x1}_{y1}_{x2}_{y2}_{confidence}{image_ext}"
+            crop_name = f"crop_{basename}_CROPNUMBER_{i}_UUID_{identifier}{image_ext}"
             # Extract the crop from the image tensor
             if mask:
                 scaled_mask = self.scale_mask(_mask)
@@ -505,26 +532,19 @@ class TensorPredictions:
             # Save the crop
             torchvision.utils.save_image(crop, os.path.join(outdir, crop_name))
 
-    def serialize(self, outpath : str=None, save_pt : bool=True, save_json : bool=True, save_image : bool=False, identifier : str=None, overwrite_basename : Union[str, None]=None) -> None:
+    def serialize(self, outpath : str=None, save_json : bool=True, save_pt : bool=False, readme : bool=True, identifier : str=None) -> None:
         """
-        This function serializes the TensorPredictions object to a .pt file and/or a .json file. The .pt file contains an exact copy of the TensorPredictions object, while the .json file contains the data in a more human-readable format, which can be deserialized into a TensorPredictions object using the 'load' function.
+        This function serializes the `TensorPredictions` object to a .pt file and/or a .json file. The .pt file contains an exact copy of the `TensorPredictions` object, while the .json file contains the data in a more human-readable format, which can be deserialized into a `TensorPredictions` object using the 'load' function.
         
         Args:
             outpath (str, optional): The path to save the serialized data to. Defaults to None.
-            save_pt (bool, optional): Whether to save the .pt file. Defaults to True.
-            save_json (bool, optional): Whether to save the .json file. Defaults to True.
-            save_image (bool, optional): Whether to save the image. Defaults to False. Not implemented at the moment.
+            save_json (bool, optional): Whether to save the .json file. Defaults to True. Recommended.
+            save_pt (bool, optional): Whether to save the .pt file. Defaults to False. Rather disk space wasteful.
             identifier (str, optional): An identifier for the serialized data. Defaults to None.
-            overwrite_basename (Union[str, None], optional): If not None, overwrites the basename of the outpath. Defaults to None.
         """
         assert outpath is not None, RuntimeError("Cannot serialize without outpath")
         assert len(outpath) > 0, RuntimeError("Cannot serialize with empty outpath")
-        assert os.path.isdir(outpath), RuntimeError(f"outpath {outpath} is not a directory")
-
-        if overwrite_basename is not None:
-            basename = overwrite_basename
-        else:
-            basename = os.path.splitext(os.path.basename(self.image_path))[0]
+        assert os.path.exists(os.path.dirname(outpath)), RuntimeError(f"Invalide outpath {outpath}, directory does not exist")
 
         # Check for file-extension on the outpath, it should have none - not really necessary anymore due to the check for directory above
         outpath, ext = os.path.splitext(outpath)
@@ -532,15 +552,19 @@ class TensorPredictions:
             print(f"WARNING: serializer outpath ({outpath}) should not have a file-extension for 'TensorPredictions.serialize'!")
 
         # Add the basename to the outpath
-        pt_path = f'{os.path.join(outpath, basename)}.pt'
-        json_path = f'{os.path.join(outpath, basename)}.json'
-        readme_path = f'{os.path.join(outpath, basename)}.md'
+        pt_path = f'{outpath}.pt'
+        json_path = f'{outpath}.json'
+        readme_path = f'{outpath}.md'
         
         if save_pt:
+            if os.path.exists(pt_path):
+                print(f"WARNING: Pickle ({pt_path}) already exists, overwriting!")
             ### First serialize as .pt file
             torch.save(self, pt_path)
 
         if save_json:
+            if os.path.exists(json_path):
+                print(f"WARNING: JSON ({json_path}) already exists, overwriting!")
             ### Then serialize as .json file
             ## Clean up the data
             # 1. Convert the boxes to list
@@ -558,7 +582,7 @@ class TensorPredictions:
                          "confs" : confs, 
                          "classes" : classes, 
                          "scales" : scales, 
-                         "identifier" : identifier if identifier is not None else basename, 
+                         "identifier" : identifier if identifier else self.image_path, 
                          "image_path" : self.image_path, 
                          "image_width" : self.image.shape[2], 
                          "image_height" : self.image.shape[1], 
@@ -567,15 +591,19 @@ class TensorPredictions:
             with open(json_path, 'w') as f:
                 json.dump(json_data, f)
 
-        # Add a readme file to the directory with some information about the serialized data
-        readme_text = \
+        if readme:
+            # Add a readme file to the directory with some information about the serialized data
+            if os.path.exists(readme_path):
+                print(f"WARNING: README ({readme_path}) already exists, overwriting!")
+            # TODO: Move the readme template to a separate file
+            readme_text = \
 f"""
-# Localization results for `{identifier if identifier is not None else basename}`
+# Localization results for `{identifier if identifier else self.image_path}`
 This directory contains the localization predictions for the image found at `{self.image_path}`. For some pipelines, this path may be non-standard, please confer with the relevant developer for clarification.
 
 ## Files
-The predictions are saved in two formats: .pt (PyTorch pickle) and .json (JSON).
-The PyTorch file contains the pickled TensorPredictions object dictionary, while the JSON file contains the data serialized in a more human-readable format, which can reasonably be deserialized by anyone not familiar with the TensorPredictions object using any programming language with access to basic JSON libraries.
+The predictions are saved in two formats: .pt (`PyTorch` pickle) and .json (JSON).
+The `PyTorch` file contains the pickled `TensorPredictions` object dictionary, while the JSON file contains the data serialized in a more human-readable format, which can reasonably be deserialized by anyone not familiar with the `TensorPredictions` object using any programming language with access to basic JSON libraries.
 
 ### JSON format
 The JSON file contains the following data:
@@ -628,12 +656,12 @@ The bounding box coordinates are given in the image coordinate system, so they d
 The image coordinate system is simply the integer pixel coordinate system of the image, where the **top left** corner is (`0`; `0`) and the **bottom right** corner is (`image_width`; `image_height`).
 
 ## Deserializations
-The .pt file can be deserialized into a TensorPredictions object using `torch.load("{pt_path}")`. OBS: This may be deprecated in the future, since the .json file contains the same data in a more human-readable format, and serialization/deserialization is reasonably fast.
+The .pt pickle file can be deserialized into a `TensorPredictions` object using `torch.load("{pt_path}")`. OBS: This may be deprecated in the future, since the .json file contains the same data in a more human-readable format, and serialization/deserialization is reasonably fast.
 
-The JSON can be deserialized into a TensorPredictions object using `TensorPredictions().load("{json_path}")`.\
+The JSON can be deserialized into a `TensorPredictions` object using `TensorPredictions().load("{json_path}")`.\
 """
-        with open(readme_path, 'w') as f:
-            f.write(readme_text)
+            with open(readme_path, 'w') as f:
+                f.write(readme_text)
 
 
     def load(self, path : str, device=None, dtype=None):
@@ -642,7 +670,7 @@ The JSON can be deserialized into a TensorPredictions object using `TensorPredic
         """
         assert isinstance(path, str) and os.path.isfile(path), RuntimeError(f"Invalid path: {path}")
         # Check whether the path is a .pt file or a .json file
-        stripped_path, ext = os.path.splitext(path)
+        _, ext = os.path.splitext(path)
         if ext == ".pt":
             # When loading from .pt we get an exact copy of the saved TensorPredictions object
             self = torch.load(path)
@@ -669,17 +697,10 @@ The JSON can be deserialized into a TensorPredictions object using `TensorPredic
                     v = torch.tensor(v, device=new_tp.device, dtype=new_tp.dtype)
                 # While masks are a bit more complicated
                 elif k == "contours":
-                    # Check for masks in the same directory as the json file
-                    masks_path = f'{stripped_path}_masks.pt'
-                    if os.path.isfile(masks_path):
-                        # If masks are found, we simply load them
-                        v = torch.load(masks_path).to(device=new_tp.device)
-                    else:
-                        # If no masks are found, we need to convert the contours to masks
-                        v = [torch.tensor(vi, device=new_tp.device, dtype=torch.long).T for vi in v] # For compatibility reasons we convert to tensor, but we will convert to numpy in contours_to_masks anyway, since we are using openCV to reconstruct the masks
-                        v = contours_to_masks(v, height=json_data["mask_height"], width=json_data["mask_width"])
-                    # Change the attribute key to masks, since contours is a property method derived from masks
-                    k = "masks"
+                    # If no masks are found, we need to convert the contours to masks
+                    v = [torch.tensor(vi, device=new_tp.device, dtype=torch.long).T for vi in v] # For compatibility reasons we convert to tensor, but we will convert to numpy in contours_to_masks anyway, since we are using openCV to reconstruct the masks
+                    v = contours_to_masks(v, height=json_data["mask_height"], width=json_data["mask_width"])
+                    # Change the attribute key to masks, since contours is a property method derived from masks and not a true property
                 # Confidences and classes are 1-d tensors (arrays)
                 elif k in ["confs", "classes"]:
                     v = torch.tensor(v, device=new_tp.device, dtype=new_tp.dtype)
@@ -692,7 +713,7 @@ The JSON can be deserialized into a TensorPredictions object using `TensorPredic
         else:
             raise RuntimeError(f"Unknown file-extension: {ext} for path: {path}")
         
-    def save(self, output_directory : str, overview : Union[bool, str]=True, crops : Union[bool, str]=True, metadata : Union[bool, str]=True, fast : bool=False, mask_crops : bool=False, identifier : Union[str, None]=None) -> str:
+    def save(self, output_directory : str, overview : Union[bool, str]=True, crops : Union[bool, str]=True, metadata : Union[bool, str]=True, fast : bool=False, mask_crops : bool=False, identifier : Union[str, None]=None, basename : Union[str, None]=None) -> Union[str, None]:
         """
         Saves the serialized prediction results, crops, and overview to the given output directory.
 
@@ -706,52 +727,73 @@ The JSON can be deserialized into a TensorPredictions object using `TensorPredic
             fast (bool, optional): Whether to use the fast version of the overview image. Defaults to False. Saves the overview image at half the resolution.
             mask_crops (bool, optional): Whether to mask the crops. Defaults to False.
             identifier (Union[str, None], optional): An identifier for the serialized data. Defaults to None.
+            basename (Union[str, None], optional): The base name of the image. Defaults to None. If None, the base name is extracted from the image path.
         
         Returns:
-            str: The path to the directory containing the serialized data - the crops and overview image(s) are also saved here by default.
+            str: The path to the directory containing the serialized data - the crops and overview image(s) are also saved here by default. If the standard location is not used at all, the directory is not created and None is returned instead.
         """
         if not os.path.exists(output_directory):
             raise ValueError(f"Output directory {output_directory} does not exist")
         
-        base_name = os.path.splitext(os.path.basename(self.image_path))[0]
-        prediction_directory = os.path.join(output_directory, base_name)
-        if not os.path.exists(prediction_directory):
-            os.makedirs(prediction_directory)
-
-        # Save crops
-        if crops:
-            if not isinstance(crops, str):
-                crop_directory = os.path.join(prediction_directory, "crops")
-            else:
-                assert os.path.isdir(crops), RuntimeError(f"Invalid path for crops: {crops}")
-                crop_directory = crops
-            
-            if not os.path.exists(crop_directory):
-                os.makedirs(crop_directory)
-
-            self.save_crops(crop_directory, mask=mask_crops)
+        if basename is None:
+            # Get the base name of the image
+            basename = os.path.splitext(os.path.basename(self.image_path))[0]
+        # Construct the prediction directory path
+        prediction_directory = os.path.join(output_directory, basename)
+        # Create the prediction directory if it does not exist and it is needed (i.e. if we are saving crops, overview, or metadata to a non-standard location)
+        prediction_directory_is_used = (overview is True) or (crops is True) or (metadata is True)
+        if prediction_directory_is_used:
+            if not os.path.exists(prediction_directory):
+                os.makedirs(prediction_directory)
+        else:
+            # If the prediction directory is not used set it to None
+            prediction_directory = None
         
         # Save overview
         if overview:
+            # Check if the overview path is overwritten and make sure the directory exists and is a directory
             if not isinstance(overview, str):
-                overview_directory = os.path.join(prediction_directory, f"overview_{base_name}.jpg")
+                overview_directory = prediction_directory 
             else:
-                assert os.path.isdir(overview), RuntimeError(f"Invalid path for overview: {overview}")
-                overview_directory = os.path.join(overview, f"overview_{base_name}.jpg")
-
+                if not os.path.exists(overview):
+                    os.makedirs(overview)
+                overview_directory = overview
+            assert os.path.isdir(overview_directory), RuntimeError(f"Invalid path for overview: {overview_directory}")
+            # The overview path is then constructed as a .jpg file in the overview directory with the name overview_{base_name}.jpg
+            overview_path = os.path.join(overview_directory, f"overview_{basename}_UUID_{identifier}.jpg")
+            # Save the overview image to the overview path
             if not fast:
-                self.plot_opencv(outpath=overview_directory, linewidth=2, scale=1) 
+                self.plot_opencv(outpath=overview_path, linewidth=2, scale=1) 
             else:
-                self.plot_opencv(outpath=overview_directory, linewidth=1, scale=1/2)
+                self.plot_opencv(outpath=overview_path, linewidth=1, scale=1/2)
+
+        # Save crops
+        if crops:
+            # Check if the crops path is overwritten and make sure the directory exists and is a directory
+            if not isinstance(crops, str):
+                crop_directory = os.path.join(prediction_directory, "crops")
+            else:
+                crop_directory = crops
+            if not os.path.exists(crop_directory):
+                os.makedirs(crop_directory)
+            assert os.path.isdir(crop_directory), RuntimeError(f"Invalid path for crops: {crop_directory}")
+            # Save the crops to the crops path
+            self.save_crops(crop_directory, basename=basename, mask=mask_crops, identifier=identifier)
         
         # Save json
         if metadata:
+            # Check if the metadata path is overwritten and make sure the directory exists and is a directory
             if not isinstance(metadata, str):
                 metadata_directory = prediction_directory
             else:
-                assert os.path.isdir(metadata), RuntimeError(f"Invalid path for metadata: {metadata}")
+                if not os.path.exists(metadata):
+                    os.makedirs(metadata)
                 metadata_directory = metadata
-            self.serialize(metadata_directory, save_pt=False, save_image=False, identifier=identifier)
+            assert os.path.isdir(metadata_directory), RuntimeError(f"Invalid path for metadata: {metadata_directory}")
+            # The metadata path is then constructed as a .json file in the metadata directory with the name metadata_{base_name}_id_{identifier}.<EXT>
+            metadata_path = os.path.join(metadata_directory, f'metadata_{basename}_UUID_{identifier}')
+            # Serialize the data to the metadata path
+            self.serialize(outpath=metadata_path, identifier=identifier)
 
         return prediction_directory
 
@@ -760,7 +802,7 @@ class Predictor(object):
     MINIMUM_TILE_OVERLAP = 384
     EDGE_CASE_MARGIN = 8
     SCORE_THRESHOLD = 0.2
-    IOU_THRESHOLD = 0.25
+    IOU_THRESHOLD = 0.5
     MAX_MASK_SIZE = 2048
     TIME = False
     # DEBUG = False
@@ -867,7 +909,7 @@ class Predictor(object):
                     if self.TIME:
                         # Record end of forward
                         end_forward_event.record()
-                    tps = postprocess(tps, batch, max_det=100, min_confidence=self.SCORE_THRESHOLD, iou_threshold=self.IOU_THRESHOLD, edge_margin=self.EDGE_CASE_MARGIN, nms=3) # Important to prune within each tile first, this avoids having to carry around a lot of data
+                    tps = postprocess(tps, batch, max_det=300, min_confidence=self.SCORE_THRESHOLD, iou_threshold=self.IOU_THRESHOLD, edge_margin=self.EDGE_CASE_MARGIN, nms=3) # Important to prune within each tile first, this avoids having to carry around a lot of data
                     if self.TIME:
                         # Record end of postprocess
                         end_postprocess_event.record()
@@ -1020,7 +1062,7 @@ class Predictor(object):
             antialias   = True # Smoothes the masks when/if they are upscaled, such that masks from larger scales are less visibly pixelated - introduces a small overhead, but is much more visually pleasing
         ).non_max_suppression(
             iou_threshold = self.IOU_THRESHOLD,
-            metric        = 'IoS' # It is necessary to use IoS and not IoU, especially when there are many scales, since parts of a bigger object may be detected at a smaller scale, and then the IoU will be very low, even though it is the same object
+            metric        = 'IoU' # It is necessary to use IoS and not IoU, especially when there are many scales, since parts of a bigger object may be detected at a smaller scale, and then the IoU will be very low, even though it is the same object
         ).offset_scale_pad(
             offset  = -padding_offset, 
             scale   = 1 / scale_before,
