@@ -76,18 +76,22 @@ class RandomCrop:
         instances.convert_bbox(format="xywh")
         instances.denormalize(w, h)
 
-        if h < self._imsize or w < self._imsize:
-            px, py = self._imsize - w, self._imsize - h
+        if w < self._imsize:
+            px = self._imsize - w
             px0 = int(math.floor(px / 2))
-            py0 = int(math.floor(py / 2))
             px1 = int(math.ceil(px / 2))
-            py1 = int(math.ceil(py / 2))
-            or_img = cv2.copyMakeBorder(or_img, py0, py1, px0, px1, cv2.BORDER_CONSTANT, value=self.bg_fill)
-
         else:
-            px0, py0 = 0, 0
-            # px1, py1 = 0, 0
+            px0 = px1 = 0
 
+        if h < self._imsize:
+            py = self._imsize - h
+            py0 = int(math.floor(py / 2))
+            py1 = int(math.ceil(py / 2))
+        else:
+            py0 = py1 = 0
+
+        or_img = cv2.copyMakeBorder(or_img, py0, py1, px0, px1, cv2.BORDER_CONSTANT, value=self.bg_fill)
+        
         img = or_img[start_y: start_y + self._imsize, start_x: start_x + self._imsize, :]
 
         if img.shape != (self._imsize, self._imsize, 3):
