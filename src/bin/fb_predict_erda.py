@@ -56,19 +56,31 @@ if __name__ == '__main__':
     args_parse.add_argument("-g", "--gpu", type=str, default="cuda:0", help="Which device to use for inference. Default is 'cuda:0', i.e. the first GPU.")
     args_parse.add_argument("-d", "--dtype", type=str, default="float16", help="Which dtype to use for inference. Default is 'float16'.")
     args_parse.add_argument("-p", "--pattern", type=str, default=".*\\.jpg$", help="Which files to process. Default is '.*\\.jpg$'. Remember to use double escapes.")
+    args_parse.add_argument("-N", "--name_pattern", type=str, default="{image_name}", help="How to name the output files. Default is '{image_name}', which will result in the output files being named after the image names.")
+    args_parse.add_argument("-I", "--ignore_nesting_levels", type=int, default=0, help="How many levels of nesting to ignore. Default is 0, and has no effect. If set to 1, then the input directories {'a/b/c', 'a/b/d', 'a/b/e'} will be processed as the single directory 'a/b'.")
 
     # dtype = torch.float16
     # device = torch.device("cuda:0")
 
     args = args_parse.parse_args()
     option_dict = vars(args)
-    fast, input_directory, output_directory, pattern = option_dict["fast"], option_dict["input_dir"], option_dict["results_dir"], option_dict["pattern"]
-    device = torch.device(option_dict["gpu"])
-    dtype = getattr(torch, option_dict["dtype"])
+    fast, input_directory, output_directory, pattern, levels_ignored = option_dict["fast"], option_dict["input_dir"], option_dict["results_dir"], option_dict["pattern"], option_dict["ignore_nesting_levels"]
     if not os.path.isdir(output_directory):
         raise ValueError(f"Output directory '{output_directory}' does not exist.")
+    if not os.path.isdir(input_directory):
+        raise ValueError(f"Input directory '{input_directory}' does not exist.")
+    if not os.path.isfile(option_dict["model_weights"]):
+        raise ValueError(f"Model weights '{option_dict['model_weights']}' does not exist.")
+    if levels_ignored < 0:
+        raise ValueError(f"Levels ignored must be non-negative, not {levels_ignored}.")
 
-    assert os.path.isfile(option_dict["model_weights"])
+    device = torch.device(option_dict["gpu"])
+    dtype = getattr(torch, option_dict["dtype"])
+    if not torch.cuda.is_available() and "cuda" in option_dict["gpu"]:
+        raise ValueError(f"Device '{option_dict['gpu']}' is not available.")
+    if dtype not in [torch.float16, torch.float32, torch.bfloat16]:
+        raise ValueError(f"Dtype '{option_dict['dtype']}' is not supported.")
+    
     pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype)
     pred.MINIMUM_TILE_OVERLAP = option_dict["tile_overlap"]
     pred.SCORE_THRESHOLD = option_dict["conf_threshold"]
@@ -116,12 +128,12 @@ if __name__ == '__main__':
             input_subdirectory = os.sep.join(re.sub(input_directory, "", remote_path).split("/")[:-1])
             # Remove possible trailing & leading "/"
             input_subdirectory = re.sub(r"^\/|\/$", "", input_subdirectory)
-            ####### THIS IS VERY SPECIFIC TO THE AMI DATASET STRUCTURE #######
             input_directory_structure = input_subdirectory.split(os.sep)
+            ####### THIS IS VERY SPECIFIC TO THE AMI DATASET STRUCTURE #######
             trap_id, date = input_directory_structure[-2:]
-            input_subdirectory = os.sep.join(input_directory_structure[:-1])
-            image_base_name = os.path.splitext(image_name)[0]
             ##################################################################
+            image_base_name = os.path.splitext(image_name)[0]
+            input_subdirectory = os.sep.join(input_directory_structure[:-levels_ignored]) if levels_ignored > 0 else input_subdirectory
             # Create a unique identifier for the image
             identifier = str(uuid.uuid4())
             # We create a subdirectory within the output directory for each subdirectory in the input directory, and then create subdirectories for every number of instances, within these subdirectories the results for each image is saved in separate folders with the name of the image. 
@@ -143,7 +155,7 @@ if __name__ == '__main__':
                     fast = fast,
                     mask_crops = False,
                     identifier = identifier,
-                    basename = f'TRAPNAME_{trap_id}_IMAGENAME_{image_base_name}'
+                    basename = f'TRAPNAME_{trap_id}_IMAGENAME_{image_base_name}' # name_pattern.format(image_name=image_base_name, *reversed(input_directory_structure))
                 )
             except Exception as e:
                 logging.error(f"Issue whilst processing {remote_path}")

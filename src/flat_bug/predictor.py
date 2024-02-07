@@ -141,27 +141,35 @@ class TensorPredictions:
         ## Duplicate removal ##
         # Calculate indices of non-duplicate boxes
         non_duplicates = detect_duplicate_boxes(self.boxes, self.confs, margin=self.BOX_IS_EQUAL_MARGIN, return_indices=True) 
-        # Remove the duplicate boxes
-        self.boxes = self.boxes[non_duplicates]
-        self.confs = self.confs[non_duplicates]
-        # Divide the indices into each prediction object
+        # Calculate indices of non-empty masks
+        non_empty_masks = torch.nonzero(torch.tensor([p.masks.data.sum() > 0 for p in predictions])).squeeze(1)
+        # Find the intersection indices of non-duplicate boxes and non-empty masks
+        _non_duplicates = torch.zeros(len(self.boxes), dtype=torch.bool, device=self.device)
+        _non_duplicates[non_duplicates] = True
+        _non_empty_masks = torch.zeros(len(self.boxes), dtype=torch.bool, device=self.device)
+        _non_empty_masks = True # [non_empty_masks] = True
+        valid_indices = torch.nonzero(_non_duplicates & _non_empty_masks).squeeze(1)
+        # Subset the boxes and confidences to the valid indices
+        self.boxes = self.boxes[valid_indices]
+        self.confs = self.confs[valid_indices]
+        # Divide the valid indices into each prediction object
         n_detections = [len(p) for p in predictions]
         max_indices = cumsum(n_detections)
-        non_duplicates_chunked = [non_duplicates[(non_duplicates < max_indices[i]) & (non_duplicates >= (max_indices[i-1] if i > 0 else 0))] - (max_indices[i] - n_detections[i]) for i in range(len(predictions))]
+        valid_chunked = [valid_indices[(valid_indices < max_indices[i]) & (valid_indices >= (max_indices[i-1] if i > 0 else 0))] - (max_indices[i] - n_detections[i]) for i in range(len(predictions))]
 
         if self.time:
             end_duplication_removal.record()
 
         # For the remaining attributes we remove the duplicates before combining them
-        self.masks = stack_masks([p.masks.data[nd] for p, nd in zip(predictions, non_duplicates_chunked)], antialias=self.antialias) # NxMHxMW - MH and MW are proportional to the original image size
+        self.masks = stack_masks([p.masks.data[nd] for p, nd in zip(predictions, valid_chunked)], antialias=self.antialias) # NxMHxMW - MH and MW are proportional to the original image size
         self.mask_height, self.mask_width = self.masks.shape[1:]
 
         if self.time:
             end_mask_combination.record()
 
         self.masks.orig_shape = self.image.shape[1:] # Set the target shape of the masks to the shape of the image passed to the TensorPredictions object
-        self.classes = torch.cat([p.classes[nd] for p, nd in zip(predictions, non_duplicates_chunked)]) # N
-        self.scales = [predictions[i].scale for i, p in enumerate(non_duplicates_chunked) for _ in range(len(p))] # N
+        self.classes = torch.cat([p.classes[nd] for p, nd in zip(predictions, valid_chunked)]) # N
+        self.scales = [predictions[i].scale for i, p in enumerate(valid_chunked) for _ in range(len(p))] # N
         # # Check that everything is the correct size
         assert len(self) == len(self.boxes), RuntimeError(f"len(self) {len(self)} != len(self.boxes) {len(self.boxes)}")
         assert len(self) == len(self.confs), RuntimeError(f"len(self) {len(self)} != len(self.confs) {len(self.confs)}")
@@ -909,7 +917,7 @@ class Predictor(object):
                     if self.TIME:
                         # Record end of forward
                         end_forward_event.record()
-                    tps = postprocess(tps, batch, max_det=300, min_confidence=self.SCORE_THRESHOLD, iou_threshold=self.IOU_THRESHOLD, edge_margin=self.EDGE_CASE_MARGIN, nms=3) # Important to prune within each tile first, this avoids having to carry around a lot of data
+                    tps = postprocess(tps, batch, max_det=300, min_confidence=self.SCORE_THRESHOLD, iou_threshold=self.IOU_THRESHOLD, edge_margin=self.EDGE_CASE_MARGIN, nms=1) # Important to prune within each tile first, this avoids having to carry around a lot of data
                     if self.TIME:
                         # Record end of postprocess
                         end_postprocess_event.record()

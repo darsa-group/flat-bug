@@ -164,6 +164,8 @@ def stack_masks(masks, orig_shape=None, antialias=False):
 
     i = 0
     for n, m in zip(masks_in_each, masks):
+        if n == 0:
+            continue
         if not (m.shape[1] == max_h and m.shape[2] == max_w):
             if not antialias:
                 m = resizer(m)

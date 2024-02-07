@@ -127,6 +127,9 @@ def create_contour_mask(mask: torch.Tensor, width: int=1) -> torch.Tensor:
 
 def find_contours(mask, largest_only=True):
     contour = cv2.findContours(mask.to(torch.uint8).cpu().numpy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+    if len(contour) == 0:
+        print("No contours found; mask shape:", mask.shape, "mask sum:", mask.sum())
+        return torch.tensor([0, 0], device=mask.device, dtype=torch.long)
     if largest_only:
         # Calculate areas of each contour
         areas = np.array([cv2.contourArea(c) for c in contour])
