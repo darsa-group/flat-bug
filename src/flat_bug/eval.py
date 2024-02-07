@@ -186,6 +186,7 @@ def contour_intersection(c1 : list, c2 : list) -> float:
     2. Calculate the area of the contours.
     3. If the area of either contour is 0, return 0.
     4. Calculate the bounding box of the contours.
+    5. If the bounding boxes don't intersect, return 0.
 
     Args:
         c1 (list): Contour 1. 
@@ -203,6 +204,8 @@ def contour_intersection(c1 : list, c2 : list) -> float:
         return 0
     
     b1, b2 = cv2.boundingRect(c1), cv2.boundingRect(c2)
+
+    if bbox_intersect
 
     
 
