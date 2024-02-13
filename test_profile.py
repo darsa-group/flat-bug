@@ -34,7 +34,7 @@ start = time.time()
 for i in range(len(paths)):
     img = read_image(paths[i]).to(device, dtype)
     test = _model.pyramid_predictions(img, paths[i], scale_increment=1/2, scale_before=1/2, single_scale=True)
-    test.save("dev/output", fast=True, crops = True)
+    test.save("dev/input_output", fast=True, crops = True)
     del test
     torch.cuda.empty_cache()
 

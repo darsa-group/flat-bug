@@ -4,13 +4,15 @@ import torchvision
 
 import numpy as np
 
+import cv2
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 from ultralytics.utils import ops
 from ultralytics.engine.results import Results, Masks
 
-from functools import lru_cache
+from .geometry_simples import find_contours, simplify_contour
 
 from typing import Union
 
@@ -136,7 +138,7 @@ def smooth_mask(mask, kernel_size=7):
     mask = (torch.nn.functional.conv2d(mask, expand_kernel,  padding=1) > 0.5).float()
     return  torch.nn.functional.conv2d(mask, kernel,         padding=kernel_size // 2).squeeze(1) > 0.5
 
-def stack_masks(masks, orig_shape=None, antialias=False):
+def stack_masks(masks, orig_shape=None):
     """
     Stacks a list of ultralytics.engine.results.Masks objects (or torch.Tensor) into a single ultralytics.engine.results.Masks object.
 
@@ -163,8 +165,18 @@ def stack_masks(masks, orig_shape=None, antialias=False):
     max_h = max([m.shape[1] for m in masks])
     max_w = max([m.shape[2] for m in masks])
     masks_in_each = [len(m) for m in masks]
-    interpolation_method = torchvision.transforms.InterpolationMode.NEAREST
-    resizer = torchvision.transforms.Resize((max_h, max_w), interpolation=interpolation_method, antialias=antialias)
+
+    def resizer(mat, target):
+        n = mat.shape[0]
+        new_mat = np.zeros((n, target[0], target[1]), dtype=np.uint8)
+
+        scale = torch.tensor([(td - 1) / (md - 1) for td, md in zip(target, mat.shape[1:])], device=_device, dtype=torch.float32)
+        for i in range(len(mat)):
+            c = find_contours(mat[i], largest_only=True, simplify=False).float()
+            c *= scale
+            c = [c.round().to(torch.int32).cpu().numpy()]
+            cv2.fillPoly(new_mat[i], c, 1, lineType=cv2.LINE_8)
+        return new_mat
 
     new_masks = torch.zeros((sum(masks_in_each), max_h, max_w), dtype=torch.bool, device=_device)
 
@@ -173,12 +185,23 @@ def stack_masks(masks, orig_shape=None, antialias=False):
         if n == 0:
             continue
         if not (m.shape[1] == max_h and m.shape[2] == max_w):
-            m = resizer(m)
-        if antialias:
-            smooth_radius = torch.ceil(torch.tensor([max_h, max_w]) / torch.tensor(m.shape[1:])).max().long().item() * 4
-            if smooth_radius % 2 == 0:
-                smooth_radius += 1
-            m = smooth_mask(m, smooth_radius)
+            m = resizer(m, (max_h, max_w))
+            m = torch.tensor(m, dtype=torch.bool, device=_device)
+
+        # Due to the way OpenCV handles contours, by tracing the edges of pixels, instead of the center of pixels, the masks are 1 pixel too small in the left and top direction, or the right and bottom direction, depending on if the mask is even or odd in size. This is fixed by dilating the mask by 1 pixel in all directions.
+        dilate_kernel = torch.zeros((1, 1, 3, 3), device=_device)
+        dilate_kernel[0, 0, 1, 1] = 1
+        if m.shape[1] % 2 == 0:
+            dilate_kernel[0, 0, 0, 1] = 1
+        else:
+            dilate_kernel[0, 0, 1, 0] = 1
+        if m.shape[2] % 2 == 0:
+            dilate_kernel[0, 0, 1, 2] = 1
+        else:
+            dilate_kernel[0, 0, 2, 1] = 1
+        m = torch.nn.functional.conv2d(m.float().unsqueeze(1), dilate_kernel, padding=1).squeeze(1) > 0.5
+
+
         new_masks[i:(i+n)] = m
         i += n
 
@@ -436,7 +459,7 @@ def intersect_masks_2sets(m1s, m2s, dtype=torch.int32):
 
     intersections = torch.zeros((m1s.shape[0], m2s.shape[0]), dtype=dtype, device=m1s.device)
     for i in range(m1s.shape[0]):
-        intersections[i] = (m1s[i].unsqueeze(0) & m2s).sum(dim=(1, 2)).to(dtype)
+        intersections[i] = (m1s[i].unsqueeze(0) & m2s).sum(dim=(1, 2), dtype=dtype)
     
     return intersections
 

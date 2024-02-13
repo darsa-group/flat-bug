@@ -6,7 +6,7 @@ import logging
 import cv2
 import json
 from flat_bug.yolo_helpers import *
-from flat_bug.geometry_simples import find_contours, contours_to_masks, interpolate_contour, create_contour_mask
+from flat_bug.geometry_simples import find_contours, contours_to_masks, contour_sum, interpolate_contour, create_contour_mask
 from ultralytics import YOLO
 
 from torchvision.io import read_image
@@ -64,12 +64,11 @@ class TensorPredictions:
     mask_height = None
     device = None
     dtype = None
-    CONSTANTS = ["image", "image_path", "device", "dtype", "antialias", "time", "mask_height", "mask_width", "CONSTANTS", "BOX_IS_EQUAL_MARGIN"] # Attributes that should not be changed after initialization - should 'contours' be here?
+    CONSTANTS = ["image", "image_path", "device", "dtype", "time", "mask_height", "mask_width", "CONSTANTS", "BOX_IS_EQUAL_MARGIN"] # Attributes that should not be changed after initialization - should 'contours' be here?
 
-    def __init__(self, predictions : Union[list[Prepared_Results], None]=None, image : Union[torch.Tensor, None]=None, image_path = Union[str, None], antialias=False, time=False, **kwargs):
+    def __init__(self, predictions : Union[list[Prepared_Results], None]=None, image : Union[torch.Tensor, None]=None, image_path = Union[str, None], time=False, **kwargs):
         # Set option flags
         self.time = time 
-        self.antialias = antialias 
 
         # Timing could probably be hidden in a decorator...
         if self.time and len(predictions) > 0:
@@ -123,7 +122,6 @@ class TensorPredictions:
         Args:
             predictions (list[Prepared_Results]): A list of Prepared_Results objects.
             offset (torch.Tensor): A vector of length 2 containing the x and y offset of the image.
-            antialias (bool): Whether to antialias the masks when combining them. Defaults to False. Antialiasing is performed using gaussian smoothing and thresholding.
 
         Returns:
             None: The function is performed in-place, so it returns None.
@@ -154,7 +152,7 @@ class TensorPredictions:
             end_duplication_removal.record()
 
         # For the remaining attributes we remove the duplicates before combining them
-        self.masks = stack_masks([p.masks.data[nd] for p, nd in zip(predictions, valid_chunked)], antialias=self.antialias) # NxMHxMW - MH and MW are proportional to the original image size
+        self.masks = stack_masks([p.masks.data[nd] for p, nd in zip(predictions, valid_chunked)]) # NxMHxMW - MH and MW are proportional to the original image size
         self.mask_height, self.mask_width = self.masks.shape[1:]
 
         if self.time:
@@ -261,7 +259,7 @@ class TensorPredictions:
             return self
 
         # Perform non-maximum suppression on the masks, using the scales as weights, that is the highest resolution masks are given the highest priority
-        nms_ind = nms_masks(self.masks.data, torch.tensor(self.scales, dtype=self.dtype, device=self.device), iou_threshold=iou_threshold, return_indices=True, dtype=self.dtype, **kwargs)
+        nms_ind = nms_masks(self.masks.data, torch.tensor(self.scales, dtype=self.dtype, device=self.device) * self.confs, iou_threshold=iou_threshold, return_indices=True, dtype=self.dtype, **kwargs)
         # Remove the elements that were not selected
         self = self[nms_ind]
         if self.time:
@@ -275,7 +273,7 @@ class TensorPredictions:
         """
         This function wraps the openCV.findContours function, and uses openCV.contourArea to select the largest contour for each mask.
         """
-        return [find_contours(create_contour_mask(mask), largest_only=True, simplify=True) for mask in self.masks.data]
+        return [find_contours(create_contour_mask(mask), largest_only=True, simplify=False) for mask in self.masks.data]
     
     @contours.setter
     def contours(self, value):
@@ -373,41 +371,42 @@ class TensorPredictions:
         if scale != 1:
             image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
 
-        # Draw masks
-        if masks:
-            contours = [self.contour_to_image_coordinates(c, scale=scale, interpolate=False) for c in self.contours]
-            # Create an alpha mask for the polygons, by averaging the masks and resizing it to the image size
-            ih, iw = image.shape[:2]
-            ALPHA = 0.3
-            poly_alpha = (contours_to_masks(contours, ih, iw).sum(dim=0, dtype=torch.float32).cpu().numpy() * ALPHA).clip(0, 1).reshape(ih, iw, 1)
-            # Create a red fill for the polygons
-            poly_fill = np.zeros_like(image)
-            poly_fill[:, :, 2] = 255
-            # Add the polygons to the image by blending the fill and the image using the alpha mask
-            image = (image.astype(np.float32) * (1 - poly_alpha) + poly_fill * poly_alpha).round().astype(np.uint8)
-            # Draw the contours
-            cv2.polylines(image, pts=[c.cpu().numpy() for c in contours], isClosed=True, color=(0, 0, 255), thickness=linewidth)
+        if len(self) > 0:
+            # Draw masks
+            if masks:
+                contours = [self.contour_to_image_coordinates(c, scale=scale, interpolate=False) for c in self.contours]
+                # Create an alpha mask for the polygons, by averaging the masks and resizing it to the image size
+                ih, iw = image.shape[:2]
+                ALPHA = 0.3
+                poly_alpha = (contour_sum(contours, ih, iw) * ALPHA).clamp(0, 1).unsqueeze(-1).cpu().numpy()
+                # Create a red fill for the polygons
+                poly_fill = np.zeros_like(image)
+                poly_fill[:, :, 2] = 255
+                # Add the polygons to the image by blending the fill and the image using the alpha mask
+                image = (image.astype(np.float32) * (1 - poly_alpha) + poly_fill * poly_alpha).round().astype(np.uint8)
+                # Draw the contours
+                cv2.polylines(image, pts=[c.cpu().numpy() for c in contours], isClosed=True, color=(0, 0, 255), thickness=linewidth)
 
-        # Draw boxes and confidences
-        if boxes:
-            for box, conf in zip(self.boxes, self.confs):
-                box = (box * scale)
-                box[:2] = box[:2].floor()
-                box[2:] = box[2:].ceil()
-                box = box.long()
-                start_point = (int(box[0]), int(box[1]))
-                end_point = (int(box[2]), int(box[3]))
-                cv2.rectangle(image, start_point, end_point, (0, 0, 0), linewidth)  # Red box
-                if conf:
-                    cv2.putText(
-                        img =       image, 
-                        text =      f"{conf*100:.3g}%", 
-                        org =       (start_point[0], start_point[1] - round(10 * scale)),
-                        fontFace =  cv2.FONT_HERSHEY_SIMPLEX, 
-                        fontScale = 1 * scale, 
-                        color =     (0, 0, 0), 
-                        thickness = max(1, round(2 * scale))
-                    )
+            # Draw boxes and confidences
+            if boxes:
+                for box, conf in zip(self.boxes, self.confs):
+                    box = (box * scale)
+                    box[:2] = box[:2].floor()
+                    box[2:] = box[2:].ceil()
+                    box = box.long()
+                    start_point = (int(box[0]), int(box[1]))
+                    end_point = (int(box[2]), int(box[3]))
+                    cv2.rectangle(image, start_point, end_point, (0, 0, 0), linewidth)  # Red box
+                    if conf:
+                        cv2.putText(
+                            img =       image, 
+                            text =      f"{conf*100:.3g}%", 
+                            org =       (start_point[0], start_point[1] - round(10 * scale)),
+                            fontFace =  cv2.FONT_HERSHEY_SIMPLEX, 
+                            fontScale = 1 * scale, 
+                            color =     (0, 0, 0), 
+                            thickness = max(1, round(2 * scale))
+                        )
 
         # Save or show the image
         if outpath:
@@ -797,7 +796,7 @@ class Predictor(object):
     MINIMUM_TILE_OVERLAP = 384
     EDGE_CASE_MARGIN = 8
     SCORE_THRESHOLD = 0.2
-    IOU_THRESHOLD = 0.5
+    IOU_THRESHOLD = 0.25
     MAX_MASK_SIZE = 2048
     TIME = False
     # DEBUG = False
@@ -826,9 +825,9 @@ class Predictor(object):
             start_detect = torch.cuda.Event(enable_timing=True)
             end_detect = torch.cuda.Event(enable_timing=True)
             start_detect.record()
-        orig_tensor = tensor.clone()
         orig_h, orig_w = tensor.shape[1:]
         w, h = orig_w, orig_h
+        padded = False
         h_pad, w_pad = 0, 0
         pad_lrtb = 0, 0, 0, 0
 
@@ -843,6 +842,7 @@ class Predictor(object):
             h, w = tensor.shape[1:]
         # If any of the sides are smaller than the TILE_SIZE, pad to TILE_SIZE - this **only** works if h and w are even!
         if w < TILE_SIZE or h < TILE_SIZE:
+            padded = True
             w_pad = max(0, TILE_SIZE - w) // 2
             h_pad = max(0, TILE_SIZE - h) // 2
             pad_lrtb = w_pad, w_pad + (w % 2 == 1), h_pad, h_pad + (h % 2 == 1)
@@ -972,7 +972,7 @@ class Predictor(object):
         # The padding must also be scaled and subtracted from the new mask size
         new_mask_size = [int(mmo.item() - p * MASK_TO_IMG_RATIO[0, i]) for i, (mmo, p) in enumerate(zip(max_mask_offsets, [pad_lrtb[3], pad_lrtb[1]]))]
         # Finally, we can merge the results - this function basically just does what I described above
-        orig_img = orig_tensor # torch.zeros((orig_h, orig_w, 1))
+        orig_img = tensor[:, pad_lrtb[2]:-pad_lrtb[3], pad_lrtb[0]:-pad_lrtb[1]] if padded else tensor
         ps = merge_tile_results(ps, orig_img.permute(1,2,0), box_offsetters=box_offsetters, mask_offsetters=mask_offsetters, new_shape=new_mask_size, clamp_boxes=(h - sum(pad_lrtb[2:]), w - sum(pad_lrtb[:2])), max_mask_size=self.MAX_MASK_SIZE)
 
         # Apply the size filters - This could be done before merging the tiles, but would require some scaling logic
@@ -1037,7 +1037,7 @@ class Predictor(object):
             transform_list.append(resize)
         
         # A border is always added now, to avoid edge-cases on the actual edge of the image. I.e. only detections on internal edges of tiles should be removed, not detections on the edge of the image.
-        edge_case_margin_padding_multiplier = 15
+        edge_case_margin_padding_multiplier = 4
         padding_for_edge_cases = transforms.Pad(padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier, fill=0, padding_mode='constant')
         padding_offset = torch.tensor((self.EDGE_CASE_MARGIN, self.EDGE_CASE_MARGIN), dtype=self._dtype, device=self._device) * edge_case_margin_padding_multiplier
         transform_list.append(padding_for_edge_cases)
@@ -1084,8 +1084,7 @@ class Predictor(object):
             image_path  = path,
             dtype       = self._dtype,
             device      = self._device,
-            time        = self.TIME,
-            antialias   = True # Smoothes the masks when/if they are upscaled, such that masks from larger scales are less visibly pixelated - introduces a small overhead, but is much more visually pleasing
+            time        = self.TIME
         ).non_max_suppression(
             iou_threshold = self.IOU_THRESHOLD,
             metric        = 'IoU' # It is necessary to use IoS and not IoU, especially when there are many scales, since parts of a bigger object may be detected at a smaller scale, and then the IoU will be very low, even though it is the same object

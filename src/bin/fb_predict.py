@@ -7,6 +7,7 @@ import glob
 from flat_bug.predictor import Predictor
 import torch
 import uuid
+from tqdm import tqdm
 
 if __name__ == '__main__':
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
@@ -26,6 +27,9 @@ if __name__ == '__main__':
                             )
     args_parse.add_argument("-g", "--gpu", type=str, default="cuda:0", help="Which device to use for inference. Default is 'cuda:0', i.e. the first GPU.")
     args_parse.add_argument("-d", "--dtype", type=str, default="float16", help="Which dtype to use for inference. Default is 'float16'.")
+    args_parse.add_argument("-f", "--fast", action="store_true", help="Use fast mode.")
+    args_parse.add_argument("--no-crops", action="store_true", help="Do not save the crops.")
+    
 
     args = args_parse.parse_args()
     option_dict = vars(args)
@@ -41,6 +45,10 @@ if __name__ == '__main__':
         raise ValueError(f"Dtype '{option_dict['dtype']}' is not supported.")
 
     pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype)
+    pred.TIME = True
+    pred.MAX_MASK_SIZE = 768
+    pred.SCORE_THRESHOLD = 0.5
+    pred.MINIMUM_TILE_OVERLAP = 256
 
     # fixme, build from pred._model!
     categories = {"id": 1, "name": "insect"}
@@ -53,18 +61,23 @@ if __name__ == '__main__':
         "categories": [categories]  # Your category
     }
 
+    files = glob.glob(os.path.join(option_dict["input_dir"], "*.jpg"))
     j = 1
-    for i, f in enumerate(glob.glob(os.path.join(option_dict["input_dir"], "*.jpg"))):
-
+    pbar = tqdm(enumerate(files), total=len(files), desc="Processing images", dynamic_ncols=True, unit="image")
+    for i, f in pbar:
+        pbar.set_postfix_str(f"Processing {os.path.basename(f)}")
         logging.info(f"Processing {os.path.basename(f)}")
         try:
             # Run the model
-            prediction = pred.pyramid_predictions(f, scale_increment=1/2, scale_before=option_dict["scale_before"])
+            prediction = pred.pyramid_predictions(f, scale_increment=1/2, scale_before=option_dict["scale_before"], single_scale=option_dict["fast"])
             # Save the results
             result_directory = prediction.save(
                 output_directory = option_dict["results_dir"],
-                mask_crops = True,
-                identifier = str(uuid.uuid4()),
+                overview = option_dict["results_dir"] + os.sep + "overview",
+                fast = True,
+                crops = not option_dict["no_crops"],
+                mask_crops = not option_dict["fast"],
+                identifier = "XXXX", #str(uuid.uuid4()),
             )
         except Exception as e:
             logging.error(f"Issue whilst processing {f}")
