@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import glob
 import os
 from ultralytics.data.converter import convert_coco
@@ -97,7 +99,7 @@ if __name__ == '__main__':
         tmp_dir = tempfile.mkdtemp()
         try:
             os.chdir(tmp_dir)
-            o = convert_coco(labels_dir=source_dir, use_segments=True)
+            o = convert_coco(labels_dir=source_dir, save_dir=OUT_COCO_CONVERTER_BASE, use_segments=True)
 
             os.makedirs(os.path.join(OUT_COCO_CONVERTER, "train"), exist_ok=True)
             os.makedirs(os.path.join(OUT_COCO_CONVERTER, "val"), exist_ok=True)
@@ -107,7 +109,6 @@ if __name__ == '__main__':
             images = {os.path.basename(f) for f in glob.glob(os.path.join(source_dir, "*.jpg"))}
 
             assert len(images) > 0
-
             for f in glob.glob(os.path.join(OUT_COCO_CONVERTER, "*.txt")):
 
                 basename_sans_ext = os.path.splitext(os.path.basename(f))[0]
@@ -140,4 +141,5 @@ if __name__ == '__main__':
         finally:
             if os.path.isdir(tmp_dir):
                 shutil.rmtree(tmp_dir)
+
 

@@ -42,11 +42,12 @@ class MyYOLODataset(YOLODataset):
 
             h0, w0 = im.shape[:2]  # orig hw
 
-            # fixme
-            if os.path.basename(self.im_files[i]).startswith("2023-"):
-                im = cv2.resize(im, (round(w0 / 4.0), round(h0 / 4.0)), interpolation=cv2.INTER_AREA)
-                # print("not cached", f, (h0, w0), im.shape[:2])
-                h0, w0 = im.shape[:2]
+            # # fixme
+            # if os.path.basename(self.im_files[i]).startswith("2023-"):
+            #     im = cv2.resize(im, (round(w0 / 4.0), round(h0 / 4.0)), interpolation=cv2.INTER_AREA)
+            #     # print("not cached", f, (h0, w0), im.shape[:2])
+            #     h0, w0 = im.shape[:2]
+
             return im, (h0, w0), im.shape[:2]  # im, hw_original, hw_resized
         # print("cached", f, self.im_hw0[i], self.im_hw[i])
         return self.ims[i], self.im_hw0[i], self.im_hw[i]  # im, hw_original, hw_resized
@@ -58,10 +59,7 @@ class MyYOLODataset(YOLODataset):
             RandomColorInv(),
             RandomFlip(direction="vertical", p=hyp.flipud),
             RandomFlip(direction="horizontal", p=hyp.fliplr),
-            # T.RandomRotation(180),
-            # MyRandomPerspective(degrees=180, scale=0, translate=0),
-            MyRandomPerspective(degrees=180, scale=(.1, 1), translate=0),
-            # MyRandomPerspective(degrees=180, scale=(0.25, 1), translate=0),
+            MyRandomPerspective(degrees=180, scale=(0.1, 1), translate=0),
             RandomCrop(self.imgsz),
             # MyAlbumentations(self.imgsz),
             # LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False),

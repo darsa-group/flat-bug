@@ -16,7 +16,7 @@ setup(
     include_package_data=True,
     zip_safe=False,
     install_requires=[
-        'ultralytics',
+        'ultralytics>=8.0.225',
         'numpy',
         'pyexiftool',
         'opencv_python',
