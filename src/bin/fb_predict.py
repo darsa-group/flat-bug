@@ -3,7 +3,8 @@ import logging
 import os
 import glob
 from flat_bug.predictor import Predictor
-import json
+import torch
+import uuid
 
 if __name__ == '__main__':
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
@@ -21,13 +22,23 @@ if __name__ == '__main__':
                             help="Downscale the image before detection, but crops from the original image."
                                  "Note that the COCO dataset dimentions match the scaled image" # fixme, is that true?!
                             )
+    args_parse.add_argument("-g", "--gpu", type=str, default="cuda:0", help="Which device to use for inference. Default is 'cuda:0', i.e. the first GPU.")
+    args_parse.add_argument("-d", "--dtype", type=str, default="float16", help="Which dtype to use for inference. Default is 'float16'.")
 
     args = args_parse.parse_args()
     option_dict = vars(args)
 
     assert os.path.isdir(option_dict["input_dir"])
     assert os.path.isfile(option_dict["model_weights"])
-    pred = Predictor(option_dict["model_weights"])
+
+    device = torch.device(option_dict["gpu"])
+    dtype = getattr(torch, option_dict["dtype"])
+    if not torch.cuda.is_available() and "cuda" in option_dict["gpu"]:
+        raise ValueError(f"Device '{option_dict['gpu']}' is not available.")
+    if dtype not in [torch.float16, torch.float32, torch.bfloat16]:
+        raise ValueError(f"Dtype '{option_dict['dtype']}' is not supported.")
+
+    pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype)
 
     # fixme, build from pred._model!
     categories = {"id": 1, "name": "insect"}
@@ -45,22 +56,16 @@ if __name__ == '__main__':
 
         logging.info(f"Processing {os.path.basename(f)}")
         try:
-            prediction = pred.pyramid_predictions(f, scale_before=option_dict["scale_before"])
-
-            im_info, annots = prediction.coco_entry()
-            im_info["id"] = i + 1
-            for a in annots:
-                a["id"] = j
-                a["image_id"] = i + 1
-                j += 1
-
-            prediction.make_crops(out_dir=option_dict["results_dir"])
+            # Run the model
+            prediction = pred.pyramid_predictions(f, scale_increment=1/2, scale_before=option_dict["scale_before"])
+            # Save the results
+            result_directory = prediction.save(
+                output_directory = option_dict["results_dir"],
+                mask_crops = True,
+                identifier = str(uuid.uuid4()),
+            )
         except Exception as e:
             logging.error(f"Issue whilst processing {f}")
             #fixme, what is going on with /home/quentin/todo/toup/20221008_16-01-04-226084_raw_jpg.rf.0b8d397da3c47408694eeaab2cde06e5.jpg?
             logging.error(e)
             raise e
-        coco_data["images"].append(im_info)
-        coco_data["annotations"].extend(annots)
-    with open(os.path.join(option_dict["results_dir"], "coco_dataset.json"), "w") as json_file:
-        json.dump(coco_data, json_file)

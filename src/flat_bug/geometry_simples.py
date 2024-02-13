@@ -88,8 +88,13 @@ def draw_boxes(image : torch.Tensor, points : torch.Tensor, box_size : int, colo
     half_box = math.ceil(box_size / 2)
 
     # Create a grid of offsets
-    offsets = torch.stack(torch.meshgrid(torch.arange(-half_box, half_box + 1, dtype=torch.long, device=device), 
-                                         torch.arange(-half_box, half_box + 1, dtype=torch.long, device=device)), -1).reshape(-1, 2)
+    offsets = torch.stack(
+        torch.meshgrid(
+            torch.arange(-half_box, half_box + 1, dtype=torch.long, device=device), 
+            torch.arange(-half_box, half_box + 1, dtype=torch.long, device=device),
+            indexing="ij"
+        ),
+        dim=-1).reshape(-1, 2)
 
     # Broadcast and add the offsets to the points to get all indices
     all_indices = (points[:, None, :] + offsets[None, :, :]).reshape(-1, 2)
@@ -125,7 +130,7 @@ def create_contour_mask(mask: torch.Tensor, width: int=1) -> torch.Tensor:
     else:
         raise ValueError(f"Invalid width: {width}")
 
-def find_contours(mask, largest_only=True):
+def find_contours(mask, largest_only=True, simplify=True):
     contour = cv2.findContours(mask.to(torch.uint8).cpu().numpy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
     if len(contour) == 0:
         print("No contours found; mask shape:", mask.shape, "mask sum:", mask.sum())
@@ -134,11 +139,21 @@ def find_contours(mask, largest_only=True):
         # Calculate areas of each contour
         areas = np.array([cv2.contourArea(c) for c in contour])
         # Select the largest contour and convert it to a tensor
-        contour = torch.tensor(contour[np.argmax(areas)], device=mask.device).long().squeeze(1)
+        contour = contour[np.argmax(areas)]
+    if simplify:
+        contour = simplify_contour(contour, tolerance=0.5)
+    # Convert to tensor
+    if isinstance(contour, list):
+        return [torch.tensor(c, dtype=torch.long, device=mask.device).squeeze(1) for c in contour]
     else:
-        # Convert the contours to tensors
-        contour = [torch.tensor(c, device=mask.device).long().squeeze(1) for c in contour]
+        contour = torch.tensor(contour, dtype=torch.long, device=mask.device).squeeze(1)
     return contour
+
+def simplify_contour(contour, tolerance=1.0):
+    if isinstance(contour, list):
+        return [simplify_contour(c, tolerance) for c in contour]
+    else:
+        return cv2.approxPolyDP(contour, tolerance, True)
 
 def contours_to_masks(contours : list[torch.Tensor], height : int, width : int) -> torch.Tensor:
     """

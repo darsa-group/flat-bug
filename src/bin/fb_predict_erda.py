@@ -20,7 +20,7 @@ import logging
 import uuid
 
 import os
-import shutil
+import re
 
 from tqdm import tqdm
 
@@ -59,16 +59,12 @@ if __name__ == '__main__':
     args_parse.add_argument("-N", "--name_pattern", type=str, default="{image_name}", help="How to name the output files. Default is '{image_name}', which will result in the output files being named after the image names.")
     args_parse.add_argument("-I", "--ignore_nesting_levels", type=int, default=0, help="How many levels of nesting to ignore. Default is 0, and has no effect. If set to 1, then the input directories {'a/b/c', 'a/b/d', 'a/b/e'} will be processed as the single directory 'a/b'.")
 
-    # dtype = torch.float16
-    # device = torch.device("cuda:0")
 
     args = args_parse.parse_args()
     option_dict = vars(args)
     fast, input_directory, output_directory, pattern, levels_ignored = option_dict["fast"], option_dict["input_dir"], option_dict["results_dir"], option_dict["pattern"], option_dict["ignore_nesting_levels"]
     if not os.path.isdir(output_directory):
         raise ValueError(f"Output directory '{output_directory}' does not exist.")
-    if not os.path.isdir(input_directory):
-        raise ValueError(f"Input directory '{input_directory}' does not exist.")
     if not os.path.isfile(option_dict["model_weights"]):
         raise ValueError(f"Model weights '{option_dict['model_weights']}' does not exist.")
     if levels_ignored < 0:
@@ -130,7 +126,10 @@ if __name__ == '__main__':
             input_subdirectory = re.sub(r"^\/|\/$", "", input_subdirectory)
             input_directory_structure = input_subdirectory.split(os.sep)
             ####### THIS IS VERY SPECIFIC TO THE AMI DATASET STRUCTURE #######
-            trap_id, date = input_directory_structure[-2:]
+            # Remove possible date directory
+            if re.match(r"\d{8}|^\d{4}_\d{2}_\d{2}", input_directory_structure[-1]):
+                input_directory_structure = input_directory_structure[:-1]
+            trap_id = input_directory_structure[-1]
             ##################################################################
             image_base_name = os.path.splitext(image_name)[0]
             input_subdirectory = os.sep.join(input_directory_structure[:-levels_ignored]) if levels_ignored > 0 else input_subdirectory
@@ -145,7 +144,7 @@ if __name__ == '__main__':
             logging.info(f"Processing {remote_path} ({i+1}/{len(path_iterator)}) with identifier {identifier} and saving to {output_subdirectory}")
             try:
                 # Run the model
-                prediction = pred.pyramid_predictions(image, remote_path, scale_increment=3/4, scale_before=option_dict["scale_before"], add_border=False)
+                prediction = pred.pyramid_predictions(image, remote_path, scale_increment=1/2, scale_before=option_dict["scale_before"], single_scale=fast)
                 # Save the results
                 result_directory = prediction.save(
                     output_directory = output_subdirectory,
