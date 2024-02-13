@@ -184,23 +184,22 @@ def stack_masks(masks, orig_shape=None):
     for n, m in zip(masks_in_each, masks):
         if n == 0:
             continue
-        if not (m.shape[1] == max_h and m.shape[2] == max_w):
-            m = resizer(m, (max_h, max_w))
-            m = torch.tensor(m, dtype=torch.bool, device=_device)
+        m = resizer(m, (max_h, max_w))
+        m = torch.tensor(m, dtype=torch.bool, device=_device)
 
-        # Due to the way OpenCV handles contours, by tracing the edges of pixels, instead of the center of pixels, the masks are 1 pixel too small in the left and top direction, or the right and bottom direction, depending on if the mask is even or odd in size. This is fixed by dilating the mask by 1 pixel in all directions.
+        # Due to the way OpenCV handles contours, by tracing the edges of pixels, instead of the center of pixels, the masks are 1 pixel too small in two of either left, right, top or bottom, depending on if the target size is even or odd.
+        # This is fixed by dilating the mask by 1 pixel in the direction of the missing pixels.
         dilate_kernel = torch.zeros((1, 1, 3, 3), device=_device)
         dilate_kernel[0, 0, 1, 1] = 1
-        if m.shape[1] % 2 == 0:
+        if max_h % 2 == 0:
             dilate_kernel[0, 0, 0, 1] = 1
         else:
             dilate_kernel[0, 0, 1, 0] = 1
-        if m.shape[2] % 2 == 0:
-            dilate_kernel[0, 0, 1, 2] = 1
-        else:
+        if max_w % 2 == 0:
             dilate_kernel[0, 0, 2, 1] = 1
+        else:
+            dilate_kernel[0, 0, 1, 2] = 1
         m = torch.nn.functional.conv2d(m.float().unsqueeze(1), dilate_kernel, padding=1).squeeze(1) > 0.5
-
 
         new_masks[i:(i+n)] = m
         i += n

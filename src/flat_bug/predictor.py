@@ -364,7 +364,7 @@ class TensorPredictions:
                 setattr(new_tp, k, new_value)
         return new_tp
     
-    def plot_opencv(self, linewidth=2, masks=True, boxes=True, conf=True, outpath=None, scale=1):
+    def plot(self, linewidth=2, masks=True, boxes=True, conf=True, outpath=None, scale=1):
         # Convert torch tensor to numpy array
         image = self.image.round().to(torch.uint8).permute(1, 2, 0).cpu().numpy()
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
@@ -378,7 +378,15 @@ class TensorPredictions:
                 # Create an alpha mask for the polygons, by averaging the masks and resizing it to the image size
                 ih, iw = image.shape[:2]
                 ALPHA = 0.3
-                poly_alpha = (contour_sum(contours, ih, iw) * ALPHA).clamp(0, 1).unsqueeze(-1).cpu().numpy()
+                _alpha = int(255 * ALPHA)
+
+                poly_alpha = np.zeros((ih, iw, 1), dtype=np.int32)
+                for c in contours:
+                    this_poly_alpha = np.zeros((ih, iw, 1), dtype=np.int32)
+                    cv2.fillPoly(this_poly_alpha, [c.cpu().numpy()], (_alpha))
+                    poly_alpha += this_poly_alpha
+                poly_alpha = poly_alpha.clip(0, 255) / 255
+                
                 # Create a red fill for the polygons
                 poly_fill = np.zeros_like(image)
                 poly_fill[:, :, 2] = 255
@@ -417,90 +425,6 @@ class TensorPredictions:
             plt.imshow(image)
             plt.gca().axis('off')
             plt.show()
-
-    def plot_torch(self, masks=True, boxes=True, outpath=None, linewidth=3, scale=1):
-        """
-        Draws bounding boxes and masks on the image tensor and saves it to outpath.
-
-        Only uses PyTorch operations, so it is a bit slower than plot_opencv, but it is also more flexible.
-
-        Args:
-            image (torch.Tensor): The image tensor to draw on.
-            masks (bool): Whether to draw the masks. Defaults to True.
-            boxes (bool): Whether to draw the boxes. Defaults to True.
-            outpath (str, optional): If not None, saves the image to the given path. Defaults to None.
-            lienwidth (int, optional): The width of the lines used to draw the boxes and masks. Defaults to 3.
-            scale (float, optional): The scale of the image. Defaults to 1.
-        
-        Returns:
-            None
-        """
-        if self.time:
-            start = torch.cuda.Event(enable_timing=True)
-            end_image_scaling = torch.cuda.Event(enable_timing=True)
-            end_box_drawing = torch.cuda.Event(enable_timing=True)
-            end_mask_drawing = torch.cuda.Event(enable_timing=True)
-            end = torch.cuda.Event(enable_timing=True)
-            start.record()
-
-        # Copy the image tensor
-        image = self.image.clone()
-        if scale != 1:
-            image = torchvision.transforms.functional.resize(image, (int(image.shape[1] * scale), int(image.shape[2] * scale)), interpolation=torchvision.transforms.InterpolationMode.BILINEAR, antialias=False)
-        # Convert to uint8
-        image = image.round().to(torch.uint8)
-
-        if self.time:
-            end_image_scaling.record()
-        
-        h, w = torch.tensor(image.shape[1:], dtype=torch.long)
-        box_linewidth = linewidth
-        box_expansion = math.ceil((box_linewidth - 1) / 2)
-
-        # For each crop in the image, draw the box by setting the pixels at the border to (0, 0, 0) and draw the mask by increasing the red channel by 85
-        for box, mask in zip(self.boxes, self.masks):
-            if boxes:
-                # Draw the box
-                x1, y1, x2, y2 = (box * scale).round().long().cpu().tolist()
-                x1e, y1e, x2e, y2e = (max(0, x1 - box_expansion), min(w, x1 + box_expansion + 1)), (max(0, y1 - box_expansion), min(h, y1 + box_expansion + 1)), (max(0, x2 - box_expansion), min(w, x2 + box_expansion + 1)), (max(0, y2 - box_expansion), min(h, y2 + box_expansion + 1))
-                image[:, y1e[0]:y2e[1], x2e[0]:x2e[1]] = 0
-                image[:, y1e[0]:y1e[1], x1e[0]:x2e[1]] = 0
-                image[:, y2e[0]:y2e[1], x1e[0]:x2e[1]] = 0
-                image[:, y1e[0]:y2e[1], x1e[0]:x1e[1]] = 0
-            if self.time:
-                end_box_drawing.record()
-            if masks:
-                # torchvision.transforms.functional.resize(mask.data.unsqueeze(0), (h.item(), w.item()), interpolation=torchvision.transforms.InterpolationMode.NEAREST, antialias=False).squeeze(0).squeeze(0)
-                mask = self.scale_mask(mask, (h, w)).squeeze(0)
-                # Draw the mask
-                # Subtracting and adding from uint8 is a bit more complicated, since we need to ensure that the result is in the range [0, 255] so the numbers don't over/underflow
-                image[0, mask] += (255 - image[0, mask]).clamp(max=50)
-                image[1:, mask] -= image[1:, mask].clamp(max=30)
-                # Draw the contour
-                contour_mask = create_contour_mask(mask, width=linewidth)
-                image[:, contour_mask] = 0
-                image[0, contour_mask] = 255
-            if self.time:
-                end_mask_drawing.record()
-        if outpath is not None:
-            # Save the image (this is copied from the source-code for torchvision.utils.save_image, but bypassing the float-to-uint8 conversion, since we already have uint8)
-            ## Old code
-            # Image.fromarray(image.permute(1, 2, 0).cpu().numpy()).save(outpath)
-            # We need to reverse the channels to get RGB
-            cv2.imwrite(outpath, image.flip(0).permute(1, 2, 0).cpu().numpy())
-        else:
-            fig = plt.figure(figsize=(20, 20))
-            plt.imshow(image.permute(1, 2, 0).cpu().numpy())
-            plt.gca().axis('off')
-            plt.show()
-        if self.time:
-            end.record()
-            torch.cuda.synchronize()
-            total = start.elapsed_time(end) / 1000
-            image_scaling = start.elapsed_time(end_image_scaling) / 1000
-            box_drawing = end_image_scaling.elapsed_time(end_box_drawing) / 1000
-            mask_drawing = end_box_drawing.elapsed_time(end_mask_drawing) / 1000
-            print(f'Drawing predictions took {total:.3f} s | Image scaling: {image_scaling:.3f} s |Box drawing: {box_drawing:.3f} s | Mask drawing: {mask_drawing:.3f} s')
 
     def save_crops(self, outdir=None, basename=None, mask=False, identifier=None):
         if basename is None:
@@ -757,9 +681,9 @@ The JSON can be deserialized into a `TensorPredictions` object using `TensorPred
             overview_path = os.path.join(overview_directory, f"overview_{basename}_UUID_{identifier}.jpg")
             # Save the overview image to the overview path
             if not fast:
-                self.plot_opencv(outpath=overview_path, linewidth=2, scale=1) 
+                self.plot(outpath=overview_path, linewidth=2, scale=1) 
             else:
-                self.plot_opencv(outpath=overview_path, linewidth=1, scale=1/2)
+                self.plot(outpath=overview_path, linewidth=1, scale=1/2)
 
         # Save crops
         if crops:
@@ -913,7 +837,7 @@ class Predictor(object):
                     if self.TIME:
                         # Record end of forward
                         end_forward_event.record()
-                    tps = postprocess(tps, batch, max_det=1000, min_confidence=self.SCORE_THRESHOLD, iou_threshold=0.95, edge_margin=self.EDGE_CASE_MARGIN, nms=1) # Important to prune within each tile first, this avoids having to carry around a lot of data
+                    tps = postprocess(tps, batch, max_det=1000, min_confidence=self.SCORE_THRESHOLD, iou_threshold=0.9, edge_margin=self.EDGE_CASE_MARGIN, nms=1) # Important to prune within each tile first, this avoids having to carry around a lot of data
                     if self.TIME:
                         # Record end of postprocess
                         end_postprocess_event.record()

@@ -45,10 +45,9 @@ if __name__ == '__main__':
         raise ValueError(f"Dtype '{option_dict['dtype']}' is not supported.")
 
     pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype)
-    pred.TIME = True
     pred.MAX_MASK_SIZE = 768
-    pred.SCORE_THRESHOLD = 0.5
-    pred.MINIMUM_TILE_OVERLAP = 256
+    pred.SCORE_THRESHOLD = 0.3
+    pred.MINIMUM_TILE_OVERLAP = 384
 
     # fixme, build from pred._model!
     categories = {"id": 1, "name": "insect"}
@@ -61,7 +60,7 @@ if __name__ == '__main__':
         "categories": [categories]  # Your category
     }
 
-    files = glob.glob(os.path.join(option_dict["input_dir"], "*.jpg"))
+    files = sorted(glob.glob(os.path.join(option_dict["input_dir"], "*.jpg")))
     j = 1
     pbar = tqdm(enumerate(files), total=len(files), desc="Processing images", dynamic_ncols=True, unit="image")
     for i, f in pbar:
@@ -74,7 +73,7 @@ if __name__ == '__main__':
             result_directory = prediction.save(
                 output_directory = option_dict["results_dir"],
                 overview = option_dict["results_dir"] + os.sep + "overview",
-                fast = True,
+                fast = option_dict["fast"],
                 crops = not option_dict["no_crops"],
                 mask_crops = not option_dict["fast"],
                 identifier = "XXXX", #str(uuid.uuid4()),

@@ -414,16 +414,21 @@ def match_geoms(contours1 : List[np.array], contours2 : List[np.array], threshol
     matches = np.zeros((n, 2), dtype=np.int32)
     matches[:, 0] = np.arange(n, dtype=np.int32)
     matches[:, 1] = -1 # No match
-    # Initialize the hit mask
-    hits = np.zeros(m, dtype=np.bool_)
+    # Match the geometries in group 1 to the geometries in group 2
     for i in np.argsort(iou.max(axis=1)):
         j = np.argmax(iou[i])
-        hits[j] = 1
         if iou[i, j] > threshold:
             matches[i, 1] = j.astype(np.int32)
             # Set the intersection to 0 so it doesn't get matched again
             iou[:, j] = 0
-    return matches, int((~hits).sum())
+    # Find the remaining unmatched geometries in group 2
+    unmatched = np.where(iou.sum(axis=0) > 0)[0]
+    matches_2 = np.zeros((len(unmatched), 2), dtype=np.int32)
+    matches_2[:, 0] = -1
+    matches_2[:, 1] = unmatched
+    # Add the unmatched geometries to the matches array
+    matches = np.concatenate([matches, matches_2], axis=0)
+    return matches, len(unmatched)
 
 def plot_heatmap(mat : np.array, breaks : int=25, dimensions : Union[None, Tuple[int, int]]=None, fast : bool=True, output_path : str=None):
     """
@@ -538,43 +543,49 @@ def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : Lis
 
     # Draw the contours on the copies of the image, and the boxes with indices on the original image
     for idx, (i, j) in enumerate(matches):
-        # Draw the first contour mask on the copy
-        cv2.drawContours(cimg1, [contours1[i]], -1, (0, 255, 0), cv2.FILLED)
-        # Draw boxes around the contours 
-        cv2.rectangle(image, (bboxes1[i][0], bboxes1[i][1]), (bboxes1[i][2], bboxes1[i][3]), (255, 0, 255), 8)
-        # If there is a match
+        if i != -1:
+            # Draw the first contour mask on the copy
+            cv2.fillPoly(cimg1, [contours1[i]], (0, 255, 0))
+            # Draw boxes around the contours 
+            cv2.rectangle(image, (bboxes1[i][0], bboxes1[i][1]), (bboxes1[i][2], bboxes1[i][3]), (0, 255, 0), 8)
         if j != -1:
             # Draw the second contour mask on the copy
-            cv2.drawContours(cimg2, [contours2[j]], -1, (255, 0, 0), cv2.FILLED)
+            cv2.fillPoly(cimg2, [contours2[j]], (255, 0, 0))
             # Draw boxes around the contours
-            cv2.rectangle(image, (bboxes2[j][0], bboxes2[j][1]), (bboxes2[j][2], bboxes2[j][3]), (0, 255, 255), 8)
-            # Draw a text label next to the box
-            cv2.putText(image, f"{idx}", (bboxes2[j][0], bboxes2[j][1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 15, cv2.LINE_8)
-            cv2.putText(image, f"{idx}", (bboxes2[j][0], bboxes2[j][1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 4, cv2.LINE_AA)
-        # If there is no match
-        else:
-            # Draw a blue outline around the contour on the copy
-            cv2.drawContours(cimg1, [contours1[i]], -1, (0, 0, 255), 25)
+            cv2.rectangle(image, (bboxes2[j][0], bboxes2[j][1]), (bboxes2[j][2], bboxes2[j][3]), (255, 0, 0), 8)
+        
+        # if i != -1:
+        #     # Draw a blue outline around the contour on the copy
+        #     cv2.drawContours(cimg1, [contours1[i]], -1, (0, 0, 255), 25)
+        # if j != -1:
+        #     # Draw a blue outline around the contour on the copy
+        #     cv2.drawContours(cimg1, [contours1[i]], -1, (0, 0, 255), 25)
+        
     # Blend the image copies with the contour masks together (makes the contours semi-transparent - alpha=0.5)
     cv2.addWeighted(cimg1, 0.5, cimg2, 0.5, 0, dst=cimg1)
     # Blend with the blended copies with original image
     cv2.addWeighted(image, 0.5, cimg1, 0.5, 0, dst=image)
     for idx, (i, j) in enumerate(matches):
-        # Draw a text label next to the box
-        cv2.putText(image, f"{idx}", (bboxes1[i][0], bboxes1[i][1] + 50), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 15, cv2.LINE_8)
-        cv2.putText(image, f"{idx}", (bboxes1[i][0], bboxes1[i][1] + 50), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 4, cv2.LINE_AA)
-        # If there is a match
+        no_match = (i == -1) or (j == -1)
+        if no_match:
+            match_color = (0, 0, 255)
+        else:
+            match_color = (255, 255, 255)
+        if i != -1:
+            # Draw a text label next to the box
+            cv2.putText(image, f"{idx}", (bboxes1[i][0], bboxes1[i][1] + 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 10, cv2.LINE_8)
+            cv2.putText(image, f"{idx}", (bboxes1[i][0], bboxes1[i][1] + 50), cv2.FONT_HERSHEY_SIMPLEX, 1, match_color, 5 if no_match else 2, cv2.LINE_AA)
         if j != -1:
             # Draw a text label next to the box
-            cv2.putText(image, f"{idx}", (bboxes2[j][0], bboxes2[j][1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 15, cv2.LINE_8)
-            cv2.putText(image, f"{idx}", (bboxes2[j][0], bboxes2[j][1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 4, cv2.LINE_AA)
+            cv2.putText(image, f"{idx}", (bboxes2[j][0], bboxes2[j][1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 10, cv2.LINE_8)
+            cv2.putText(image, f"{idx}", (bboxes2[j][0], bboxes2[j][1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 1, match_color, 5 if no_match else 2, cv2.LINE_AA)
     # Downscale the image
-    image = cv2.resize(image, (image.shape[1] // 4, image.shape[0] // 4))
+    image = cv2.resize(image, (image.shape[1] // 2, image.shape[0] // 2))
 
     # Save the image
     cv2.imwrite(output_path, image, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
 
-def compare_groups(group1 : list, group2 : list, threshold : float=1/4, plot : bool=True, image_path : str=None, output_identifier : str=None, output_directory : str=None) -> str:
+def compare_groups(group1 : list, group2 : list, threshold : float=1/10, plot : bool=True, image_path : str=None, output_identifier : str=None, output_directory : str=None) -> str:
     """
     Compares group 1 to group 2.
 
@@ -583,13 +594,7 @@ def compare_groups(group1 : list, group2 : list, threshold : float=1/4, plot : b
         - Idx_2 (`int`) is the index of the matched geometry in group 2, or -1 if there is no match
         - IoU (`float`) is the intersection over union, or 0 if there is no match
         - contourArea_1 (`int`) is the area of the contour in group 1
-        - boxArea_1 (`int`) is the area of the bounding box in group 1
         - contourArea_2 (`int`) is the area of the contour in group 2, or 0 if there is no match
-        - boxArea_2 (`int`) is the area of the bounding box in group 2, or 0 if there is no match
-        - numGeom_1 (`int`) is the number of geometries in group 1
-        - numGeom_2 (`int`) is the number of geometries in group 2
-        - numMisses_1 (`int`) is the number of unmatched geometries in group 1, i.e. number of Idx_2 != -1
-        - numMisses_2 (`int`) is the number of unmatched geometries in group 1
         - bbox_1 (`list[int, int, int, int : xmin, ymin, xmax, ymax]`) is the bounding box of the geometry in group 1
         - bbox_2 (`list[int, int, int, int : xmin, ymin, xmax, ymax]`) is the bounding box of the matched geometry in group 2, or an empty list if there is no match
         - contour_1 (`list[list[int, int : x_i, y_i]]`) is the contour of the geometry in group 1
@@ -624,6 +629,7 @@ def compare_groups(group1 : list, group2 : list, threshold : float=1/4, plot : b
     b1, c1 = annotations_to_numpy(group1)
     b2, c2 = annotations_to_numpy(group2)
     a1, a2 = np.array([contour_area(c) for c in c1]), np.array([contour_area(c) for c in c2])
+    len_1, len_2 = len(c1), len(c2)
 
     # Calculate the IoU matrix
     intersection = pairwise_contour_intersection(c1, c2, b1, b2, a1, a2)
@@ -643,10 +649,16 @@ def compare_groups(group1 : list, group2 : list, threshold : float=1/4, plot : b
         print(f"Missed {misses} geometries")
     
     ## Gather the data for the output
+    matched_1 = matches[:, 1] != -1
+    matched_2 = matches[:, 0] != -1
+    unmatched_1 = np.where(~matched_1)[0]
+    unmatched_2 = np.where(~matched_2)[0]
+
     # Get the matched IoU
-    matched_iou = iou[*matches.T]
+    matched_iou = iou[*matches[:len_1].T]
     # Set the IoU of unmatched geometries to 0
-    matched_iou[matches[:, 1] == -1] = 0
+    matched_iou[unmatched_1] = 0
+    matched_iou = np.concatenate([matched_iou, np.zeros(len(unmatched_2))])
     
     # Get the matched bounding boxes
     boxes1 = b1[matches[:, 0]]
@@ -656,31 +668,20 @@ def compare_groups(group1 : list, group2 : list, threshold : float=1/4, plot : b
     careas1 = a1[matches[:, 0]]
     careas2 = a2[matches[:, 1]]
     # Set the areas of unmatched geometries to 0
-    careas2[matches[:, 1] == -1] = 0
-    bareas1 = np.array([int(i) for i in np.prod(boxes1[:, 2:] - boxes1[:, :2], axis=1)])
-    # Set the areas of unmatched geometries to 0
-    bareas2 = np.array([int(i) if m != -1 else 0 for i, m in zip(matches[:, 1], np.prod(boxes2[:, 2:] - boxes2[:, :2], axis=1))])
+    careas1[unmatched_2] = 0
+    careas2[unmatched_1] = 0
 
     # Convert the bounding boxes to lists
     boxes1 = boxes1.tolist()
     boxes2 = boxes2.tolist()
-    # Set the bounding boxes of unmatched geometries to an empty list
-    for i in np.where(matches[:, 1] == -1)[0]:
+    for i in unmatched_2:
+        boxes1[i] = []
+    for i in unmatched_1:
         boxes2[i] = []
-    
+
     # Get the matched contours
-    contours1 = [c1[i].tolist() for i in matches[:, 0]]
+    contours1 = [c1[i].tolist() if i != -1 else [] for i in matches[:, 0]]
     contours2 = [c2[i].tolist() if i != -1 else [] for i in matches[:, 1]]
-
-    # Get the number of geometries in each group
-    num_geoms1 = len(c1)
-    num_geoms2 = len(c2)
-
-    # Get the number of matches
-    num_misses_1 = int((matches[:, 1] == -1).sum())
-
-    # Get the number of misses
-    num_misses_2 = misses
 
     # Get the indices of the geometries in group 1
     idx1, idx2 = matches.T
@@ -688,21 +689,13 @@ def compare_groups(group1 : list, group2 : list, threshold : float=1/4, plot : b
     # Get the lengths of all the data which are not single values
     len_idx1, len_idx2 = len(idx1), len(idx2)
     len_matched_iou = len(matched_iou)
-    len_bareas1, len_bareas2 = len(bareas1), len(bareas2)
     len_careas1, len_careas2 = len(careas1), len(careas2)
     len_boxes1, len_boxes2 = len(boxes1), len(boxes2)
     len_contours1, len_contours2 = len(contours1), len(contours2)
     # Check that the lengths are all the same
-    data_length = set([len_idx1, len_idx2, len_matched_iou, len_bareas1, len_bareas2, len_careas1, len_careas2, len_boxes1, len_boxes2, len_contours1, len_contours2])
+    data_length = set([len_idx1, len_idx2, len_matched_iou, len_careas1, len_careas2, len_boxes1, len_boxes2, len_contours1, len_contours2])
     if len(data_length) != 1:
-        raise ValueError(f"Lengths of the data are not all the same: {len_idx1, len_idx2, len_matched_iou, len_bareas1, len_bareas2, len_careas1, len_careas2, len_boxes1, len_boxes2, len_contours1, len_contours2}")
-    
-    # Repeat the single values to match the length of the other data
-    n = data_length.pop()
-    num_geoms1 = np.array([num_geoms1] * n, dtype=np.int32)
-    num_geoms2 = np.array([num_geoms2] * n, dtype=np.int32)
-    num_misses_1 = np.array([num_misses_1] * n, dtype=np.int32)
-    num_misses_2 = np.array([num_misses_2] * n, dtype=np.int32)
+        raise ValueError(f"Lengths of the data are not all the same: {len_idx1, len_idx2, len_matched_iou, len_careas1, len_careas2, len_boxes1, len_boxes2, len_contours1, len_contours2}")
 
     # Construct the output by combining the data
     output = {
@@ -710,13 +703,7 @@ def compare_groups(group1 : list, group2 : list, threshold : float=1/4, plot : b
         "idx_2" : idx2, 
         "IoU" : matched_iou, 
         "contourArea_1" : careas1, 
-        "boxArea_1" : bareas1, 
         "contourArea_2": careas2, 
-        "boxArea_2" : bareas2, 
-        "NumGeoms_1" : num_geoms1, 
-        "NumGeoms_2" : num_geoms2, 
-        "NumMisses_1" : num_misses_1,
-        "NumMisses_2" : num_misses_2,  
         "bbox_1" : boxes1, 
         "bbox_2" : boxes2, 
         "contour_1" : contours1, 
@@ -743,7 +730,7 @@ from glob import glob
 import json
 from tqdm import tqdm
 
-files = glob("dev/**/**.json", recursive=True)
+files = sorted(glob("dev/**/**.json", recursive=True))
 flat_bug_pred = [json.load(open(p)) for p in files]
 
 pred_coco = {}
@@ -759,7 +746,7 @@ gt_annotations, pred_annotations = split_annotations(gt_coco), split_annotations
 for image in tqdm(images):
     if not "train" in image:
         continue
-    matches = compare_groups(gt_annotations[image], pred_annotations[f"s3/CollembolAI/{image}"], plot=True, image_path=f"s3/CollembolAI/{image}", output_identifier=image, output_directory="dev/eval")
+    matches = compare_groups(gt_annotations[image], pred_annotations[f"s3/CollembolAI/{image}"], plot=True, image_path=f"s3/CollembolAI/{image}", output_identifier=image, output_directory="dev/eval", threshold=0.1)
 
 
 # groups = split_annotations(coco)
