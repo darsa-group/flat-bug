@@ -77,6 +77,8 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+# This is not recognized?
+test.ipynb
 
 # IPython
 profile_default/
@@ -166,3 +168,6 @@ runs/
 *.yaml
 datasets/
 
+test/
+s3/
+dev/

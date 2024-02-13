@@ -11,6 +11,7 @@ setup(
     scripts=['bin/fb_train.py',
              'bin/fb_predict.py',
              'bin/fb_prepare_data.py',
+             'bin/fb_predict_erda.py',
              ],
     include_package_data=True,
     zip_safe=False,
