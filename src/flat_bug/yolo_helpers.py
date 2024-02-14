@@ -14,7 +14,7 @@ from ultralytics.engine.results import Results, Masks
 
 from .geometry_simples import find_contours, simplify_contour
 
-from typing import Union
+from typing import Union, List, Tuple
 
 
 class ResultsWithTiles(Results):
@@ -74,7 +74,7 @@ def offset_mask(mask, offset, new_shape=None, max_size=None):
         new_mask = resizer(new_mask)
     return new_mask
 
-def merge_tile_results(results = list[Results], orig_img=None, box_offsetters=None, mask_offsetters=None, new_shape=None, clamp_boxes=(None, None), max_mask_size=(700, 700)):
+def merge_tile_results(results = List[Results], orig_img=None, box_offsetters=None, mask_offsetters=None, new_shape=None, clamp_boxes=(None, None), max_mask_size=(700, 700)):
     """
     Merges results from multiple images into a single Results object, possibly with a new image.
     """
@@ -360,6 +360,10 @@ def iou_boxes(rectangles):
     Returns:
         torch.Tensor: A tensor of shape (n, n), where n is the number of rectangles, containing the IoU of each rectangle with each other rectangle.
     """
+    if rectangles.numel() == 0:
+        return torch.zeros((0, 0), dtype=rectangles.dtype, device=rectangles.device)
+    if len(rectangles) == 1:
+        return torch.ones((1, 1), dtype=rectangles.dtype, device=rectangles.device)
     if not len(rectangles.shape) == 2 and rectangles.shape[1] == 4:
         raise ValueError(f"Rectangles must be of shape (n, 4), not {rectangles.shape}")
     # Could improve stability, but would require making a copy of the boxes tensor
@@ -593,8 +597,59 @@ def nms_(objects, iou_fun, scores, iou_threshold=0.5, strict=True, return_indice
         return winners
     else:
         return objects[winners], scores[winners]
+    
+def compute_transitive_closure(matrix : torch.Tensor) -> torch.Tensor:
+    """
+    Computes the transitive closure of a boolean matrix.
+    """
+    if len(matrix.shape) != 2:
+        raise ValueError(f"Matrix must be of shape (n, n), not {matrix.shape}")
+    if matrix.numel() == 0:
+        return matrix
+    closure = matrix.to(torch.float16)
+    for i in range(torch.log2(torch.tensor(closure.shape[0], dtype=torch.float16)).ceil().to(torch.int)):
+        closure += torch.matmul(closure, closure).clamp(max=1)
+    return closure > 0.5
 
-def nms_masks(masks, scores, iou_threshold=0.5, return_indices=False, dtype=None, metric="IoU", strict=False):
+def cluster_iou_(objects, iou_fun, iou_threshold=0.5, **kwargs) -> Tuple[List[torch.Tensor], torch.Tensor]:
+    """
+    Computes the connected components of a set of objects, where objects are connected if their IoU is greater than the threshold.
+
+    Args:
+        objects (any): A set of objects with a __len__ method.
+        iou_fun (function): A function that takes a set of objects of the type supplied and returns a tensor of shape (n, n) containing the IoU of each object with each other object.
+        iou_threshold (float): The IoU threshold for clustering. Defaults to 0.5.
+        **kwargs: Additional keyword arguments to be passed to the iou_fun function.
+
+    Returns:
+        List[torch.Tensor]: A list of tensors, where each tensor contains the indices of the objects in a cluster.
+        torch.Tensor: A tensor of shape (n, ) containing the cluster index of each object.
+    """
+    connectivity_matrix = iou_fun(objects, **kwargs) >= iou_threshold
+    transitive_closure = compute_transitive_closure(connectivity_matrix)
+    
+    cluster_vec = -torch.ones(len(objects), dtype=torch.long, device=transitive_closure.device)
+    not_visited = torch.ones(len(objects), dtype=torch.bool, device=transitive_closure.device)
+
+    cluster_id = 0
+    rounds = 0
+    while not_visited.any() and rounds < len(objects):
+        rounds += 1
+        pick = not_visited.nonzero().squeeze()
+        if pick.numel() == 1:
+            pick = pick
+        else:
+            pick = pick[0]
+        visitors = transitive_closure[pick]
+        not_visited &= ~visitors
+        cluster_vec[visitors] = cluster_id
+        cluster_id += 1
+
+    clusters = [torch.where(cluster_vec == i)[0].sort().values for i in cluster_vec.unique().sort().values]
+    
+    return clusters, cluster_vec
+
+def nms_masks(masks, scores, iou_threshold=0.5, return_indices=False, dtype=None, metric="IoU", strict=False, group_first : bool=True, boxes=None):
     """
     Wrapper for the standard non-maximum suppression algorithm.
     """
@@ -607,7 +662,26 @@ def nms_masks(masks, scores, iou_threshold=0.5, return_indices=False, dtype=None
         raise ValueError(f"metric must be one of ['IoU', 'IoS', 'IoS/D'], not {metric}")
     if dtype is None:
         raise ValueError("'dtype' must be specified for nms_masks")
-    return nms_(masks, metric, scores, iou_threshold=iou_threshold, return_indices=return_indices, dtype=dtype, strict=strict)
+    if not group_first:
+        return nms_(masks, metric, scores, iou_threshold=iou_threshold, return_indices=return_indices, dtype=dtype, strict=strict)
+    else:
+        if boxes is None:
+            raise ValueError("'boxes' must be specified for nms_masks when 'group_first' is True")
+        groups, _ = cluster_iou_(boxes, iou_boxes, iou_threshold=iou_threshold / 5)
+        nms_ind = [None for _ in range(len(groups))]
+        for i, group in enumerate(groups):
+            if len(group) == 1:
+                nms_ind[i] = group
+            else:
+                nms_ind[i] = group[nms_(masks[group], metric, scores[group], iou_threshold=iou_threshold, return_indices=True, dtype=dtype, strict=strict)]
+        if len(nms_ind) > 0:
+            nms_ind = torch.cat(nms_ind)
+        else:
+            nms_ind = torch.tensor([], dtype=torch.long, device=masks.device)
+        if return_indices:
+            return nms_ind
+        else:
+            return masks[nms_ind], scores[nms_ind]
 
 def nms_boxes(boxes, scores, iou_threshold=0.5, return_indices=False, strict=False):
     """
@@ -654,7 +728,7 @@ def cumsum(nums : list) -> list:
         sums[i] = running_sum
     return sums
     
-def postprocess(preds, imgs, max_det=300, min_confidence=0, iou_threshold=0.1, nms=0, edge_margin=None):
+def postprocess(preds, imgs, max_det=300, min_confidence=0, iou_threshold=0.1, nms=0, edge_margin=None, group_first=True):
     """Postprocesses the predictions of the model.
 
     Args:
@@ -665,6 +739,7 @@ def postprocess(preds, imgs, max_det=300, min_confidence=0, iou_threshold=0.1, n
         iou_threshold (float, optional): The IoU threshold for non-maximum suppression. Defaults to 0.1.
         nms (int, optional): The type of non-maximum suppression to use. Defaults to 0. 0 is no NMS, 1 is standard NMS, 2 is fancy NMS and 3 is mask NMS.
         edge_margin (int, optional): The minimum gap between the edge of the image and the bounding box in pixels for a prediction to be considered valid. Defaults to None (no edge margin).
+        group_first (bool, optional): A flag to indicate whether to group the masks using the boxes before performing NMS. Only relevant when nms=3. Defaults to True.
 
     Returns:
         list: A list of postprocessed predictions.
@@ -711,7 +786,7 @@ def postprocess(preds, imgs, max_det=300, min_confidence=0, iou_threshold=0.1, n
                 nms_ind = fancy_nms_boxes(boxes, iou_boxes, pred[:, 4], iou_threshold=iou_threshold, return_indices=True)
             elif nms == 3:
                 masks = process_mask(protos[i], pred[:, -32:], boxes, imgs[i].shape[-2:], False) # pred[:, -32:] - not sure this is correct for more than one class
-                nms_ind = nms_masks(masks, pred[:, 4], iou_threshold=iou_threshold, return_indices=True, dtype=pred.dtype)
+                nms_ind = nms_masks(masks, pred[:, 4], iou_threshold=iou_threshold, return_indices=True, dtype=pred.dtype, boxes=boxes, group_first=group_first)
                 masks = masks[nms_ind]
             else:
                 raise ValueError(f"nms must be 0, 1, 2 or 3, not {nms}")

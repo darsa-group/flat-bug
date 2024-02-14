@@ -7,8 +7,8 @@ from flat_bug.predictor import Predictor
 from pyremotedata.implicit_mount import *
 from pyremotedata.dataloader import *
 
-from src.flat_bug.predictor import *
-from src.flat_bug.yolo_helpers import *
+from flat_bug.predictor import *
+from flat_bug.yolo_helpers import *
 
 
 from glob import glob
@@ -33,7 +33,7 @@ torch.cuda.empty_cache()
 start = time.time()
 for i in range(len(paths)):
     img = read_image(paths[i]).to(device, dtype)
-    test = _model.pyramid_predictions(img, paths[i], scale_increment=1/2, scale_before=1/2, single_scale=True)
+    test = _model.pyramid_predictions(img, paths[i], scale_increment=1/2, scale_before=1)
     test.save("dev/input_output", fast=True, crops = True)
     del test
     torch.cuda.empty_cache()

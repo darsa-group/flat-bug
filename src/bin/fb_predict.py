@@ -29,6 +29,7 @@ if __name__ == '__main__':
     args_parse.add_argument("-d", "--dtype", type=str, default="float16", help="Which dtype to use for inference. Default is 'float16'.")
     args_parse.add_argument("-f", "--fast", action="store_true", help="Use fast mode.")
     args_parse.add_argument("--no-crops", action="store_true", help="Do not save the crops.")
+    args_parse.add_argument("--single-scale", action="store_true", help="Use single scale.")
     
 
     args = args_parse.parse_args()
@@ -68,14 +69,14 @@ if __name__ == '__main__':
         logging.info(f"Processing {os.path.basename(f)}")
         try:
             # Run the model
-            prediction = pred.pyramid_predictions(f, scale_increment=1/2, scale_before=option_dict["scale_before"], single_scale=option_dict["fast"])
+            prediction = pred.pyramid_predictions(f, scale_increment=1/2, scale_before=option_dict["scale_before"], single_scale=option_dict["single_scale"])
             # Save the results
             result_directory = prediction.save(
                 output_directory = option_dict["results_dir"],
                 fast = option_dict["fast"],
                 crops = not option_dict["no_crops"],
                 mask_crops = not option_dict["fast"],
-                identifier = "XXXX", #str(uuid.uuid4()),
+                identifier = "ChangeThisTEMPORARY", #str(uuid.uuid4()),
             )
         except Exception as e:
             logging.error(f"Issue whilst processing {f}")

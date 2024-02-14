@@ -259,7 +259,7 @@ class TensorPredictions:
             return self
 
         # Perform non-maximum suppression on the masks, using the scales as weights, that is the highest resolution masks are given the highest priority
-        nms_ind = nms_masks(self.masks.data, torch.tensor(self.scales, dtype=self.dtype, device=self.device) * self.confs, iou_threshold=iou_threshold, return_indices=True, dtype=self.dtype, **kwargs)
+        nms_ind = nms_masks(self.masks.data, torch.tensor(self.scales, dtype=self.dtype, device=self.device) * self.confs, iou_threshold=iou_threshold, return_indices=True, dtype=self.dtype, boxes=self.boxes, **kwargs)
         # Remove the elements that were not selected
         self = self[nms_ind]
         if self.time:
@@ -716,13 +716,14 @@ The JSON can be deserialized into a `TensorPredictions` object using `TensorPred
         return prediction_directory
 
 class Predictor(object):
-    MIN_MAX_OBJ_SIZE = (32, 2048)
+    MIN_MAX_OBJ_SIZE = (16, 2048)
     MINIMUM_TILE_OVERLAP = 384
     EDGE_CASE_MARGIN = 8
     SCORE_THRESHOLD = 0.2
     IOU_THRESHOLD = 0.25
     MAX_MASK_SIZE = 2048
     TIME = False
+    EXPERIMENTAL_NMS_OPTIMIZATION = True
     # DEBUG = False
 
     def __init__(self, model, cfg=None, device=torch.device("cpu"), dtype=torch.float32):
@@ -837,7 +838,7 @@ class Predictor(object):
                     if self.TIME:
                         # Record end of forward
                         end_forward_event.record()
-                    tps = postprocess(tps, batch, max_det=1000, min_confidence=self.SCORE_THRESHOLD, iou_threshold=0.9, edge_margin=self.EDGE_CASE_MARGIN, nms=1) # Important to prune within each tile first, this avoids having to carry around a lot of data
+                    tps = postprocess(tps, batch, max_det=1000, min_confidence=self.SCORE_THRESHOLD, iou_threshold=self.IOU_THRESHOLD, edge_margin=self.EDGE_CASE_MARGIN, nms=3, group_first=self.EXPERIMENTAL_NMS_OPTIMIZATION) # Important to prune within each tile first, this avoids having to carry around a lot of data
                     if self.TIME:
                         # Record end of postprocess
                         end_postprocess_event.record()
@@ -1011,7 +1012,8 @@ class Predictor(object):
             time        = self.TIME
         ).non_max_suppression(
             iou_threshold = self.IOU_THRESHOLD,
-            metric        = 'IoU' # It is necessary to use IoS and not IoU, especially when there are many scales, since parts of a bigger object may be detected at a smaller scale, and then the IoU will be very low, even though it is the same object
+            metric        = 'IoU', # It is necessary to use IoS and not IoU, especially when there are many scales, since parts of a bigger object may be detected at a smaller scale, and then the IoU will be very low, even though it is the same object
+            group_first = self.EXPERIMENTAL_NMS_OPTIMIZATION
         ).offset_scale_pad(
             offset  = -padding_offset, 
             scale   = 1 / scale_before,
