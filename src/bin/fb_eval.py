@@ -741,7 +741,8 @@ def compatible_display(image : np.array):
             cv2.destroyAllWindows()
         
 
-def compare_groups(group1 : list, group2 : list, group_labels : Union[str, None]=None, threshold : float=1/10, plot : bool=True, image_path : Union[str, None]=None, output_identifier : str=None, output_directory : str=None) -> str:
+def compare_groups(group1 : list, group2 : list, group_labels : Union[str, None]=None, threshold : float=1/10, plot : bool=True,
+                   image_path : Union[str, None]=None, output_identifier : str=None, output_directory : str=None) -> str:
     """
     Compares group 1 to group 2.
 
@@ -870,6 +871,7 @@ def compare_groups(group1 : list, group2 : list, group_labels : Union[str, None]
         # Write the output to a CSV file
         output_path = f"{output_directory}{os.sep}{output_identifier}.csv"
         separator = ";"
+
         with open(output_path, "w") as out:
             columns = list(output.keys())
             data = list(output.values())
@@ -911,7 +913,10 @@ if __name__ == "__main__":
 
 
     files = sorted(glob(args.predictions, recursive=True))
+
     flat_bug_predictions = [json.load(open(p)) for p in files]
+
+    # assert len(flat_bug_predictions) > 0 # fixme, we should check somethng matches
 
     pred_coco = {}
     [fb_to_coco(d, pred_coco) for d in flat_bug_predictions]
@@ -930,8 +935,6 @@ if __name__ == "__main__":
 
 
     for image in tqdm(images):
-        if not "train" in image:
-            continue
         matches = compare_groups(
             group1              = gt_annotations[image], 
             group2              = pred_annotations[image], 
