@@ -70,10 +70,10 @@ Evaluation functions for FlatBug datasets.
 #         "mask_height": int
 #     }
 
-import time
 import os
 from typing import Union, List, Tuple, Dict
 import cv2
+from IPython.display import display
 import numpy as np
 
 DEBUG_DIRECTORY = "dev"
@@ -193,7 +193,7 @@ def contour_bbox(c : np.array) -> np.array:
     """
     return np.array([c[:, 0].min(), c[:, 1].min(), c[:, 0].max(), c[:, 1].max()])
 
-def split_annotations(coco : Dict) -> Dict[str, dict]:
+def split_annotations(coco : Dict, strip_directories : bool=True) -> Dict[str, dict]:
     """
     Splits COCO annotations by image ID.
 
@@ -206,6 +206,11 @@ def split_annotations(coco : Dict) -> Dict[str, dict]:
     img_id = np.array([i["image_id"] for i in coco["annotations"]])
     ids = np.unique(img_id)
     groups = [np.where(img_id == i)[0] for i in ids]
+    
+    if strip_directories:
+        for i in range(len(coco["images"])):
+            coco["images"][i]["file_name"] = os.path.basename(coco["images"][i]["file_name"])
+
     return {coco["images"][id - 1]["file_name"] : [coco["annotations"][i] for i in g] for id, g in zip(ids, groups)}
 
 def annotations_2_contours(annotations : Dict[str, dict]) -> Dict[str, List[np.array]]:
@@ -430,12 +435,13 @@ def match_geoms(contours1 : List[np.array], contours2 : List[np.array], threshol
     matches = np.concatenate([matches, matches_2], axis=0)
     return matches, len(unmatched)
 
-def plot_heatmap(mat : np.array, breaks : int=25, dimensions : Union[None, Tuple[int, int]]=None, fast : bool=True, output_path : str=None):
+def plot_heatmap(mat : np.array, axis_labels : Union[List[str], None]=None, breaks : int=25, dimensions : Union[None, Tuple[int, int]]=None, fast : bool=True, output_path : str=None):
     """
     Plots a heatmap of a matrix using OpenCV.
 
     Args:
         mat (np.array): Matrix.
+        axis_labels (Union[List[str], None], optional): Axis labels. Defaults to None.
         breaks (int, optional): Number of breaks on the colorbar. Defaults to 25.
         dimensions (Union[None, Tuple[int, int]], optional): Dimensions of the output image. Defaults to None.
         fast (bool, optional): Whether to use fast mode. Defaults to True.
@@ -497,19 +503,47 @@ def plot_heatmap(mat : np.array, breaks : int=25, dimensions : Union[None, Tuple
     # Concatenate the colormap and the colorbar
     colormap = cv2.hconcat([colormap, colorbar])
 
+    # If axis labels are provided
+    if axis_labels is not None:
+        x_label, y_label = axis_labels
+        # Axis boxes have height/width of 10% of the minimum dimension of the heatmap
+        axis_box_size = int(min(dimensions) * 0.05)
+        # Calculate the font size
+        axis_label_font_size = cv2.getFontScaleFromHeight(cv2.FONT_HERSHEY_COMPLEX, axis_box_size // 2, 3)
+
+        # First create the x-axis box
+        x_axis_box = np.zeros((axis_box_size, dimensions[0] + colorbar_width, 3), dtype=np.uint8) + 255
+        # Then create the y-axis box, remembering to take into account the extra vertical space taken up by the x-axis label. It is instantiated in the flipped orientation.
+        y_axis_box = np.zeros((axis_box_size, dimensions[1] + axis_box_size, 3), dtype=np.uint8) + 255
+        # Calculate the midpoint on each box with respect to the heatmap
+        x_label_width = cv2.getTextSize(x_label, cv2.FONT_HERSHEY_COMPLEX, axis_label_font_size, 3)[0][0]
+        y_label_width = cv2.getTextSize(y_label, cv2.FONT_HERSHEY_COMPLEX, axis_label_font_size, 3)[0][0]
+        x_midpoint = dimensions[0] // 2 - x_label_width // 2
+        y_midpoint = dimensions[1] // 2 + axis_box_size - y_label_width // 2
+        center_offset = axis_box_size // 2 + axis_box_size // 4
+        # Add the x-axis label
+        cv2.putText(x_axis_box, x_label, (x_midpoint, center_offset), cv2.FONT_HERSHEY_COMPLEX, axis_label_font_size, (0, 0, 0), axis_box_size // 15, cv2.LINE_AA)
+        # Add the y-axis label
+        cv2.putText(y_axis_box, y_label, (y_midpoint, center_offset), cv2.FONT_HERSHEY_COMPLEX, axis_label_font_size, (0, 0, 0), axis_box_size // 15, cv2.LINE_AA)
+        # Flip the y-axis box
+        y_axis_box = cv2.rotate(y_axis_box, cv2.ROTATE_90_CLOCKWISE)
+        # Concatenate the boxes
+        colormap = cv2.vconcat([colormap, x_axis_box])
+        colormap = cv2.hconcat([y_axis_box, colormap])
+
     if fast:
         # Rescale the colormap to 2x lower resolution
         colormap = cv2.resize(colormap, (colormap.shape[1] // 2, colormap.shape[0] // 2), interpolation=cv2.INTER_LINEAR)
         _, output_ext = os.path.splitext(output_path)
         if not output_ext in [".jpg", ".jpeg", ".JPG", ".JPEG"]:
-            print(f'WARNING: Expected output path to have a JPEG extension, got {output_ext}. May negate some of the speed benefits of the fast mode.') 
+            print(f'WARNING: Expected output path to have a JPEG extension, got {output_ext}. May negate some of the speed benefits of the fast mode.')
         # Save the image
         cv2.imwrite(output_path, colormap, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
     else:
         # Save the image
         cv2.imwrite(output_path, colormap)
 
-def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : List[np.array], image_path : str, output_path : str):
+def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : List[np.array], group_labels : Union[List[str], None]=None, image_path : Union[str, None]=None, output_path : Union[str, None]=None):
     """
     Plots the matches between two groups of contours using OpenCV.
 
@@ -523,13 +557,55 @@ def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : Lis
     Returns:
         None
     """
-    # Check the output path extension
-    _, out_ext = os.path.splitext(output_path)
-    if not out_ext in [".jpg", ".jpeg", ".JPG", ".JPEG"]:
-        raise ValueError(f'Expected output path to have a .JPG/.jpg/.JPEG/.jpeg extension, got {out_ext}')
+    # Type check the input
+    if not isinstance(matches, np.ndarray):
+        raise ValueError(f'Expected matches to be a NumPy array, got {type(matches)}')
+    for i, c1 in enumerate(contours1):
+        if not isinstance(c1, np.ndarray):
+            raise ValueError(f'Expected contours1[{i}] to be a NumPy array, got {type(c1)}')
+    for i, c2 in enumerate(contours2):
+        if not isinstance(c2, np.ndarray):
+            raise ValueError(f'Expected contours2[{i}] to be a NumPy array, got {type(c2)}')
+    if not isinstance(group_labels, list) and not group_labels is None:
+        raise ValueError(f'Expected group_labels to be a list or None, got {type(group_labels)}')
+    elif isinstance(group_labels, list):
+        for i, l in enumerate(group_labels):
+            if not isinstance(l, str):
+                raise ValueError(f'Expected group_labels[{i}] to be a string, got {type(l)}')
+    if not isinstance(image_path, str) and not image_path is None:
+        raise ValueError(f'Expected image_path to be a string or None, got {type(image_path)}')
+    elif isinstance(image_path, str) and not os.path.exists(image_path):
+        raise ValueError(f'Expected image_path to be a valid file, got {image_path}')
+    if not isinstance(output_path, str) and not output_path is None:
+        raise ValueError(f'Expected output_path to be a string or None, got {type(output_path)}')
+    elif isinstance(output_path, str) and not os.path.exists(os.path.dirname(output_path)):
+        raise ValueError(f'Output directory does not exist: {os.path.dirname(output_path)}')
 
-    # Load the image
-    image = cv2.imread(image_path)
+    # If a output path is provided the image is saved, otherwise it is displayed with IPython
+    save_plot = isinstance(output_path, str)
+    if save_plot:
+        # Check the output path extension
+        _, out_ext = os.path.splitext(output_path)
+        if not out_ext in [".jpg", ".jpeg", ".JPG", ".JPEG"]:
+            raise ValueError(f'Expected output path to have a .JPG/.jpg/.JPEG/.jpeg extension, got {out_ext}')
+
+    # If the is image path is provided
+    if isinstance(image_path, str):
+        # Load the image
+        image = cv2.imread(image_path)
+    else:
+        # Otherwise, create a blank image. The dimensions are dynamically calculated to fit the contours
+        xmax, ymax = 0, 0
+        for c in contours1 + contours2:
+            xmax = max(xmax, c[:, 0].max())
+            ymax = max(ymax, c[:, 1].max())
+        # Padded by 10 pixels
+        xmax += 10
+        ymax += 10
+        # And set to even dimension sizes
+        xmax = (xmax // 2) * 2
+        ymax = (ymax // 2) * 2
+        image = np.zeros((ymax, xmax, 3), dtype=np.uint8) + 255 # White background
 
     # Calculate the bounding boxes of the contours
     bboxes1 = np.array([contour_bbox(c) for c in contours1])
@@ -554,17 +630,18 @@ def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : Lis
             # Draw boxes around the contours
             cv2.rectangle(image, (bboxes2[j][0], bboxes2[j][1]), (bboxes2[j][2], bboxes2[j][3]), (255, 0, 0), 8)
         
-        # if i != -1:
-        #     # Draw a blue outline around the contour on the copy
-        #     cv2.drawContours(cimg1, [contours1[i]], -1, (0, 0, 255), 25)
-        # if j != -1:
-        #     # Draw a blue outline around the contour on the copy
-        #     cv2.drawContours(cimg1, [contours1[i]], -1, (0, 0, 255), 25)
-        
     # Blend the image copies with the contour masks together (makes the contours semi-transparent - alpha=0.5)
     cv2.addWeighted(cimg1, 0.5, cimg2, 0.5, 0, dst=cimg1)
     # Blend with the blended copies with original image
     cv2.addWeighted(image, 0.5, cimg1, 0.5, 0, dst=image)
+
+    # Downscale the image
+    image = cv2.resize(image, (image.shape[1] // 2, image.shape[0] // 2))
+    # And the bounding boxes
+    bboxes1 = (bboxes1 / 2).astype(np.int32)
+    bboxes2 = (bboxes2 / 2).astype(np.int32)
+
+    # Label the objects
     for idx, (i, j) in enumerate(matches):
         no_match = (i == -1) or (j == -1)
         if no_match:
@@ -573,19 +650,63 @@ def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : Lis
             match_color = (255, 255, 255)
         if i != -1:
             # Draw a text label next to the box
-            cv2.putText(image, f"{idx}", (bboxes1[i][0], bboxes1[i][1] + 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 10, cv2.LINE_8)
-            cv2.putText(image, f"{idx}", (bboxes1[i][0], bboxes1[i][1] + 50), cv2.FONT_HERSHEY_SIMPLEX, 1, match_color, 5 if no_match else 2, cv2.LINE_AA)
+            cv2.putText(image, f"{idx}", (bboxes1[i][0], bboxes1[i][1] + 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 10, cv2.LINE_8)
+            cv2.putText(image, f"{idx}", (bboxes1[i][0], bboxes1[i][1] + 30), cv2.FONT_HERSHEY_SIMPLEX, 1, match_color, 5 if no_match else 2, cv2.LINE_AA)
         if j != -1:
             # Draw a text label next to the box
             cv2.putText(image, f"{idx}", (bboxes2[j][0], bboxes2[j][1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 10, cv2.LINE_8)
             cv2.putText(image, f"{idx}", (bboxes2[j][0], bboxes2[j][1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 1, match_color, 5 if no_match else 2, cv2.LINE_AA)
-    # Downscale the image
-    image = cv2.resize(image, (image.shape[1] // 2, image.shape[0] // 2))
+    
+    # Create a legend
+    legend_margin = 50
+    legend_font_height = image.shape[0] // 40
+    legend_font_size = cv2.getFontScaleFromHeight(cv2.FONT_HERSHEY_COMPLEX, legend_font_height, 3)
+    legend_label_widths = [cv2.getTextSize(glabel, cv2.FONT_HERSHEY_COMPLEX, legend_font_size, 3)[0][0] for glabel in group_labels]
+    legend_font_width = max(legend_label_widths)
+    legend_box_height = int((legend_font_height * 1.5) * 2)
+    legend_box_width = int(legend_font_width * 1.25)
+    # Extract the legend box
+    legend_box = image[legend_margin:(legend_box_height + legend_margin), -(legend_box_width + legend_margin):-legend_margin, :]
+    # Whiten legend box
+    whiten_frac = 0.5
+    whiten_amount = ((255 - legend_box) * whiten_frac).astype(np.uint8)
+    legend_box += whiten_amount
+    # Add the legend labels and items
+    for i, (glabel, label_width) in enumerate(zip(group_labels, legend_label_widths)):
+        item_label_y = int((i + 0.5) * legend_box_height / len(group_labels) + legend_font_height / 2)
+        # Labels
+        label_x = legend_box_width - label_width
+        cv2.putText(legend_box, glabel, (label_x, item_label_y), cv2.FONT_HERSHEY_COMPLEX, legend_font_size, (0, 0, 0), legend_font_height // 15, cv2.LINE_AA)
+        # Items
+        item_x = 150
+        # Fill the item circle with the color of the group
+        cv2.circle(legend_box, (item_x, item_label_y - legend_font_height // 2), legend_font_height // 2, (0, 255, 0) if i == 0 else (255, 0, 0), -1)
+        # Add a black border to the item circle
+        cv2.circle(legend_box, (item_x, item_label_y - legend_font_height // 2), legend_font_height // 2, (0, 0, 0), legend_font_height // 30)
 
-    # Save the image
-    cv2.imwrite(output_path, image, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+    # Add the legend to the image
+    image[legend_margin:(legend_box_height + legend_margin), -(legend_box_width + legend_margin):-legend_margin, :] = legend_box
 
-def compare_groups(group1 : list, group2 : list, threshold : float=1/10, plot : bool=True, image_path : str=None, output_identifier : str=None, output_directory : str=None) -> str:
+    if save_plot:
+        # Save the image
+        cv2.imwrite(output_path, image, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+    else:
+        # Check if the image is displayed in a Jupyter notebook
+        if 'get_ipython' in globals():
+            # Display the image
+            display(Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)))
+        else:
+            # Check if a display is available
+            if os.environ.get('DISPLAY', '') == '':
+                print('No display found, unable to display the image')
+            else:
+                # Display the image
+                cv2.imshow('Matches', image)
+                cv2.waitKey(0)
+                cv2.destroyAllWindows()
+        
+
+def compare_groups(group1 : list, group2 : list, group_labels : Union[str, None]=None, threshold : float=1/10, plot : bool=True, image_path : Union[str, None]=None, output_identifier : str=None, output_directory : str=None) -> str:
     """
     Compares group 1 to group 2.
 
@@ -618,9 +739,9 @@ def compare_groups(group1 : list, group2 : list, threshold : float=1/10, plot : 
         raise ValueError(f'Expected plot to be a bool, got {type(plot)}')
     if not (isinstance(image_path, str) or image_path is None):
         raise ValueError(f'Expected image_path to be a string or None, got {type(image_path)}')
-    if not isinstance(output_directory, str):
-        raise ValueError(f'Expected output_directory to be a string, got {type(output_directory)}')
-    elif not os.path.isdir(output_directory):
+    if not isinstance(output_directory, str) and not output_directory is None:
+        raise ValueError(f'Expected output_directory to be a string or None, got {type(output_directory)}')
+    elif isinstance(output_directory, str) and not os.path.isdir(output_directory):
         raise ValueError(f'Expected output_directory to be a valid directory, got {output_directory}')
     if not isinstance(output_identifier, str):
         raise ValueError(f'Expected output_identifier to be a string, got {type(output_identifier)}')
@@ -643,8 +764,8 @@ def compare_groups(group1 : list, group2 : list, threshold : float=1/10, plot : 
             raise ValueError(f'Expected path to be a string, got {type(image_path)}')
         elif not os.path.isfile(image_path):
             raise ValueError(f'Expected path to be a valid file, got {image_path}')
-        plot_matches(matches, c1, c2, image_path, f'{output_directory}{os.sep}{output_identifier}_matches.jpg')
-        plot_heatmap(iou, fast=False, output_path=f'{output_directory}{os.sep}{output_identifier}_heatmap.png')
+        plot_matches(matches, c1, c2, group_labels, image_path, f'{output_directory}{os.sep}{output_identifier}_matches.jpg' if not output_directory is None else None)
+        plot_heatmap(iou, group_labels, fast=False, output_path=f'{output_directory}{os.sep}{output_identifier}_heatmap.png' if not output_directory is None else None)
     if misses != 0:
         print(f"Missed {misses} geometries")
     
@@ -730,26 +851,49 @@ from glob import glob
 import json
 from tqdm import tqdm
 
-files = sorted(glob("dev/**/**.json", recursive=True))
-flat_bug_pred = [json.load(open(p)) for p in files]
+import argparse
 
-pred_coco = {}
-[fb_to_coco(d, pred_coco) for d in flat_bug_pred]
+if __name__ == "__main__":
 
-gt_coco = json.load(open("s3/CollembolAI/instances_default.json"))
+    # # Development defaults
+    # predictions = "dev/**/**.json"
+    # ground_truth = "s3/CollembolAI/instances_default.json"
+    # image_directory = "s3/CollembolAI"
+    # output_directory = "dev/eval"
+    # iou_match_threshold = 0.1
 
-images = [i["file_name"] for i in gt_coco["images"]]
+    parser = argparse.ArgumentParser(description='Evaluate predictions')
+    parser.add_argument('-p', '--predictions', type=str, help='Path or pattern to the predictions files')
+    parser.add_argument('-g', '--ground_truth', type=str, help='Path to the ground truth file')
+    parser.add_argument('-I', '--image_directory', type=str, help='Path to the image directory')
+    parser.add_argument('-o', '--output_directory', type=str, help='Path to the output directory')
+    parser.add_argument('-M', '--iou_match_threshold', type=float, default=0.1, help='IoU match threshold. Defaults to 0.1')
 
-gt_annotations, pred_annotations = split_annotations(gt_coco), split_annotations(pred_coco)
+    args = parser.parse_args()
 
 
-for image in tqdm(images):
-    if not "train" in image:
-        continue
-    matches = compare_groups(gt_annotations[image], pred_annotations[f"s3/CollembolAI/{image}"], plot=True, image_path=f"s3/CollembolAI/{image}", output_identifier=image, output_directory="dev/eval", threshold=0.1)
+    files = sorted(glob(args.predictions, recursive=True))
+    flat_bug_predictions = [json.load(open(p)) for p in files]
+
+    pred_coco = {}
+    [fb_to_coco(d, pred_coco) for d in flat_bug_predictions]
+
+    gt_coco = json.load(open(args.ground_truth))
+
+    images = [i["file_name"] for i in gt_coco["images"]]
+
+    gt_annotations, pred_annotations = split_annotations(gt_coco), split_annotations(pred_coco)
 
 
-# groups = split_annotations(coco)
-# image_names = [i["file_name"] for i in coco["images"]]
-
-# matches = compare_groups(groups[image_names[0]], groups[image_names[1]], plot=True, image_path="s3/CollembolAI/ctrain03.jpg", output_identifier="test", output_directory="dev")
+    for image in tqdm(images):
+        if not "train" in image:
+            continue
+        matches = compare_groups(
+            group1              = gt_annotations[image], 
+            group2              = pred_annotations[image], 
+            group_labels        = ["Ground Truth", "Predictions"],
+            image_path          = f"{args.image_directory}{os.sep}{image}", 
+            output_identifier   = image, 
+            output_directory    = args.output_directory,
+            threshold           = args.iou_match_threshold
+        )
