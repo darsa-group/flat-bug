@@ -72,7 +72,6 @@ if __name__ == '__main__':
             # Save the results
             result_directory = prediction.save(
                 output_directory = option_dict["results_dir"],
-                overview = option_dict["results_dir"] + os.sep + "overview",
                 fast = option_dict["fast"],
                 crops = not option_dict["no_crops"],
                 mask_crops = not option_dict["fast"],
