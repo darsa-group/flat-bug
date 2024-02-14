@@ -70,10 +70,11 @@ Evaluation functions for FlatBug datasets.
 #         "mask_height": int
 #     }
 
-import os
+import os, time
 from typing import Union, List, Tuple, Dict
 import cv2
-from IPython.display import display
+from IPython.display import display, clear_output
+import ipywidgets as widgets
 import numpy as np
 
 DEBUG_DIRECTORY = "dev"
@@ -531,17 +532,23 @@ def plot_heatmap(mat : np.array, axis_labels : Union[List[str], None]=None, brea
         colormap = cv2.vconcat([colormap, x_axis_box])
         colormap = cv2.hconcat([y_axis_box, colormap])
 
+     
     if fast:
         # Rescale the colormap to 2x lower resolution
         colormap = cv2.resize(colormap, (colormap.shape[1] // 2, colormap.shape[0] // 2), interpolation=cv2.INTER_LINEAR)
-        _, output_ext = os.path.splitext(output_path)
-        if not output_ext in [".jpg", ".jpeg", ".JPG", ".JPEG"]:
-            print(f'WARNING: Expected output path to have a JPEG extension, got {output_ext}. May negate some of the speed benefits of the fast mode.')
-        # Save the image
-        cv2.imwrite(output_path, colormap, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    
+    if output_path is not None:
+        if fast:
+            _, output_ext = os.path.splitext(output_path)
+            if not output_ext in [".jpg", ".jpeg", ".JPG", ".JPEG"]:
+                print(f'WARNING: Expected output path to have a JPEG extension, got {output_ext}. May negate some of the speed benefits of the fast mode.')
+            # Save the image
+            cv2.imwrite(output_path, colormap, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+        else:
+            # Save the image
+            cv2.imwrite(output_path, colormap)
     else:
-        # Save the image
-        cv2.imwrite(output_path, colormap)
+        compatible_display(colormap)
 
 def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : List[np.array], group_labels : Union[List[str], None]=None, image_path : Union[str, None]=None, output_path : Union[str, None]=None):
     """
@@ -691,19 +698,47 @@ def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : Lis
         # Save the image
         cv2.imwrite(output_path, image, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
     else:
-        # Check if the image is displayed in a Jupyter notebook
-        if 'get_ipython' in globals():
-            # Display the image
-            display(Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB)))
+        compatible_display(image)
+
+def compatible_display(image : np.array):
+    TIMEOUT = 5 # seconds
+    # Check if the image is displayed in a Jupyter notebook
+    if 'get_ipython' in globals():
+        # Convert the image from BGR to RGB
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # Create a button widget
+        button = widgets.Button(description="Close Image")
+        button_clicked = False
+        
+        # Display callback function
+        def on_button_clicked(b):
+            nonlocal button_clicked
+            # Clear the output after button click
+            clear_output()
+            button_clicked = True
+        
+        # Attach the callback function to the button
+        button.on_click(on_button_clicked)
+        
+        # Display the image
+        display(widgets.Image(value=cv2.imencode('.jpg', image_rgb)[1].tobytes(), format='jpg'))
+        # Display the button
+        display(button)
+
+        # Wait for the button to be clicked
+        start_time = time.time()
+        while not button_clicked and (time.time() - start_time) < TIMEOUT:
+            time.sleep(0.01)
+        print('Image display closed')
+    else:
+        # Check if a display is available
+        if os.environ.get('DISPLAY', '') == '':
+            print('No display found, unable to display the image')
         else:
-            # Check if a display is available
-            if os.environ.get('DISPLAY', '') == '':
-                print('No display found, unable to display the image')
-            else:
-                # Display the image
-                cv2.imshow('Matches', image)
-                cv2.waitKey(0)
-                cv2.destroyAllWindows()
+            # Display the image
+            cv2.imshow('Matches', image)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
         
 
 def compare_groups(group1 : list, group2 : list, group_labels : Union[str, None]=None, threshold : float=1/10, plot : bool=True, image_path : Union[str, None]=None, output_identifier : str=None, output_directory : str=None) -> str:
@@ -831,20 +866,21 @@ def compare_groups(group1 : list, group2 : list, group_labels : Union[str, None]
         "contour_2" : contours2
     }
 
-    # Write the output to a CSV file
-    output_path = f"{output_directory}{os.sep}{output_identifier}.csv"
-    separator = ";"
-    with open(output_path, "w") as out:
-        columns = list(output.keys())
-        data = list(output.values())
-        out.write(separator.join(columns) + "\n")
-        for row in zip(*data):
-            out.write(separator.join([str(i) for i in row]) + "\n")
+    if not output_directory is None:
+        # Write the output to a CSV file
+        output_path = f"{output_directory}{os.sep}{output_identifier}.csv"
+        separator = ";"
+        with open(output_path, "w") as out:
+            columns = list(output.keys())
+            data = list(output.values())
+            out.write(separator.join(columns) + "\n")
+            for row in zip(*data):
+                out.write(separator.join([str(i) for i in row]) + "\n")
 
-    # Return the path to the output
-    return output_path
-
-
+        # Return the path to the output
+        return output_path
+    else:
+        return output
 
 import os
 from glob import glob
@@ -868,6 +904,8 @@ if __name__ == "__main__":
     parser.add_argument('-I', '--image_directory', type=str, help='Path to the image directory')
     parser.add_argument('-o', '--output_directory', type=str, help='Path to the output directory')
     parser.add_argument('-M', '--iou_match_threshold', type=float, default=0.1, help='IoU match threshold. Defaults to 0.1')
+    parser.add_argument('-P', '--plot', action="store_true", help='Plot the matches and the IoU matrix')
+    parser.add_argument('-n', type=int, default=-1, help='Number of images to process. Defaults to -1 (all images)')
 
     args = parser.parse_args()
 
@@ -881,6 +919,12 @@ if __name__ == "__main__":
     gt_coco = json.load(open(args.ground_truth))
 
     images = [i["file_name"] for i in gt_coco["images"]]
+    if args.n != -1:
+        if args.n > len(images):
+            print(f"Warning: Number of images to process ({args.n}) is greater than the number of images in the ground truth file ({len(images)}).")
+        if args.n < -1:
+            print(f"Warning: Number of images to process ({args.n}) is negative and not -1 (all).")
+        images = images[:args.n]
 
     gt_annotations, pred_annotations = split_annotations(gt_coco), split_annotations(pred_coco)
 
@@ -894,6 +938,7 @@ if __name__ == "__main__":
             group_labels        = ["Ground Truth", "Predictions"],
             image_path          = f"{args.image_directory}{os.sep}{image}", 
             output_identifier   = image, 
+            plot               = args.plot,
             output_directory    = args.output_directory,
             threshold           = args.iou_match_threshold
         )
