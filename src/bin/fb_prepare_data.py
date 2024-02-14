@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import glob
+import json
 import os
 from ultralytics.data.converter import convert_coco
 import hashlib
@@ -20,9 +21,9 @@ def collapse_in_parent_dir(child):
     shutil.rmtree(child)
 
 
-OUT_COCO_CONVERTER_BASE = "./yolo_labels"
-OUT_COCO_CONVERTER = "./yolo_labels/labels/default/"
-OUT_COCO_CONVERTER_IMAGES = "./yolo_labels/images/default/"
+
+OUT_COCO_CONVERTER = "labels/default/"
+OUT_COCO_CONVERTER_IMAGES = "images/default/"
 JSON_FILE_BASENAME = "instances_default.json"
 DATASET_NAME = "insects"
 
@@ -40,6 +41,32 @@ out_structure = """
         ├── val
 """
 # fixme, now, we ignores BG images!
+
+def prepare_coco_file(source_file, image_list, out):
+    with open(source_file) as f:
+        coco = json.load(f)
+    images_to_keep = []
+    image_ids_to_keep = []
+
+    new_image = []
+    for i in coco["images"]:
+        if i["file_name"] in image_list:
+            images_to_keep.append(i)
+            i["file_name"] = image_list[i["file_name"]]
+            image_ids_to_keep.append(i["id"])
+            new_image.append(i)
+    assert len(images_to_keep) > 0
+
+
+    new_annots = []
+    for a in coco["annotations"]:
+        if a["image_id"] in image_ids_to_keep:
+            new_annots.append(a)
+
+    coco["annotations"] = new_annots
+    coco["images"] = images_to_keep
+    with open(out, "w") as f:
+        json.dump(coco, f)
 
 if __name__ == '__main__':
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
@@ -96,21 +123,30 @@ if __name__ == '__main__':
     assert len(datasets) > 0, f"Did not find any datasets in {COCO_DATA_ROOT}"
     for d in datasets:
         source_dir = os.path.join(COCO_DATA_ROOT, d)
-        tmp_dir = tempfile.mkdtemp()
+        tmp_dir = tempfile.mkdtemp(prefix="tmp-fb-")
+        shutil.rmtree(tmp_dir)
+
         try:
-            os.chdir(tmp_dir)
-            o = convert_coco(labels_dir=source_dir, save_dir=OUT_COCO_CONVERTER_BASE, use_segments=True)
 
-            os.makedirs(os.path.join(OUT_COCO_CONVERTER, "train"), exist_ok=True)
-            os.makedirs(os.path.join(OUT_COCO_CONVERTER, "val"), exist_ok=True)
+            coco_files = [f for f in glob.glob(os.path.join( source_dir, "*.json"))]
+            assert len(coco_files) == 1, os.path.join(source_dir, "*.json") #,"Multiple label files, only supporting one"
 
-            os.makedirs(os.path.join(OUT_COCO_CONVERTER_IMAGES, "train"), exist_ok=True)
-            os.makedirs(os.path.join(OUT_COCO_CONVERTER_IMAGES, "val"), exist_ok=True)
+            # os.chdir(tmp_dir)
+            convert_coco(labels_dir=source_dir, save_dir=tmp_dir, use_segments=True)
+
+            os.makedirs(os.path.join(tmp_dir, OUT_COCO_CONVERTER, "train"), exist_ok=True)
+            os.makedirs(os.path.join(tmp_dir, OUT_COCO_CONVERTER, "val"), exist_ok=True)
+
+            os.makedirs(os.path.join(tmp_dir, OUT_COCO_CONVERTER_IMAGES, "train"), exist_ok=True)
+            os.makedirs(os.path.join(tmp_dir, OUT_COCO_CONVERTER_IMAGES, "val"), exist_ok=True)
+
             images = {os.path.basename(f) for f in glob.glob(os.path.join(source_dir, "*.jpg"))}
 
             assert len(images) > 0
-            for f in glob.glob(os.path.join(OUT_COCO_CONVERTER, "*.txt")):
 
+            validation_files = {}
+            training_files = {}
+            for f in glob.glob(os.path.join(tmp_dir,OUT_COCO_CONVERTER, "*.txt")):
                 basename_sans_ext = os.path.splitext(os.path.basename(f))[0]
                 expected_image_basename = basename_sans_ext + ".jpg"
                 if expected_image_basename not in images:
@@ -123,21 +159,28 @@ if __name__ == '__main__':
                 with open(im_path, 'rb') as file_obj:
                     file_hash = hashlib.md5(file_obj.read()).hexdigest()
 
-                # s = bytes(basename_sans_ext, 'ascii')
+
+                new_bn_se = f"{d}_{basename_sans_ext}"
                 p = int(file_hash[0:4], 16) / int("ffff", 16)
                 if p < option_dict["validation_proportion"]:
                     subset = "val/"
+                    validation_files[expected_image_basename] = new_bn_se + ".jpg"
                 else:
                     subset = "train/"
+                    training_files[expected_image_basename] = new_bn_se + ".jpg"
                 logging.info(f"{expected_image_basename} -> {subset}")
-                new_bn_se = f"{d}_{basename_sans_ext}"
-                shutil.move(f, os.path.join(OUT_COCO_CONVERTER, os.path.join(subset, new_bn_se + ".txt")))
-                shutil.copy(im_path, os.path.join(OUT_COCO_CONVERTER_IMAGES, subset, new_bn_se + ".jpg"))
 
-            collapse_in_parent_dir(OUT_COCO_CONVERTER)
-            collapse_in_parent_dir(OUT_COCO_CONVERTER_IMAGES)
+                shutil.move(f, os.path.join(tmp_dir, OUT_COCO_CONVERTER, os.path.join(subset, new_bn_se + ".txt")))
+                shutil.copy(im_path, os.path.join(tmp_dir, OUT_COCO_CONVERTER_IMAGES, subset, new_bn_se + ".jpg"))
+
+            prepare_coco_file(coco_files[0], validation_files, os.path.join(tmp_dir, OUT_COCO_CONVERTER, "val", JSON_FILE_BASENAME))
+            prepare_coco_file(coco_files[0], training_files, os.path.join(tmp_dir, OUT_COCO_CONVERTER, "train", JSON_FILE_BASENAME))
+
+
+            collapse_in_parent_dir(os.path.join(tmp_dir, OUT_COCO_CONVERTER))
+            collapse_in_parent_dir(os.path.join(tmp_dir,  OUT_COCO_CONVERTER_IMAGES))
             #fixme here should add a subdir like "insects/" same as the name in data.yaml
-            shutil.copytree(OUT_COCO_CONVERTER_BASE , PREPARED_DATA_TARGET_SUBDIR, dirs_exist_ok=True)
+            shutil.copytree(tmp_dir, PREPARED_DATA_TARGET_SUBDIR, dirs_exist_ok=True)
         finally:
             if os.path.isdir(tmp_dir):
                 shutil.rmtree(tmp_dir)
