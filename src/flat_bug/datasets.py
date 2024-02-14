@@ -59,7 +59,7 @@ class MyYOLODataset(YOLODataset):
             RandomColorInv(),
             RandomFlip(direction="vertical", p=hyp.flipud),
             RandomFlip(direction="horizontal", p=hyp.fliplr),
-            MyRandomPerspective(degrees=180, scale=(0.1, 1), translate=0),
+            MyRandomPerspective(imgsz=self.imgsz, degrees=180,translate=0),
             RandomCrop(self.imgsz),
             # MyAlbumentations(self.imgsz),
             # LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False),
@@ -95,7 +95,7 @@ class MyYOLOValidationDataset(MyYOLODataset):
 
     def build_transforms(self, hyp=None):
         return Compose([
-            MyRandomPerspective(degrees=0, scale=(.1, 1), translate=0),
+            MyRandomPerspective(imgsz=self.imgsz, degrees=0, scale=(.1, 1), translate=0),
             RandomCrop(self.imgsz, max_targets=np.Inf),
             Format(bbox_format="xywh",
                    normalize=True,
