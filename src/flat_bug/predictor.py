@@ -9,7 +9,7 @@ from flat_bug.yolo_helpers import *
 from flat_bug.geometry_simples import find_contours, contours_to_masks, contour_sum, interpolate_contour, create_contour_mask
 from ultralytics import YOLO
 
-from torchvision.io import read_image
+from torchvision.io import read_image, ImageReadMode
 import torchvision.transforms as transforms
 
 from typing import Union
@@ -945,7 +945,7 @@ class Predictor(object):
             start_pyramid.record()
 
         if isinstance(image, str):
-            im = read_image(image).to(device=self._device, dtype=self._dtype)
+            im = read_image(image, ImageReadMode.RGB).to(device=self._device, dtype=self._dtype)
             path = image
         elif isinstance(image, torch.Tensor):
             im = image
