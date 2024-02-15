@@ -436,7 +436,7 @@ def match_geoms(contours1 : List[np.array], contours2 : List[np.array], threshol
     matches = np.concatenate([matches, matches_2], axis=0)
     return matches, len(unmatched)
 
-def plot_heatmap(mat : np.array, axis_labels : Union[List[str], None]=None, breaks : int=25, dimensions : Union[None, Tuple[int, int]]=None, fast : bool=True, output_path : str=None):
+def plot_heatmap(mat : np.array, axis_labels : Union[List[str], None]=None, breaks : int=25, dimensions : Union[None, Tuple[int, int]]=None, output_path : str=None, scale : float=1):
     """
     Plots a heatmap of a matrix using OpenCV.
 
@@ -445,8 +445,8 @@ def plot_heatmap(mat : np.array, axis_labels : Union[List[str], None]=None, brea
         axis_labels (Union[List[str], None], optional): Axis labels. Defaults to None.
         breaks (int, optional): Number of breaks on the colorbar. Defaults to 25.
         dimensions (Union[None, Tuple[int, int]], optional): Dimensions of the output image. Defaults to None.
-        fast (bool, optional): Whether to use fast mode. Defaults to True.
         output_path (str, optional): Output path. Defaults to None.
+        scale (float, optional): Scale of the output image. Defaults to 1.
 
     Returns:
         None
@@ -536,24 +536,17 @@ def plot_heatmap(mat : np.array, axis_labels : Union[List[str], None]=None, brea
         colormap = cv2.hconcat([y_axis_box, colormap])
 
      
-    if fast:
+    if scale != 1:
         # Rescale the colormap to 2x lower resolution
-        colormap = cv2.resize(colormap, (colormap.shape[1] // 2, colormap.shape[0] // 2), interpolation=cv2.INTER_LINEAR)
+        colormap = cv2.resize(colormap, (int(colormap.shape[1] * scale), int(colormap.shape[0] * scale)), interpolation=cv2.INTER_LINEAR)
     
     if output_path is not None:
-        if fast:
-            _, output_ext = os.path.splitext(output_path)
-            if not output_ext in [".jpg", ".jpeg", ".JPG", ".JPEG"]:
-                print(f'WARNING: Expected output path to have a JPEG extension, got {output_ext}. May negate some of the speed benefits of the fast mode.')
-            # Save the image
-            cv2.imwrite(output_path, colormap, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-        else:
-            # Save the image
-            cv2.imwrite(output_path, colormap)
+        # Save the image
+        cv2.imwrite(output_path, colormap, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
     else:
         compatible_display(colormap)
 
-def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : List[np.array], group_labels : Union[List[str], None]=None, image_path : Union[str, None]=None, output_path : Union[str, None]=None):
+def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : List[np.array], group_labels : Union[List[str], None]=None, image_path : Union[str, None]=None, output_path : Union[str, None]=None, scale : float=1):
     """
     Plots the matches between two groups of contours using OpenCV.
 
@@ -563,6 +556,7 @@ def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : Lis
         contours2 (list[np.array]): Contours of group 2.
         image_path (str): Path to the image.
         output_path (str): Output path.
+        scale (float): Scale of the output image.
 
     Returns:
         None
@@ -652,20 +646,28 @@ def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : Lis
     bboxes2 = (bboxes2 / 2).astype(np.int32)
 
     # Label the objects
+    label_font_height = image.shape[0] // 200
+    label_font_scale = cv2.getFontScaleFromHeight(cv2.FONT_HERSHEY_SIMPLEX, label_font_height, 3)
+    label_font_thickness = label_font_height // 15
     for idx, (i, j) in enumerate(matches):
         no_match = (i == -1) or (j == -1)
+        label_coord = []
+        label_font_color = []
         if no_match:
             match_color = (0, 0, 255)
         else:
             match_color = (255, 255, 255)
         if i != -1:
             # Draw a text label next to the box
-            cv2.putText(image, f"{idx}", (bboxes1[i][0], bboxes1[i][1] + 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 10, cv2.LINE_8)
-            cv2.putText(image, f"{idx}", (bboxes1[i][0], bboxes1[i][1] + 30), cv2.FONT_HERSHEY_SIMPLEX, 1, match_color, 5 if no_match else 2, cv2.LINE_AA)
+            label_font_color.append((0, 255, 0))
+            label_coord.append((bboxes1[i][0], bboxes1[i][1] + label_font_height))
         if j != -1:
             # Draw a text label next to the box
-            cv2.putText(image, f"{idx}", (bboxes2[j][0], bboxes2[j][1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 10, cv2.LINE_8)
-            cv2.putText(image, f"{idx}", (bboxes2[j][0], bboxes2[j][1] - 5), cv2.FONT_HERSHEY_SIMPLEX, 1, match_color, 5 if no_match else 2, cv2.LINE_AA)
+            label_font_color.append((255, 0, 0))
+            label_coord.append((bboxes2[j][0], bboxes2[j][1] - label_font_height // 4))
+        for coord, color in zip(label_coord, label_font_color):
+            cv2.putText(image, f"{idx}", coord, cv2.FONT_HERSHEY_SIMPLEX, label_font_scale, color, label_font_thickness * 3, cv2.LINE_8)
+            cv2.putText(image, f"{idx}", coord, cv2.FONT_HERSHEY_SIMPLEX, label_font_scale, match_color, label_font_thickness * (2 if no_match else 1), cv2.LINE_AA)
     
     # Create a legend
     legend_margin = 50
@@ -696,6 +698,10 @@ def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : Lis
 
     # Add the legend to the image
     image[legend_margin:(legend_box_height + legend_margin), -(legend_box_width + legend_margin):-legend_margin, :] = legend_box
+
+    if scale != 1:
+        # Scale the image
+        image = cv2.resize(image, (int(image.shape[1] * scale), int(image.shape[0] * scale)))
 
     if save_plot:
         # Save the image
@@ -744,8 +750,9 @@ def compatible_display(image : np.array):
             cv2.destroyAllWindows()
         
 
-def compare_groups(group1 : list, group2 : list, group_labels : Union[str, None]=None, threshold : float=1/10, plot : bool=True,
-                   image_path : Union[str, None]=None, output_identifier : str=None, output_directory : str=None) -> str:
+def compare_groups(group1 : list, group2 : list, group_labels : Union[str, None]=None, threshold : float=1/10, 
+                   plot : bool=True, plot_scale : float=1,
+                   image_path : Union[str, None]=None, output_identifier : str=None, output_directory : str=None) -> Union[str, dict]:
     """
     Compares group 1 to group 2.
 
@@ -763,9 +770,18 @@ def compare_groups(group1 : list, group2 : list, group_labels : Union[str, None]
     Args:
         group1 (list): Group 1.
         group2 (list): Group 2.
+        group_labels (Union[str, None], optional): Group labels. Defaults to None.
+        threshold (float, optional): IoU threshold. Defaults to 1/10.
+        plot (bool, optional): Whether to plot the matches and the IoU matrix. Defaults to True.
+        plot_scale (float, optional): Scale of the plot. Defaults to 1. Lower values will make the plot smaller, but may be faster.
+        image_path (Union[str, None], optional): Path to the image. Defaults to None.
+        output_identifier (str, optional): Output identifier. Defaults to None.
+        output_directory (str, optional): Output directory. Defaults to None.
 
     Returns:
-        str: Path to the CSV file.
+        str: Path to the CSV file.\n
+        or\n
+        dict: The data that would have been saved to the CSV file as a dictionary, where the keys are the column names and the values are the column values.
     """
     # Type check the input
     if not isinstance(group1, list) or not isinstance(group2, list):
@@ -803,10 +819,8 @@ def compare_groups(group1 : list, group2 : list, group_labels : Union[str, None]
             raise ValueError(f'Expected path to be a string, got {type(image_path)}')
         elif not os.path.isfile(image_path):
             raise ValueError(f'Expected path to be a valid file, got {image_path}')
-        plot_matches(matches, c1, c2, group_labels, image_path, f'{output_directory}{os.sep}{output_identifier}_matches.jpg' if not output_directory is None else None)
-        plot_heatmap(iou, group_labels, fast=False, output_path=f'{output_directory}{os.sep}{output_identifier}_heatmap.png' if not output_directory is None else None)
-    if misses != 0:
-        print(f"Missed {misses} geometries")
+        plot_matches(matches, c1, c2, group_labels, image_path, f'{output_directory}{os.sep}{output_identifier}_matches.jpg' if not output_directory is None else None, scale=plot_scale)
+        plot_heatmap(iou, group_labels, output_path=f'{output_directory}{os.sep}{output_identifier}_heatmap.jpg' if not output_directory is None else None, scale=plot_scale)
     
     ## Gather the data for the output
     matched_1 = matches[:, 1] != -1
@@ -910,6 +924,7 @@ if __name__ == "__main__":
     parser.add_argument('-o', '--output_directory', type=str, help='Path to the output directory')
     parser.add_argument('-M', '--iou_match_threshold', type=float, default=0.1, help='IoU match threshold. Defaults to 0.1')
     parser.add_argument('-P', '--plot', action="store_true", help='Plot the matches and the IoU matrix')
+    parser.add_argument('-s', '--scale', type=float, default=1, help='Scale of the output images. Defaults to 1. Lower is faster.')
     parser.add_argument('-n', type=int, default=-1, help='Number of images to process. Defaults to -1 (all images)')
 
     args = parser.parse_args()
@@ -938,14 +953,20 @@ if __name__ == "__main__":
     if len(shared_keys) == 0:
         raise ValueError(f"No images in common between the ground truth and the predictions")
 
-    for image in tqdm(shared_keys):
+    shared_keys = sorted(shared_keys)
+    if args.n == -1:
+        print(f"Skipping the evaluation of {len(shared_keys) - args.n} images")
+        shared_keys = shared_keys[:args.n]
+
+    for image in tqdm(shared_keys, desc="Evaluating images", dynamic_ncols=True):
         matches = compare_groups(
             group1              = gt_annotations[image], 
             group2              = pred_annotations[image], 
             group_labels        = ["Ground Truth", "Predictions"],
             image_path          = f"{args.image_directory}{os.sep}{image}", 
             output_identifier   = image, 
-            plot               = args.plot,
+            plot                = args.plot,
+            plot_scale         = args.scale,
             output_directory    = args.output_directory,
             threshold           = args.iou_match_threshold
         )
