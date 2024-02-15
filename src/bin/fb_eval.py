@@ -453,6 +453,9 @@ def plot_heatmap(mat : np.array, axis_labels : Union[List[str], None]=None, brea
     """
     if dimensions is None:
         dimensions = tuple([m * 10 for m in mat.shape[::-1]])
+    if mat.shape[0] == 0 or mat.shape[1] == 0:
+        print('WARNING: Empty matrix. Cannot plot heatmap.')
+        return
     # Create a colormap for viridis
     colormap = cv2.applyColorMap((mat / mat.max() * 255).astype(np.uint8), cv2.COLORMAP_VIRIDIS)
     # Expand colormap to 1000x1000
@@ -490,7 +493,7 @@ def plot_heatmap(mat : np.array, axis_labels : Union[List[str], None]=None, brea
     colorbar_width = int(max_width * 1.25)
 
     # Create a colorbar
-    colorbar = cv2.applyColorMap(np.arange(256, dtype=np.uint8).reshape(-1, 1).repeat(colorbar_width, 1), cv2.COLORMAP_VIRIDIS)
+    colorbar = cv2.applyColorMap(np.arange(256, dtype=np.uint8).reshape(256, 1).repeat(colorbar_width, 1), cv2.COLORMAP_VIRIDIS)
     # Stretch the colorbar to the height of the colormap
     colorbar = cv2.resize(colorbar, (colorbar.shape[1], cheight), interpolation=cv2.INTER_LINEAR_EXACT)
     cbheight = colorbar.shape[0]
