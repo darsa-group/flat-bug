@@ -9,6 +9,7 @@ setup(
     long_description=__doc__,
     packages=find_packages(),
     scripts=['bin/fb_train.py',
+             'bin/fb_eval.py',
              'bin/fb_predict.py',
              'bin/fb_prepare_data.py',
              'bin/fb_predict_erda.py',
@@ -23,7 +24,9 @@ setup(
         'torch',
         'shapely',
         'torchvision',
-        'scikit-learn'],
+        'scikit-learn',
+        "IPython",
+        "ipywidgets"],
     extras_require={
         'test': ['nose', 'pytest', 'pytest-cov', 'codecov', 'coverage'],
     },
