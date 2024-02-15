@@ -914,30 +914,31 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-
     files = sorted(glob(args.predictions, recursive=True))
-
     flat_bug_predictions = [json.load(open(p)) for p in files]
-
-    # assert len(flat_bug_predictions) > 0 # fixme, we should check somethng matches
 
     pred_coco = {}
     [fb_to_coco(d, pred_coco) for d in flat_bug_predictions]
 
-    gt_coco = json.load(open(args.ground_truth))
-
-    images = [i["file_name"] for i in gt_coco["images"]]
-    if args.n != -1:
-        if args.n > len(images):
-            print(f"Warning: Number of images to process ({args.n}) is greater than the number of images in the ground truth file ({len(images)}).")
-        if args.n < -1:
-            print(f"Warning: Number of images to process ({args.n}) is negative and not -1 (all).")
-        images = images[:args.n]
-
+    if not os.path.exists(args.ground_truth):
+        raise ValueError(f"Ground truth file not found: {args.ground_truth}")
+    gt_coco = json.load(open(args.ground_truth, "r"))
     gt_annotations, pred_annotations = split_annotations(gt_coco), split_annotations(pred_coco)
 
+    # Find the differences between which images are in the ground truth and which are in the predictions
+    gt_keys = set(gt_annotations.keys())
+    pred_keys = set(pred_annotations.keys())
+    gt_diff_keys = gt_keys.difference(pred_keys)
+    pred_diff_keys = pred_keys.difference(gt_keys)
+    shared_keys = gt_keys.intersection(pred_keys)
+    if len(gt_diff_keys) > 0:
+        print(f"Ground truth has {len(gt_diff_keys)} images that are not in the predictions: {gt_diff_keys}")
+    if len(pred_diff_keys) > 0:
+        print(f"Predictions has {len(pred_diff_keys)} images that are not in the ground truth: {pred_diff_keys}")
+    if len(shared_keys) == 0:
+        raise ValueError(f"No images in common between the ground truth and the predictions")
 
-    for image in tqdm(images):
+    for image in tqdm(shared_keys):
         matches = compare_groups(
             group1              = gt_annotations[image], 
             group2              = pred_annotations[image], 
