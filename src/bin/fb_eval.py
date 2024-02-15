@@ -436,7 +436,7 @@ def match_geoms(contours1 : List[np.array], contours2 : List[np.array], threshol
     matches = np.concatenate([matches, matches_2], axis=0)
     return matches, len(unmatched)
 
-def plot_heatmap(mat : np.array, axis_labels : Union[List[str], None]=None, breaks : int=25, dimensions : Union[None, Tuple[int, int]]=None, output_path : str=None, scale : float=1):
+def plot_heatmap(mat : np.array, axis_labels : Union[List[str], None]=None, breaks : int=25, dimensions : Union[None, Tuple[int, int]]=None, output_path : str=None, scale : float=1) -> None:
     """
     Plots a heatmap of a matrix using OpenCV.
 
@@ -546,7 +546,7 @@ def plot_heatmap(mat : np.array, axis_labels : Union[List[str], None]=None, brea
     else:
         compatible_display(colormap)
 
-def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : List[np.array], group_labels : Union[List[str], None]=None, image_path : Union[str, None]=None, output_path : Union[str, None]=None, scale : float=1):
+def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : List[np.array], group_labels : Union[List[str], None]=None, image_path : Union[str, None]=None, output_path : Union[str, None]=None, scale : float=1, boxes : bool=True) -> None:
     """
     Plots the matches between two groups of contours using OpenCV.
 
@@ -561,6 +561,7 @@ def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : Lis
     Returns:
         None
     """
+    GROUP_COLORS = [(0, 255, 0), (255, 0, 0)]
     # Type check the input
     if not isinstance(matches, np.ndarray):
         raise ValueError(f'Expected matches to be a NumPy array, got {type(matches)}')
@@ -625,14 +626,16 @@ def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : Lis
     for idx, (i, j) in enumerate(matches):
         if i != -1:
             # Draw the first contour mask on the copy
-            cv2.fillPoly(cimg1, [contours1[i]], (0, 255, 0))
-            # Draw boxes around the contours 
-            cv2.rectangle(image, (bboxes1[i][0], bboxes1[i][1]), (bboxes1[i][2], bboxes1[i][3]), (0, 255, 0), 8)
+            cv2.fillPoly(cimg1, [contours1[i]], GROUP_COLORS[0])
+            if boxes:
+                # Draw boxes around the contours 
+                cv2.rectangle(image, (bboxes1[i][0], bboxes1[i][1]), (bboxes1[i][2], bboxes1[i][3]), (0, 255, 0), 8)
         if j != -1:
             # Draw the second contour mask on the copy
-            cv2.fillPoly(cimg2, [contours2[j]], (255, 0, 0))
-            # Draw boxes around the contours
-            cv2.rectangle(image, (bboxes2[j][0], bboxes2[j][1]), (bboxes2[j][2], bboxes2[j][3]), (255, 0, 0), 8)
+            cv2.fillPoly(cimg2, [contours2[j]], GROUP_COLORS[1])
+            if boxes:
+                # Draw boxes around the contours
+                cv2.rectangle(image, (bboxes2[j][0], bboxes2[j][1]), (bboxes2[j][2], bboxes2[j][3]), (255, 0, 0), 8)
         
     # Blend the image copies with the contour masks together (makes the contours semi-transparent - alpha=0.5)
     cv2.addWeighted(cimg1, 0.5, cimg2, 0.5, 0, dst=cimg1)
@@ -659,11 +662,12 @@ def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : Lis
             match_color = (255, 255, 255)
         if i != -1:
             # Draw a text label next to the box
-            label_font_color.append((0, 255, 0))
-            label_coord.append((bboxes1[i][0], bboxes1[i][1] + label_font_height))
+            label_width = cv2.getTextSize(f"{idx}", cv2.FONT_HERSHEY_SIMPLEX, label_font_scale, label_font_thickness)[0][0]
+            label_font_color.append(GROUP_COLORS[0])
+            label_coord.append((bboxes1[i][0] - label_width, bboxes1[i][1] + label_font_height))
         if j != -1:
             # Draw a text label next to the box
-            label_font_color.append((255, 0, 0))
+            label_font_color.append(GROUP_COLORS[1])
             label_coord.append((bboxes2[j][0], bboxes2[j][1] - label_font_height // 4))
         for coord, color in zip(label_coord, label_font_color):
             cv2.putText(image, f"{idx}", coord, cv2.FONT_HERSHEY_SIMPLEX, label_font_scale, color, label_font_thickness * 3, cv2.LINE_8)
@@ -691,8 +695,9 @@ def plot_matches(matches : np.array, contours1 : list[np.array], contours2 : Lis
         cv2.putText(legend_box, glabel, (label_x, item_label_y), cv2.FONT_HERSHEY_COMPLEX, legend_font_size, (0, 0, 0), legend_font_height // 15, cv2.LINE_AA)
         # Items
         item_x = 150
+        item_color = GROUP_COLORS[i]
         # Fill the item circle with the color of the group
-        cv2.circle(legend_box, (item_x, item_label_y - legend_font_height // 2), legend_font_height // 2, (0, 255, 0) if i == 0 else (255, 0, 0), -1)
+        cv2.circle(legend_box, (item_x, item_label_y - legend_font_height // 2), legend_font_height // 2, item_color, -1)
         # Add a black border to the item circle
         cv2.circle(legend_box, (item_x, item_label_y - legend_font_height // 2), legend_font_height // 2, (0, 0, 0), legend_font_height // 30)
 
@@ -751,7 +756,7 @@ def compatible_display(image : np.array):
         
 
 def compare_groups(group1 : list, group2 : list, group_labels : Union[str, None]=None, threshold : float=1/10, 
-                   plot : bool=True, plot_scale : float=1,
+                   plot : bool=True, plot_scale : float=1, plot_boxes : bool=True,
                    image_path : Union[str, None]=None, output_identifier : str=None, output_directory : str=None) -> Union[str, dict]:
     """
     Compares group 1 to group 2.
@@ -774,6 +779,7 @@ def compare_groups(group1 : list, group2 : list, group_labels : Union[str, None]
         threshold (float, optional): IoU threshold. Defaults to 1/10.
         plot (bool, optional): Whether to plot the matches and the IoU matrix. Defaults to True.
         plot_scale (float, optional): Scale of the plot. Defaults to 1. Lower values will make the plot smaller, but may be faster.
+        plot_boxes (bool, optional): Whether to plot the bounding boxes. Defaults to True.
         image_path (Union[str, None], optional): Path to the image. Defaults to None.
         output_identifier (str, optional): Output identifier. Defaults to None.
         output_directory (str, optional): Output directory. Defaults to None.
@@ -819,7 +825,7 @@ def compare_groups(group1 : list, group2 : list, group_labels : Union[str, None]
             raise ValueError(f'Expected path to be a string, got {type(image_path)}')
         elif not os.path.isfile(image_path):
             raise ValueError(f'Expected path to be a valid file, got {image_path}')
-        plot_matches(matches, c1, c2, group_labels, image_path, f'{output_directory}{os.sep}{output_identifier}_matches.jpg' if not output_directory is None else None, scale=plot_scale)
+        plot_matches(matches, c1, c2, group_labels, image_path, f'{output_directory}{os.sep}{output_identifier}_matches.jpg' if not output_directory is None else None, scale=plot_scale, boxes=plot_boxes)
         plot_heatmap(iou, group_labels, output_path=f'{output_directory}{os.sep}{output_identifier}_heatmap.jpg' if not output_directory is None else None, scale=plot_scale)
     
     ## Gather the data for the output
@@ -924,6 +930,7 @@ if __name__ == "__main__":
     parser.add_argument('-o', '--output_directory', type=str, help='Path to the output directory')
     parser.add_argument('-M', '--iou_match_threshold', type=float, default=0.1, help='IoU match threshold. Defaults to 0.1')
     parser.add_argument('-P', '--plot', action="store_true", help='Plot the matches and the IoU matrix')
+    parser.add_argument('-b', '--no_boxes', action="store_false", help='Do not plot the bounding boxes')
     parser.add_argument('-s', '--scale', type=float, default=1, help='Scale of the output images. Defaults to 1. Lower is faster.')
     parser.add_argument('-n', type=int, default=-1, help='Number of images to process. Defaults to -1 (all images)')
 
@@ -966,7 +973,8 @@ if __name__ == "__main__":
             image_path          = f"{args.image_directory}{os.sep}{image}", 
             output_identifier   = image, 
             plot                = args.plot,
-            plot_scale         = args.scale,
+            plot_scale          = args.scale,
+            plot_boxes          = args.no_boxes,
             output_directory    = args.output_directory,
             threshold           = args.iou_match_threshold
         )
