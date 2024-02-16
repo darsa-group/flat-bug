@@ -931,16 +931,20 @@ if __name__ == "__main__":
     parser.add_argument('-M', '--iou_match_threshold', type=float, default=0.1, help='IoU match threshold. Defaults to 0.1')
     parser.add_argument('-P', '--plot', action="store_true", help='Plot the matches and the IoU matrix')
     parser.add_argument('-b', '--no_boxes', action="store_false", help='Do not plot the bounding boxes')
+    parser.add_argument('-c', '--coco_predictions', action="store_true", help='Whether the predictions are already in a COCO format (legacy)')
     parser.add_argument('-s', '--scale', type=float, default=1, help='Scale of the output images. Defaults to 1. Lower is faster.')
     parser.add_argument('-n', type=int, default=-1, help='Number of images to process. Defaults to -1 (all images)')
 
     args = parser.parse_args()
 
-    files = sorted(glob(args.predictions, recursive=True))
-    flat_bug_predictions = [json.load(open(p)) for p in files]
-
-    pred_coco = {}
-    [fb_to_coco(d, pred_coco) for d in flat_bug_predictions]
+    if args.coco_predictions:
+        pred_coco = json.load(open(args.predictions, "r"))
+    else:
+        files = sorted(glob(args.predictions, recursive=True))
+        flat_bug_predictions = [json.load(open(p)) for p in files]
+        files = sorted(glob(args.predictions, recursive=True))
+        pred_coco = {}
+        [fb_to_coco(d, pred_coco) for d in flat_bug_predictions]
 
     if not os.path.exists(args.ground_truth):
         raise ValueError(f"Ground truth file not found: {args.ground_truth}")
