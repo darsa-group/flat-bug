@@ -874,15 +874,15 @@ class Predictor(object):
         
         #### DEBUG #####
         # if self.DEBUG:
-        print(f'Number of tiles processed before merging and plotting: {len(ps)}')
-        for i in range(len(ps)):
-            ps[i].orig_img = (ps[i].orig_img.detach().contiguous() * 255).to(torch.uint8).cpu().numpy() # Needed for compatibility with the Results.plot function
-        fig, axs = plt.subplots(y_n_tiles, x_n_tiles, figsize=(x_n_tiles * 5, y_n_tiles * 5))
-        axs = axs.flatten() if len(ims) > 1 else [axs]
-        [axs[i].imshow(p.plot(pil=False, masks=True, probs=False, labels=False, kpt_line=False)) for i, p in enumerate(ps)]
-        plt.savefig(f"debug_{scale:.3f}.png")
-        for i in range(len(ps)):
-            ps[i].orig_img = torch.tensor(ps[i].orig_img).squeeze(0).to(dtype=self._dtype, device=self._device) / 255.0 # Backtransform
+        #     print(f'Number of tiles processed before merging and plotting: {len(ps)}')
+        #     for i in range(len(ps)):
+        #         ps[i].orig_img = (ps[i].orig_img.detach().contiguous() * 255).to(torch.uint8).cpu().numpy() # Needed for compatibility with the Results.plot function
+        #     fig, axs = plt.subplots(y_n_tiles, x_n_tiles, figsize=(x_n_tiles * 5, y_n_tiles * 5))
+        #     axs = axs.flatten() if len(ims) > 1 else [axs]
+        #     [axs[i].imshow(p.plot(pil=False, masks=True, probs=False, labels=False, kpt_line=False)) for i, p in enumerate(ps)]
+        #     plt.savefig(f"debug_{scale:.3f}.png")
+        #     for i in range(len(ps)):
+        #         ps[i].orig_img = torch.tensor(ps[i].orig_img).squeeze(0).to(dtype=self._dtype, device=self._device) / 255.0 # Backtransform
         #################
 
         ## Combine the results from the tiles
