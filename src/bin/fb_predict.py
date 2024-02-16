@@ -17,6 +17,9 @@ if __name__ == '__main__':
                                  "Each sub-dataset contains a single json file named 'instances_default.json' "
                                  "and the associated images"
                             )
+    args_parse.add_argument("-p", "--input-pattern", dest="input_pattern", default="**.jpg",
+                            help="The pattern to match the images. Default is '**.jpg'")
+    args_parse.add_argument("-n", "--max-images", type=int, default=None, help="Maximum number of images to process. Default is None. Truncates in alphabetical order.")
     args_parse.add_argument("-o", "--output-dir", dest="results_dir",
                             help="The result directory")
     args_parse.add_argument("-w", "--model-weights", dest="model_weights",
@@ -46,8 +49,9 @@ if __name__ == '__main__':
         raise ValueError(f"Dtype '{option_dict['dtype']}' is not supported.")
 
     pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype)
-    pred.MAX_MASK_SIZE = 768
+    pred.MAX_MASK_SIZE = 1024
     pred.SCORE_THRESHOLD = 0.3
+    pred.IOU_THRESHOLD = 0.25
     pred.MINIMUM_TILE_OVERLAP = 384
 
     # fixme, build from pred._model!
@@ -61,7 +65,9 @@ if __name__ == '__main__':
         "categories": [categories]  # Your category
     }
 
-    files = sorted(glob.glob(os.path.join(option_dict["input_dir"], "*.jpg")))
+    files = sorted(glob.glob(os.path.join(option_dict["input_dir"], option_dict["input_pattern"])))
+    if option_dict["max_images"] is not None:
+        files = files[:option_dict["max_images"]]
     j = 1
     pbar = tqdm(enumerate(files), total=len(files), desc="Processing images", dynamic_ncols=True, unit="image")
     for i, f in pbar:

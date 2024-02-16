@@ -6,7 +6,7 @@ import logging
 import cv2
 import json
 from flat_bug.yolo_helpers import *
-from flat_bug.geometry_simples import find_contours, contours_to_masks, contour_sum, interpolate_contour, create_contour_mask
+from flat_bug.geometry_simples import find_contours, contours_to_masks, contour_sum, interpolate_contour, create_contour_mask, scale_contour
 from ultralytics import YOLO
 
 from torchvision.io import read_image, ImageReadMode
@@ -283,12 +283,15 @@ class TensorPredictions:
         """
         Converts a contour from mask coordinates to image coordinates. 
         """
-        mask_hw = self.masks.data.shape[1:]
+        mask_h, mask_w = self.masks.data.shape[1:]
         image_h, image_w = self.image.shape[1:]
         # We use a fixed precision of torch.float32 to avoid numerical issues (unless the image is **really** large)
-        mask_to_image_scale = torch.tensor([(image_h - 1) / (mask_hw[0] - 1), (image_w - 1) / (mask_hw[1] - 1)], device=self.device, dtype=torch.float32) * scale
-        # After scaling the coordinates, round and cast to long
-        scaled_contour = (contour.float() * mask_to_image_scale).round().long()
+        mask_to_image_scale = torch.tensor([image_h / mask_h, image_w / mask_w], device=self.device, dtype=torch.float32) * scale
+        # # After scaling the coordinates, round and cast to long
+        # scaled_contour = (contour.float() * mask_to_image_scale).round().long()
+        scaled_contour = scale_contour(contour.cpu().numpy(), mask_to_image_scale.cpu().numpy())
+        # scaled_contour = simplify_contour(scaled_contour, 1)
+        scaled_contour = torch.tensor(scaled_contour, device=self.device, dtype=self.dtype)
 
         # Possibly interpolate the contour using integer linear interpolation
         if interpolate:
@@ -382,9 +385,9 @@ class TensorPredictions:
 
                 poly_alpha = np.zeros((ih, iw, 1), dtype=np.int32)
                 for c in contours:
-                    this_poly_alpha = np.zeros((ih, iw, 1), dtype=np.int32)
-                    cv2.fillPoly(this_poly_alpha, [c.cpu().numpy()], (_alpha))
-                    poly_alpha += this_poly_alpha
+                    this_poly_alpha = np.zeros((ih, iw, 1), dtype=np.uint8)
+                    cv2.drawContours(this_poly_alpha, [c.to(torch.int32).cpu().numpy()], -1, 1, -1)
+                    poly_alpha += this_poly_alpha * _alpha
                 poly_alpha = poly_alpha.clip(0, 255) / 255
                 
                 # Create a red fill for the polygons
@@ -393,7 +396,7 @@ class TensorPredictions:
                 # Add the polygons to the image by blending the fill and the image using the alpha mask
                 image = (image.astype(np.float32) * (1 - poly_alpha) + poly_fill * poly_alpha).round().astype(np.uint8)
                 # Draw the contours
-                cv2.polylines(image, pts=[c.cpu().numpy() for c in contours], isClosed=True, color=(0, 0, 255), thickness=linewidth)
+                cv2.polylines(image, pts=[c.to(torch.int32).cpu().numpy() for c in contours], isClosed=True, color=(0, 0, 255), thickness=linewidth)
 
             # Draw boxes and confidences
             if boxes:
@@ -716,9 +719,9 @@ The JSON can be deserialized into a `TensorPredictions` object using `TensorPred
         return prediction_directory
 
 class Predictor(object):
-    MIN_MAX_OBJ_SIZE = (16, 2048)
+    MIN_MAX_OBJ_SIZE = (16, 1024 ** 2)
     MINIMUM_TILE_OVERLAP = 384
-    EDGE_CASE_MARGIN = 8
+    EDGE_CASE_MARGIN = 64
     SCORE_THRESHOLD = 0.2
     IOU_THRESHOLD = 0.25
     MAX_MASK_SIZE = 2048
@@ -813,7 +816,7 @@ class Predictor(object):
             postprocess_times = []
 
         ps = []
-        batch_size = 32
+        batch_size = 8
         with torch.no_grad():
             for i in range(0, len(ims), batch_size):
                 if self.TIME:
@@ -871,15 +874,15 @@ class Predictor(object):
         
         #### DEBUG #####
         # if self.DEBUG:
-        #     print(f'Number of tiles processed before merging and plotting: {len(ps)}')
-        #     for i in range(len(ps)):
-        #         ps[i].orig_img = (ps[i].orig_img.detach().contiguous() * 255).to(torch.uint8).cpu().numpy() # Needed for compatibility with the Results.plot function
-        #     fig, axs = plt.subplots(y_n_tiles, x_n_tiles, figsize=(x_n_tiles * 5, y_n_tiles * 5))
-        #     axs = axs.flatten() if len(ims) > 1 else [axs]
-        #     [axs[i].imshow(p.plot(pil=False, masks=True, probs=False, labels=False, kpt_line=False)) for i, p in enumerate(ps)]
-        #     plt.show()
-        #     for i in range(len(ps)):
-        #         ps[i].orig_img = torch.tensor(ps[i].orig_img).squeeze(0).to(dtype=self._dtype, device=self._device) / 255.0 # Backtransform
+        print(f'Number of tiles processed before merging and plotting: {len(ps)}')
+        for i in range(len(ps)):
+            ps[i].orig_img = (ps[i].orig_img.detach().contiguous() * 255).to(torch.uint8).cpu().numpy() # Needed for compatibility with the Results.plot function
+        fig, axs = plt.subplots(y_n_tiles, x_n_tiles, figsize=(x_n_tiles * 5, y_n_tiles * 5))
+        axs = axs.flatten() if len(ims) > 1 else [axs]
+        [axs[i].imshow(p.plot(pil=False, masks=True, probs=False, labels=False, kpt_line=False)) for i, p in enumerate(ps)]
+        plt.savefig(f"debug_{scale:.3f}.png")
+        for i in range(len(ps)):
+            ps[i].orig_img = torch.tensor(ps[i].orig_img).squeeze(0).to(dtype=self._dtype, device=self._device) / 255.0 # Backtransform
         #################
 
         ## Combine the results from the tiles
@@ -962,7 +965,7 @@ class Predictor(object):
             transform_list.append(resize)
         
         # A border is always added now, to avoid edge-cases on the actual edge of the image. I.e. only detections on internal edges of tiles should be removed, not detections on the edge of the image.
-        edge_case_margin_padding_multiplier = 4
+        edge_case_margin_padding_multiplier = 2
         padding_for_edge_cases = transforms.Pad(padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier, fill=0, padding_mode='constant')
         padding_offset = torch.tensor((self.EDGE_CASE_MARGIN, self.EDGE_CASE_MARGIN), dtype=self._dtype, device=self._device) * edge_case_margin_padding_multiplier
         transform_list.append(padding_for_edge_cases)
@@ -990,8 +993,8 @@ class Predictor(object):
                 while s <= 0.9: # Cut off at 90%, to avoid having s~1 and s=1.
                     scales.append(s)
                     s /= scale_increment
-            if s != 1:
-                scales.append(1.0)
+                if s != 1:
+                    scales.append(1.0)
 
         logging.info(f"Running inference on scales: {scales}")
 

@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from ultralytics.utils import ops
 from ultralytics.engine.results import Results, Masks
 
-from .geometry_simples import find_contours, simplify_contour
+from .geometry_simples import find_contours, simplify_contour, resize_mask
 
 from typing import Union, List, Tuple
 
@@ -69,10 +69,13 @@ def offset_mask(mask, offset, new_shape=None, max_size=None):
 
     # Due to memory use, it is beneficial to restrict the maximum size of the masks. A 700x700 boolean tensor uses ~0.5 MB of memory
     if clamp_factor > 1:
-        # Downsample the mask by the clamp_factor for each dimension, such that the largest dimension is clamped to max_size. The minor dimension may be smaller than max_size.
-        resizer = torchvision.transforms.Resize(clamped_size, interpolation=torchvision.transforms.InterpolationMode.NEAREST_EXACT)
-        new_mask = resizer(new_mask)
-    return new_mask
+        clamped_mask = torch.zeros((n, *clamped_size), dtype=torch.bool, device=mask.device)
+        for i in range(n):
+            # Downsample the mask by the clamp_factor for each dimension, such that the largest dimension is clamped to max_size. The minor dimension may be smaller than max_size.
+            clamped_mask[i] = resize_mask(new_mask[i], clamped_size)
+        return clamped_mask
+    else:
+        return new_mask
 
 def merge_tile_results(results = List[Results], orig_img=None, box_offsetters=None, mask_offsetters=None, new_shape=None, clamp_boxes=(None, None), max_mask_size=(700, 700)):
     """
@@ -166,42 +169,17 @@ def stack_masks(masks, orig_shape=None):
     max_w = max([m.shape[2] for m in masks])
     masks_in_each = [len(m) for m in masks]
 
-    def resizer(mat, target):
-        n = mat.shape[0]
-        new_mat = np.zeros((n, target[0], target[1]), dtype=np.uint8)
-
-        scale = torch.tensor([(td - 1) / (md - 1) for td, md in zip(target, mat.shape[1:])], device=_device, dtype=torch.float32)
-        for i in range(len(mat)):
-            c = find_contours(mat[i], largest_only=True, simplify=False).float()
-            c *= scale
-            c = [c.round().to(torch.int32).cpu().numpy()]
-            cv2.fillPoly(new_mat[i], c, 1, lineType=cv2.LINE_8)
-        return new_mat
-
     new_masks = torch.zeros((sum(masks_in_each), max_h, max_w), dtype=torch.bool, device=_device)
 
     i = 0
     for n, m in zip(masks_in_each, masks):
         if n == 0:
             continue
-        m = resizer(m, (max_h, max_w))
-        m = torch.tensor(m, dtype=torch.bool, device=_device)
-
-        # Due to the way OpenCV handles contours, by tracing the edges of pixels, instead of the center of pixels, the masks are 1 pixel too small in two of either left, right, top or bottom, depending on if the target size is even or odd.
-        # This is fixed by dilating the mask by 1 pixel in the direction of the missing pixels.
-        dilate_kernel = torch.zeros((1, 1, 3, 3), device=_device)
-        dilate_kernel[0, 0, 1, 1] = 1
-        if max_h % 2 == 0:
-            dilate_kernel[0, 0, 0, 1] = 1
-        else:
-            dilate_kernel[0, 0, 1, 0] = 1
-        if max_w % 2 == 0:
-            dilate_kernel[0, 0, 2, 1] = 1
-        else:
-            dilate_kernel[0, 0, 1, 2] = 1
-        m = torch.nn.functional.conv2d(m.float().unsqueeze(1), dilate_kernel, padding=1).squeeze(1) > 0.5
-
-        new_masks[i:(i+n)] = m
+        for j in range(n):
+            if m[j].shape[1] == max_h and m[j].shape[2] == max_w:
+                new_masks[i + j] = m[j]
+            else:
+                new_masks[i + j] = resize_mask(m[j], (max_h, max_w))
         i += n
 
     return Masks(new_masks, orig_shape=orig_shape)

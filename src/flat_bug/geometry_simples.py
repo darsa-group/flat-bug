@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+import torchvision
 import numpy as np
 import cv2
 import math
@@ -131,7 +132,7 @@ def create_contour_mask(mask: torch.Tensor, width: int=1) -> torch.Tensor:
         raise ValueError(f"Invalid width: {width}")
 
 def find_contours(mask, largest_only=True, simplify=True):
-    contour = cv2.findContours(mask.to(torch.uint8).cpu().numpy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+    contour = cv2.findContours(mask.to(torch.uint8).cpu().numpy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)[0]
     if len(contour) == 0:
         print("No contours found; mask shape:", mask.shape, "mask sum:", mask.sum())
         return torch.tensor([0, 0], device=mask.device, dtype=torch.long)
@@ -141,7 +142,7 @@ def find_contours(mask, largest_only=True, simplify=True):
         # Select the largest contour and convert it to a tensor
         contour = contour[np.argmax(areas)]
     if simplify:
-        contour = simplify_contour(contour, tolerance=0.1)
+        contour = simplify_contour(contour, tolerance=1)
     # Convert to tensor
     if isinstance(contour, list):
         return [torch.tensor(c, dtype=torch.long, device=mask.device).squeeze(1) for c in contour]
@@ -226,3 +227,63 @@ def contour_sum(contours : list[torch.Tensor], height : int, width : int) -> tor
     return torch.tensor(mask, device=device)
     
     
+def poly_normals(poly):
+    """
+    Calculates the normals of a polygon.
+
+    Args:
+        poly (torch.Tensor): A numpy array of shape (n, 2), where n is the number of vertices and the 2 columns are the x and y coordinates of the vertices.
+
+    Returns:
+        torch.Tensor: A PyTorch Tensor of shape (n, 2), where n is the number of vertices and the 2 columns are the x and y coordinates of the normals.
+    """
+    # Working version
+    v = np.roll(poly, -1, axis=0) - poly
+    n = np.column_stack([v[:, 1], -v[:, 0]])
+    norm = np.linalg.norm(n, axis=1)
+    norm[norm == 0] = 1
+    n = n / norm[:, None]
+    n = (n + np.roll(n, 1, axis=0)) / 2
+    norm = np.linalg.norm(n, axis=1)
+    norm[norm == 0] = 1
+    n = n / norm[:, None]
+    return n
+
+def linear_interpolate(poly, scale):
+    """
+    Linearly interpolates a N x 2 polygon to have N x scale vertices.
+    """
+    new_poly = np.zeros((poly.shape[0] * scale, 2), dtype=np.float32)
+    for i in range(poly.shape[0] - 1):
+        new_poly[i*scale:(i+1)*scale] = np.linspace(poly[i], poly[i+1], scale, endpoint=False)
+    new_poly[-scale:] = np.linspace(poly[-1], poly[0], scale, endpoint=False)
+    return new_poly
+
+def scale_contour(contour, scale):
+    contour = contour / 2 + np.roll(contour, -1, axis=0) / 4 + np.roll(contour, 1, axis=0) / 4
+    contour *= scale
+    contour = linear_interpolate(contour, int(np.ceil(scale.max())) * 2)
+    contour_normals = poly_normals(contour)
+    # contour -= contour_normals * scale / 2 # This can be enabled to expand the contour
+    contour_decimal = contour - np.floor(contour)
+    contour_expand_offset = -contour_decimal * (contour_normals > 0) + (1 - contour_decimal) * (contour_normals < 0)
+    contour = (contour + contour_expand_offset).astype(np.int32) + (scale / 2).round().astype(np.int32)
+    return contour
+
+def resize_mask(mask, new_shape):
+    if mask.shape == new_shape:
+        return mask
+    if new_shape[0] <= 1 or new_shape[1] <= 1:
+        raise ValueError(f"Target shape must be at least 2x2, not {new_shape}")
+    dtype, device = mask.dtype, mask.device
+    mask = torchvision.transforms.functional.resize(mask.unsqueeze(0).to(torch.uint8), [i * 3 for i in mask.shape], interpolation=torchvision.transforms.InterpolationMode.NEAREST).squeeze(0) > 0.5
+    new_mask = np.zeros(new_shape, dtype=np.uint8)
+    scale = (np.array(new_mask.shape[::-1]) - 0) / (np.array(mask.shape[::-1]) - 0)
+    contour = find_contours(mask, largest_only=True, simplify=False).cpu().numpy()
+    contour = scale_contour(contour, scale)
+    cv2.drawContours(new_mask, [contour], -1, 1, -1)
+    return torch.tensor(new_mask, dtype=dtype, device=device)
+
+def torch_cv_resize(mask, new_shape):
+    dtype, device = mask.dtype, mask.device
+    return torch.tensor(cv2.resize(mask.to(torch.uint8).cpu().numpy(), new_shape[::-1], interpolation=cv2.INTER_NEAREST), dtype=dtype, device=device)
