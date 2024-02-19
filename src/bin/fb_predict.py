@@ -49,10 +49,12 @@ if __name__ == '__main__':
         raise ValueError(f"Dtype '{option_dict['dtype']}' is not supported.")
 
     pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype)
+    pred.MIN_MAX_OBJ_SIZE = 8, 2048
     pred.MAX_MASK_SIZE = 1024
     pred.SCORE_THRESHOLD = 0.3
     pred.IOU_THRESHOLD = 0.25
     pred.MINIMUM_TILE_OVERLAP = 384
+    pred.TIME = True
 
     # fixme, build from pred._model!
     categories = {"id": 1, "name": "insect"}
