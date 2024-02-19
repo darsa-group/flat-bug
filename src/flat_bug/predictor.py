@@ -6,7 +6,7 @@ import logging
 import cv2
 import json
 from flat_bug.yolo_helpers import *
-from flat_bug.geometry_simples import find_contours, contours_to_masks, contour_sum, interpolate_contour, create_contour_mask
+from flat_bug.geometry_simples import find_contours, contours_to_masks, contour_sum, interpolate_contour, create_contour_mask, scale_contour
 from ultralytics import YOLO
 
 from torchvision.io import read_image, ImageReadMode
@@ -19,6 +19,8 @@ class Prepared_Results:
     def __init__(self, predictions, scale, device, dtype):
         self._predictions = predictions
         self._predictions.boxes.data[:, :4] /= scale
+        # TODO: Contours - Doesn't work at the moment
+        # self._predictions._contours = [c / scale for c in self._predictions._contours]
         self.scale = scale
         self.device = device
         self.dtype = dtype
@@ -159,6 +161,10 @@ class TensorPredictions:
             end_mask_combination.record()
 
         self.masks.orig_shape = self.image.shape[1:] # Set the target shape of the masks to the shape of the image passed to the TensorPredictions object
+        
+        # TODO: Contours - Doesn't work at the moment
+        # self._contours = [p._predictions._contours[i] for p, nd in zip(predictions, valid_chunked) for i in nd] # N
+
         self.classes = torch.cat([p.classes[nd] for p, nd in zip(predictions, valid_chunked)]) # N
         self.scales = [predictions[i].scale for i, p in enumerate(valid_chunked) for _ in range(len(p))] # N
         # # Check that everything is the correct size
@@ -202,16 +208,19 @@ class TensorPredictions:
         self.boxes[:, 0:4:2] = self.boxes[:, 0:4:2].clamp(0, self.image.shape[2] - 1)
         self.boxes[:, 1:4:2] = self.boxes[:, 1:4:2].clamp(0, self.image.shape[1] - 1)
 
+        # TODO: Contours - Doesn't work at the moment
+        # self._contours = [c + offset for c in self._contours] # Subtract the offsets and multiply by the scale factor to get the contours in the original image size
+
         # However masks are more complicated since they don't have the same size as the image
         image_shape = torch.tensor([self.image.shape[1], self.image.shape[2]], device=self.device, dtype=self.dtype) # Get the shape of the original image
         # Calculate the normalized offset (i.e. the offset as a fraction of the scaled and padded image size, here the scaled and padded image size is calculated from the original image shape, but it would probably be easier just to pass it...)
         offset_norm = -offset / (image_shape / scale - 2 * offset) 
-        orig_mask_shape = torch.tensor([self.masks.shape[1], self.masks.shape[2]], device=self.device, dtype=self.dtype) # Get the shape of the masks
+        orig_mask_shape = torch.tensor([self.masks.shape[1], self.masks.shape[2]], device=self.device, dtype=self.dtype) - 1 # Get the shape of the masks
         # Convert the normalized offset to the coordinates of the masks
         offset_mask_coords = offset_norm * orig_mask_shape 
         # Round the coordinates to the nearest integer and convert to long (needed for indexing)
         offset_mask_coords = torch.round(offset_mask_coords).long()
-        self.masks.data = self.masks.data[:, offset_mask_coords[0]:-offset_mask_coords[0], offset_mask_coords[1]:-offset_mask_coords[1]] # Slice out the padded parts of the masks
+        self.masks.data = self.masks.data[:, offset_mask_coords[0]:(-(offset_mask_coords[0] + 1) if offset_mask_coords[0] != 0 else None), offset_mask_coords[1]:(-(offset_mask_coords[1] + 1) if offset_mask_coords[1] != 0 else None)] # Slice out the padded parts of the masks
         
         if self.time:
             end.record()
@@ -283,33 +292,17 @@ class TensorPredictions:
         """
         Converts a contour from mask coordinates to image coordinates. 
         """
-        mask_hw = self.masks.data.shape[1:]
+        mask_h, mask_w = self.masks.data.shape[1:]
         image_h, image_w = self.image.shape[1:]
-        # We use a fixed precision of torch.float32 to avoid numerical issues (unless the image is **really** large)
-        mask_to_image_scale = torch.tensor([(image_h - 1) / (mask_hw[0] - 1), (image_w - 1) / (mask_hw[1] - 1)], device=self.device, dtype=torch.float32) * scale
-        # After scaling the coordinates, round and cast to long
-        scaled_contour = (contour.float() * mask_to_image_scale).round().long()
+        mask_to_image_scale = torch.tensor([(image_h - 1) / (mask_h - 1), (image_w - 1) / (mask_w - 1)], device=self.device, dtype=torch.float32) * scale
+        scaled_contour = scale_contour(contour.cpu().numpy(), mask_to_image_scale.cpu().numpy(), True)
+        scaled_contour = simplify_contour(scaled_contour, (mask_to_image_scale / 2).mean().item())
+        scaled_contour = torch.tensor(scaled_contour, device=self.device, dtype=self.dtype)
 
         # Possibly interpolate the contour using integer linear interpolation
         if interpolate:
             scaled_contour = interpolate_contour(scaled_contour)
         return scaled_contour
-    
-    def scale_mask(self, mask, new_shape = None):
-        if new_shape is None:
-            new_shape = self.image.shape[1:]
-        old_shape = mask.shape[1:]
-        shape_ratio = torch.tensor([new_shape[0] / old_shape[0], new_shape[1] / old_shape[1]], device=self.device, dtype=self.dtype)
-        smooth_radius = torch.ceil(shape_ratio.max() / 2).long().item() * 4
-        if smooth_radius % 2 == 0:
-            smooth_radius += 1
-        return smooth_mask(
-            torchvision.transforms.functional.resize(
-                mask.data.unsqueeze(0), new_shape, 
-                interpolation=torchvision.transforms.InterpolationMode.NEAREST_EXACT, antialias=False
-            ).squeeze(0), 
-            kernel_size = smooth_radius
-        )
 
     def __len__(self):
         return len(self.masks.data)
@@ -375,16 +368,21 @@ class TensorPredictions:
             # Draw masks
             if masks:
                 contours = [self.contour_to_image_coordinates(c, scale=scale, interpolate=False) for c in self.contours]
+                # contours = self._contours
                 # Create an alpha mask for the polygons, by averaging the masks and resizing it to the image size
                 ih, iw = image.shape[:2]
+                # simplify_tol = sum([ih / self.mask_height, iw / self.mask_width]) / 4
+                # contours = [find_contours(create_contour_mask(resize_mask(m, (ih, iw))), largest_only=True, simplify=simplify_tol) for m in self.masks.data]
+                # contours = [None for _ in range(len(self))]
                 ALPHA = 0.3
                 _alpha = int(255 * ALPHA)
 
                 poly_alpha = np.zeros((ih, iw, 1), dtype=np.int32)
-                for c in contours:
-                    this_poly_alpha = np.zeros((ih, iw, 1), dtype=np.int32)
-                    cv2.fillPoly(this_poly_alpha, [c.cpu().numpy()], (_alpha))
-                    poly_alpha += this_poly_alpha
+                for i, c in enumerate(contours):
+                    this_poly_alpha = np.zeros((ih, iw, 1), dtype=np.uint8)
+                    cv2.drawContours(this_poly_alpha, [c.to(torch.int32).cpu().numpy()], -1, 1, -1)
+                    # this_poly_alpha = resize_mask(self.masks.data[i], (ih, iw)).unsqueeze(2).cpu().numpy()
+                    poly_alpha += this_poly_alpha * _alpha
                 poly_alpha = poly_alpha.clip(0, 255) / 255
                 
                 # Create a red fill for the polygons
@@ -393,7 +391,9 @@ class TensorPredictions:
                 # Add the polygons to the image by blending the fill and the image using the alpha mask
                 image = (image.astype(np.float32) * (1 - poly_alpha) + poly_fill * poly_alpha).round().astype(np.uint8)
                 # Draw the contours
-                cv2.polylines(image, pts=[c.cpu().numpy() for c in contours], isClosed=True, color=(0, 0, 255), thickness=linewidth)
+                for i, c in enumerate(contours):
+                    cv2.drawContours(image, [c.to(torch.int32).cpu().numpy()], -1, (0, 0, 255), linewidth)
+                    # image[create_contour_mask(resize_mask(self.masks.data[i], (ih, iw)), width=linewidth).cpu().numpy().astype(bool)] = (0, 0, 255)
 
             # Draw boxes and confidences
             if boxes:
@@ -443,7 +443,7 @@ class TensorPredictions:
             crop_name = f"crop_{basename}_CROPNUMBER_{i}_UUID_{identifier}{image_ext}"
             # Extract the crop from the image tensor
             if mask:
-                scaled_mask = self.scale_mask(_mask)
+                scaled_mask = resize_mask(_mask.data, self.image.shape[1:])
                 crop = torch.cat((self.image[:, y1:y2, x1:x2] / 255.0, scaled_mask[:, y1:y2, x1:x2].to(self.dtype)), dim=0)
             else:
                crop = self.image[:, y1:y2, x1:x2] / 255.0 
@@ -716,9 +716,9 @@ The JSON can be deserialized into a `TensorPredictions` object using `TensorPred
         return prediction_directory
 
 class Predictor(object):
-    MIN_MAX_OBJ_SIZE = (16, 2048)
+    MIN_MAX_OBJ_SIZE = (8, 2048)
     MINIMUM_TILE_OVERLAP = 384
-    EDGE_CASE_MARGIN = 8
+    EDGE_CASE_MARGIN = 64
     SCORE_THRESHOLD = 0.2
     IOU_THRESHOLD = 0.25
     MAX_MASK_SIZE = 2048
@@ -813,7 +813,7 @@ class Predictor(object):
             postprocess_times = []
 
         ps = []
-        batch_size = 32
+        batch_size = 16
         with torch.no_grad():
             for i in range(0, len(ims), batch_size):
                 if self.TIME:
@@ -869,7 +869,7 @@ class Predictor(object):
             fetch_time, forward_time, postprocess_time = sum(fetch_times), sum(forward_times), sum(postprocess_times)
             fetch_prop, forward_prop, postprocess_prop = fetch_time / total_batch_time, forward_time / total_batch_time, postprocess_time / total_batch_time
         
-        #### DEBUG #####
+        ### DEBUG #####
         # if self.DEBUG:
         #     print(f'Number of tiles processed before merging and plotting: {len(ps)}')
         #     for i in range(len(ps)):
@@ -877,7 +877,7 @@ class Predictor(object):
         #     fig, axs = plt.subplots(y_n_tiles, x_n_tiles, figsize=(x_n_tiles * 5, y_n_tiles * 5))
         #     axs = axs.flatten() if len(ims) > 1 else [axs]
         #     [axs[i].imshow(p.plot(pil=False, masks=True, probs=False, labels=False, kpt_line=False)) for i, p in enumerate(ps)]
-        #     plt.show()
+        #     plt.savefig(f"debug_{scale:.3f}_fraw.png", dpi=300)
         #     for i in range(len(ps)):
         #         ps[i].orig_img = torch.tensor(ps[i].orig_img).squeeze(0).to(dtype=self._dtype, device=self._device) / 255.0 # Backtransform
         #################
@@ -897,34 +897,26 @@ class Predictor(object):
         # The padding must also be scaled and subtracted from the new mask size
         new_mask_size = [int(mmo.item() - p * MASK_TO_IMG_RATIO[0, i]) for i, (mmo, p) in enumerate(zip(max_mask_offsets, [pad_lrtb[3], pad_lrtb[1]]))]
         # Finally, we can merge the results - this function basically just does what I described above
-        orig_img = tensor[:, pad_lrtb[2]:-pad_lrtb[3], pad_lrtb[0]:-pad_lrtb[1]] if padded else tensor
+        orig_img = tensor[:, pad_lrtb[2]:(-(pad_lrtb[3] + 1) if pad_lrtb[3] != 0 else None), pad_lrtb[0]:(-(pad_lrtb[1] + 1) if pad_lrtb[1] != 0 else None)] if padded else tensor
         ps = merge_tile_results(ps, orig_img.permute(1,2,0), box_offsetters=box_offsetters, mask_offsetters=mask_offsetters, new_shape=new_mask_size, clamp_boxes=(h - sum(pad_lrtb[2:]), w - sum(pad_lrtb[:2])), max_mask_size=self.MAX_MASK_SIZE)
 
         # Apply the size filters - This could be done before merging the tiles, but would require some scaling logic
-        ps_bt = ps.boxes.xyxy
-        ps_hw = ps_bt[:, 2:] - ps_bt[:, :2]
-        ps_sqrt_area = ps_hw[:, 0].sqrt() * ps_hw[:, 1].sqrt()
-        # Old criteria pruned images based on their minor dimension
-        # big_enough = ((ps_hw > self.MIN_MAX_OBJ_SIZE[0]) & (ps_hw < self.MIN_MAX_OBJ_SIZE[1])).all(dim=1)
+        ps_sqrt_area = ps.masks.data.sum(dim=(1, 2)).sqrt()
         # New criteria prunes images based on their area
         big_enough = (ps_sqrt_area > self.MIN_MAX_OBJ_SIZE[0]) & (ps_sqrt_area < self.MIN_MAX_OBJ_SIZE[1])
         ps = ps[big_enough]
-        # Is this more efficient than just doing nms on all the boxes in pyramid_predictions?
-        # # Non-max suppression on the merged tiles
-        # nms_ind = nms_boxes(ps.boxes.data[:, :4], ps.boxes.data[:, 4], iou_threshold=self.IOU_THRESHOLD, return_indices=True)
-        # ps = ps[nms_ind]
 
         #### DEBUG #####
         # if self.DEBUG:
         #     print(f'Number of tiles processed after merging and filtering: {len(ps)}')
         #     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
         #     ps.orig_img = (ps.orig_img.detach().contiguous() * 255).to(torch.uint8).cpu().numpy() # Needed for compatibility with the Results.plot function
-        #     ps.boxes.data[:, :4] /= scale
+        #     # ps.boxes.data[:, :4] /= scale
         #     print(ps.orig_img.shape)
         #     ax.imshow(ps.plot(pil=False, masks=True, probs=False, labels=False, kpt_line=False))
-        #     plt.show()
+        #     plt.savefig(f"debug_{scale:.3f}_merged.png", dpi=300)
         #     ps.orig_img = torch.tensor(ps.orig_img).squeeze(0).to(dtype=self._dtype, device=self._device) / 255.0 # Backtransform
-        #     ps.boxes.data[:, :4] *= scale
+        #   ps.boxes.data[:, :4] *= scale
         #################
 
         if self.TIME:
@@ -962,10 +954,11 @@ class Predictor(object):
             transform_list.append(resize)
         
         # A border is always added now, to avoid edge-cases on the actual edge of the image. I.e. only detections on internal edges of tiles should be removed, not detections on the edge of the image.
-        edge_case_margin_padding_multiplier = 4
+        edge_case_margin_padding_multiplier = 2
         padding_for_edge_cases = transforms.Pad(padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier, fill=0, padding_mode='constant')
         padding_offset = torch.tensor((self.EDGE_CASE_MARGIN, self.EDGE_CASE_MARGIN), dtype=self._dtype, device=self._device) * edge_case_margin_padding_multiplier
-        transform_list.append(padding_for_edge_cases)
+        if padding_offset.sum() > 0:
+            transform_list.append(padding_for_edge_cases)
         if transform_list:
             transforms_composed = transforms.Compose(transform_list)
         
@@ -990,8 +983,8 @@ class Predictor(object):
                 while s <= 0.9: # Cut off at 90%, to avoid having s~1 and s=1.
                     scales.append(s)
                     s /= scale_increment
-            if s != 1:
-                scales.append(1.0)
+                if s != 1:
+                    scales.append(1.0)
 
         logging.info(f"Running inference on scales: {scales}")
 

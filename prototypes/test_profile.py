@@ -15,26 +15,28 @@ from glob import glob
 
 datasets = {p.removeprefix("s3/") : glob(f'{p}/**.jpg') for p in glob("s3/**")}
 
-paths = glob("dev/input/**.jpg")[:3]
+# paths = glob("dev/input/**.jpg")[:3]
+paths = sorted(glob("s3/CollembolAI/ctrain**.jpg"))[:1]
 
-weights = "model_snapshots/fb_2024-02-09_best.pt"
+weights = "model_snapshots/fb_2024-02-19_best.pt"
 device = torch.device("cuda:0")
 dtype = torch.float16
 
-_model = Predictor(weights, device=device, dtype=dtype)
-_model.MINIMUM_TILE_OVERLAP = 384
-_model.SCORE_THRESHOLD = 0.2
-_model.MAX_MASK_SIZE = 1024
-_model.IOU_THRESHOLD = .25
-_model.MIN_MAX_OBJ_SIZE = 16, 2048
+pred = Predictor(weights, device=device, dtype=dtype)
+# pred._model = torch.compile(pred._model,mode="reduce-overhead", dynamic=True)
+pred.MIN_MAX_OBJ_SIZE = 8, 2048
+pred.MAX_MASK_SIZE = 1024
+pred.SCORE_THRESHOLD = 0.3
+pred.IOU_THRESHOLD = 0.15
+pred.MINIMUM_TILE_OVERLAP = 384
+pred.TIME = True
 
 torch.cuda.empty_cache()
 
 start = time.time()
 for i in range(len(paths)):
-    img = read_image(paths[i]).to(device, dtype)
-    test = _model.pyramid_predictions(img, paths[i], scale_increment=1/2, scale_before=1)
-    test.save("dev/input_output", fast=True, crops = True)
+    test = pred.pyramid_predictions(paths[i], scale_increment=1/2, scale_before=1, single_scale=False)
+    test.save("dev/input_output", fast=True, crops = False)
     del test
     torch.cuda.empty_cache()
 
