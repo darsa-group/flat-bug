@@ -1,20 +1,8 @@
 import torch
 import torch.nn.functional as F
-import torchvision
 import numpy as np
 import cv2
 import math
-
-## Helpers
-
-def expand_mask(mask, n=1, dtype=torch.float16):
-    """
-    Useful for plotting the mask with PyTorch.
-    """
-    if n == 0:
-        return mask
-    neighbor_kernel = torch.ones(1, 1, 1+2*n, 1+2*n, device=mask.device, dtype=dtype)
-    return torch.nn.functional.conv2d(mask.unsqueeze(0).unsqueeze(0).to(dtype=dtype, device=mask.device), neighbor_kernel, padding=n).squeeze(0).squeeze(0) > 0.5
 
 def duplicate_rows_and_columns(mask: torch.Tensor) -> torch.Tensor:
     """
@@ -64,6 +52,32 @@ def interpolate_contour(contour : torch.Tensor) -> torch.Tensor:
     OBS: This functions mutates the input tensor.
     """
     return integer_lerp(contour)
+
+def intersect(rect1, rect2s, area_only=False):
+    """
+    Calculates the intersection of a rectangle with a set of rectangles.
+    """
+    if len(rect1.shape) == 1 and not rect1.shape[0] == 4 or len(rect1.shape) == 2 and not rect1.shape[1] == 4:
+        raise ValueError(f"Rectangles must be of shape (n, 4), not {rect1.shape}")
+    if len(rect2s.shape) == 1 and not rect2s.shape[0] == 4 or len(rect2s.shape) == 2 and not rect2s.shape[1] == 4:
+        raise ValueError(f"Rectangles must be of shape (n, 4), not {rect2s.shape}")
+    if len(rect1.shape) == 1:
+        rect1 = rect1.unsqueeze(0)
+    if len(rect2s.shape) == 1:
+        rect2s = rect2s.unsqueeze(0)
+    
+    intersections_max = torch.max(rect1[:, :2], rect2s[:, :2])
+    intersections_min = torch.min(rect1[:, 2:], rect2s[:, 2:])
+    if area_only:
+        intersections = (intersections_min - intersections_max).abs().prod(dim=1)
+    else:
+        intersections = torch.zeros_like(rect2s)
+        intersections[:, :2] = intersections_max
+        intersections[:, 2:] = intersections_min
+    # Check for no intersection
+    intersections[(intersections_min < intersections_max).any(dim=1)] = 0
+
+    return intersections
 
 def draw_boxes(image : torch.Tensor, points : torch.Tensor, box_size : int, color : torch.Tensor = torch.tensor([255, 0, 0])) -> torch.Tensor:
     """
@@ -135,7 +149,7 @@ def find_contours(mask, largest_only=True, simplify=True):
     contour = cv2.findContours(mask.to(torch.uint8).cpu().numpy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)[0]
     if len(contour) == 0:
         print("No contours found; mask shape:", mask.shape, "mask sum:", mask.sum())
-        return torch.tensor([0, 0], device=mask.device, dtype=torch.long)
+        return torch.tensor([[0, 0]], device=mask.device, dtype=torch.long)
     if largest_only:
         # Calculate areas of each contour
         areas = np.array([cv2.contourArea(c) for c in contour])
@@ -186,7 +200,7 @@ def contours_to_masks(contours : list[torch.Tensor], height : int, width : int) 
     
     # Filling in the masks
     for i, contour in enumerate(contours):
-        masks[i] = cv2.fillPoly(masks[i], [contour.cpu().numpy()], True)
+        masks[i] = cv2.drawContours(masks[i], [contour.cpu().numpy()], -1, 1, -1)
 
     # Convert to tensors
     return torch.tensor(masks, dtype=torch.bool, device=device)
@@ -249,7 +263,6 @@ def linear_interpolate(poly, scale):
     """
     if scale < 1:
         raise ValueError(f"Scale must be at least 1, not {scale}")
-
     if len(poly) == 0:
         return poly
     if scale == 1:
@@ -291,7 +304,7 @@ def scale_contour(contour, scale, expand_by_one=False):
     drift = centroid - contour.mean(axis=0)
     return (contour + drift).round().astype(np.int32)[(n_interp // 2)::n_interp].copy()
 
-def resize_mask(mask, new_shape) -> torch.Tensor:
+def resize_mask(masks, new_shape) -> torch.Tensor:
     """
     Takes a mask (or a batch of masks) and resizes it by scaling the contour coordinates and snapping to the integer grid, ensuring that snapping is always done towards the outside of the mask.
 
@@ -302,29 +315,15 @@ def resize_mask(mask, new_shape) -> torch.Tensor:
     Returns:
         torch.Tensor: The resized mask of shape (H', W') or (N, H', W').
     """
+    dtype, device = masks.dtype, masks.device
     # If the mask is a not a batch of masks, unsqueeze and call the function again
-    if len(mask.shape) == 2:
-        return resize_mask(mask.unsqueeze(0), new_shape).squeeze(0)
+    if len(masks.shape) == 2:
+        return resize_mask(masks.unsqueeze(0), new_shape).squeeze(0)
     # If the mask is already the target shape, return it
-    if mask.shape[1:] == new_shape:
-        return mask
+    if masks.shape[1:] == new_shape:
+        return masks
     # If the target shape is smaller than 2x2, raise an error
     if new_shape[0] <= 1 or new_shape[1] <= 1:
         raise ValueError(f"Target shape must be at least 2x2, not {new_shape}")
     # Resize the mask
-    return F.interpolate(mask.float()[None], new_shape, mode='bilinear', align_corners=False, antialias=True)[0] > 0.25
-    # return torchvision.transforms.functional.resize(mask.float().unsqueeze(0), new_shape, interpolation=torchvision.transforms.InterpolationMode.BILINEAR).squeeze(0) > 0.1
-
-    # dtype, device = mask.dtype, mask.device
-    # # Upscale the mask by a factor of 3 (ensures that the contour doesn't contain zero-width areas)
-    # mask = torchvision.transforms.functional.resize(mask.unsqueeze(0).to(torch.uint8), [i * 3 for i in mask.shape], interpolation=torchvision.transforms.InterpolationMode.NEAREST).squeeze(0) > 0.5
-    # new_mask = np.zeros(new_shape, dtype=np.uint8)
-    # scale = (np.array(new_mask.shape[::-1]) - 0) / (np.array(mask.shape[::-1]) - 0)
-    # contour = find_contours(mask, largest_only=True, simplify=False).cpu().numpy()
-    # contour = scale_contour(contour, scale)
-    # cv2.drawContours(new_mask, [contour], -1, 1, -1)
-    # return torch.tensor(new_mask, dtype=dtype, device=device)
-
-def torch_cv_resize(mask, new_shape):
-    dtype, device = mask.dtype, mask.device
-    return torch.tensor(cv2.resize(mask.to(torch.uint8).cpu().numpy(), new_shape[::-1], interpolation=cv2.INTER_NEAREST), dtype=dtype, device=device)  
+    return F.interpolate(masks.float()[None], new_shape, mode='nearest-exact', antialias=False)[0] > 0.5
