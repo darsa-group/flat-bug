@@ -49,12 +49,13 @@ if __name__ == '__main__':
         raise ValueError(f"Dtype '{option_dict['dtype']}' is not supported.")
 
     pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype)
-    pred.MIN_MAX_OBJ_SIZE = 8, 2048
-    pred.MAX_MASK_SIZE = 1024
+    pred.MIN_MAX_OBJ_SIZE = 16, 2048 ** 2 # Size is measured as the square root of the area
+    pred.MAX_MASK_SIZE = 2048 # Loss of precision may occur if the mask is larger than this, but all shapes are possible. 
     pred.SCORE_THRESHOLD = 0.3
     pred.IOU_THRESHOLD = 0.25
     pred.MINIMUM_TILE_OVERLAP = 384
-    pred.TIME = True
+    pred.PREFER_POLYGONS = True # Convert masks to polygons as soon as possible, and only use the polygons for further processing - no loss of precision, but only single polygons without holes can be represented, performance impact may depend on hardware and use-case
+    pred.TIME = False
 
     # fixme, build from pred._model!
     categories = {"id": 1, "name": "insect"}
