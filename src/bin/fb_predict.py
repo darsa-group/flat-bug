@@ -32,7 +32,10 @@ if __name__ == '__main__':
     args_parse.add_argument("-d", "--dtype", type=str, default="float16", help="Which dtype to use for inference. Default is 'float16'.")
     args_parse.add_argument("-f", "--fast", action="store_true", help="Use fast mode.")
     args_parse.add_argument("--no-crops", action="store_true", help="Do not save the crops.")
+    args_parse.add_argument("--no-overviews", action="store_true", help="Do not save the overviews.")
+    args_parse.add_argument("-S", "--no-save", action="store_true", help="Do not save the results.")
     args_parse.add_argument("--single-scale", action="store_true", help="Use single scale.")
+    args_parse.add_argument("--verbose", action="store_true", help="Verbose mode.")
     
 
     args = args_parse.parse_args()
@@ -49,13 +52,24 @@ if __name__ == '__main__':
         raise ValueError(f"Dtype '{option_dict['dtype']}' is not supported.")
 
     pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype)
-    pred.MIN_MAX_OBJ_SIZE = 16, 2048 ** 2 # Size is measured as the square root of the area
-    pred.MAX_MASK_SIZE = 2048 # Loss of precision may occur if the mask is larger than this, but all shapes are possible. 
-    pred.SCORE_THRESHOLD = 0.3
-    pred.IOU_THRESHOLD = 0.25
+    pred.MIN_MAX_OBJ_SIZE = 16, 768 # Size is measured as the square root of the area
+    pred.MAX_MASK_SIZE = 1024 # Loss of precision may occur if the mask is larger than this, but all shapes are possible. 
+    pred.SCORE_THRESHOLD = 0.5
+    pred.IOU_THRESHOLD = 0.15
     pred.MINIMUM_TILE_OVERLAP = 384
+    pred.EDGE_CASE_MARGIN = 128 + 64
     pred.PREFER_POLYGONS = True # Convert masks to polygons as soon as possible, and only use the polygons for further processing - no loss of precision, but only single polygons without holes can be represented, performance impact may depend on hardware and use-case
-    pred.TIME = False
+    pred.EXPERIMENTAL_NMS_OPTIMIZATION = True
+    pred.TIME = option_dict["verbose"] # Should be enabled with a verbose parameter, and maybe logged? Also not sure if it incurrs a performance penalty
+
+    # # Legacy hyperparameters
+    # pred.MIN_MAX_OBJ_SIZE = 16, 1024
+    # pred.MINIMUM_TILE_OVERLAP = 256
+    # pred.EDGE_CASE_MARGIN = 128
+    # pred.SCORE_THRESHOLD = 0.5
+    # # pred.IOU_THRESHOLD = 0.5
+    # pred.PREFER_POLYGONS = True # This wasn't a hyperparameter before, but it reproduces the old behavior
+
 
     # fixme, build from pred._model!
     categories = {"id": 1, "name": "insect"}
@@ -74,19 +88,23 @@ if __name__ == '__main__':
     j = 1
     pbar = tqdm(enumerate(files), total=len(files), desc="Processing images", dynamic_ncols=True, unit="image")
     for i, f in pbar:
+        if option_dict["verbose"]:
+            print(f"Processing {os.path.basename(f)}")
         pbar.set_postfix_str(f"Processing {os.path.basename(f)}")
         logging.info(f"Processing {os.path.basename(f)}")
         try:
             # Run the model
             prediction = pred.pyramid_predictions(f, scale_increment=1/2, scale_before=option_dict["scale_before"], single_scale=option_dict["single_scale"])
             # Save the results
-            result_directory = prediction.save(
-                output_directory = option_dict["results_dir"],
-                fast = option_dict["fast"],
-                crops = not option_dict["no_crops"],
-                mask_crops = not option_dict["fast"],
-                identifier = "ChangeThisTEMPORARY", #str(uuid.uuid4()),
-            )
+            if not option_dict["no_save"]:
+                result_directory = prediction.save(
+                    output_directory = option_dict["results_dir"],
+                    fast = option_dict["fast"],
+                    overview = not option_dict["no_overviews"],
+                    crops = not option_dict["no_crops"],
+                    mask_crops = not option_dict["fast"],
+                    identifier = "ChangeThisTEMPORARY", #str(uuid.uuid4()),
+                )
         except Exception as e:
             logging.error(f"Issue whilst processing {f}")
             #fixme, what is going on with /home/quentin/todo/toup/20221008_16-01-04-226084_raw_jpg.rf.0b8d397da3c47408694eeaab2cde06e5.jpg?
