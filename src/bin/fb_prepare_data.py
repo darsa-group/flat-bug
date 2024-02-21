@@ -81,6 +81,7 @@ def prepare_coco_file(source_file, image_list, out):
     image_ids_to_keep = []
 
     new_image = []
+
     for i in coco["images"]:
         if i["file_name"] in image_list:
             images_to_keep.append(i)
@@ -161,7 +162,7 @@ if __name__ == '__main__':
 
         try:
 
-            coco_files = [f for f in glob.glob(os.path.join( source_dir, "*.json"))]
+            coco_files = [f for f in sorted(glob.glob(os.path.join( source_dir, "*.json")))]
             assert len(coco_files) == 1, os.path.join(source_dir, "*.json") #,"Multiple label files, only supporting one"
 
 
@@ -172,13 +173,13 @@ if __name__ == '__main__':
             os.makedirs(os.path.join(tmp_dir, OUT_COCO_CONVERTER_IMAGES, "train"), exist_ok=True)
             os.makedirs(os.path.join(tmp_dir, OUT_COCO_CONVERTER_IMAGES, "val"), exist_ok=True)
 
-            images = {os.path.basename(f) for f in glob.glob(os.path.join(source_dir, "*.jpg"))}
+            images = {os.path.basename(f) for f in sorted(glob.glob(os.path.join(source_dir, "*.jpg")))}
 
             assert len(images) > 0
 
             validation_files = {}
             training_files = {}
-            for f in glob.glob(os.path.join(tmp_dir,OUT_COCO_CONVERTER, "*.txt")):
+            for f in sorted(glob.glob(os.path.join(tmp_dir,OUT_COCO_CONVERTER, "*.txt"))):
                 basename_sans_ext = os.path.splitext(os.path.basename(f))[0]
                 expected_image_basename = basename_sans_ext + ".jpg"
                 if expected_image_basename not in images:
@@ -205,9 +206,15 @@ if __name__ == '__main__':
                 shutil.move(f, os.path.join(tmp_dir, OUT_COCO_CONVERTER, os.path.join(subset, new_bn_se + ".txt")))
                 shutil.copy(im_path, os.path.join(tmp_dir, OUT_COCO_CONVERTER_IMAGES, subset, new_bn_se + ".jpg"))
 
-            prepare_coco_file(coco_files[0], validation_files, os.path.join(tmp_dir, OUT_COCO_CONVERTER, "val", f"{d}"+JSON_FILE_BASENAME))
-            prepare_coco_file(coco_files[0], training_files, os.path.join(tmp_dir, OUT_COCO_CONVERTER, "train", f"{d}"+JSON_FILE_BASENAME))
+            if len(validation_files) == 0:
+                logging.warning(f"No validation files for {d}")
+            else:
+                prepare_coco_file(coco_files[0], validation_files, os.path.join(tmp_dir, OUT_COCO_CONVERTER, "val", f"{d}"+JSON_FILE_BASENAME))
 
+            if len(validation_files) == 0:
+                logging.warning(f"No train files for {d}")
+            else:
+                prepare_coco_file(coco_files[0], training_files, os.path.join(tmp_dir, OUT_COCO_CONVERTER, "train", f"{d}"+JSON_FILE_BASENAME))
 
             collapse_in_parent_dir(os.path.join(tmp_dir, OUT_COCO_CONVERTER))
             collapse_in_parent_dir(os.path.join(tmp_dir,  OUT_COCO_CONVERTER_IMAGES))
@@ -219,5 +226,5 @@ if __name__ == '__main__':
 
 
     for subset in {"val", "train"}:
-        all_json = [f for f in glob.glob(os.path.join(PREPARED_DATA_TARGET_SUBDIR, "labels", subset, "*.json"))]
+        all_json = [f for f in sorted(glob.glob(os.path.join(PREPARED_DATA_TARGET_SUBDIR, "labels", subset, "*.json")))]
         merge_cocos(all_json, os.path.join(PREPARED_DATA_TARGET_SUBDIR, "labels", subset,JSON_FILE_BASENAME), delete=True)
