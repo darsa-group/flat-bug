@@ -2,6 +2,9 @@ library("data.table")
 library("ggplot2")
 library("scales")
 
+RES_DIR = "/home/quentin/Desktop/flat-bug-val-res-premerge" # where all the CSV files are
+
+
 OUR_THEME <- theme_bw()
 
 scientific_10 <- function(x) {
@@ -9,7 +12,36 @@ scientific_10 <- function(x) {
 }
 
 
-RES_DIR = "/home/quentin/Desktop/flat-bug-val-res/" # where all the CSV files are
+files = list.files(RES_DIR, pattern="*.csv", full.names=TRUE)
+
+all_data = lapply(files, function(f){
+    dt = fread(f)
+    dt[, filename := basename (f) ]
+    dt[, contour_1:=NULL ]
+    dt[, contour_2:=NULL ]
+    dt
+})
+
+dt = rbindlist(all_data)
+dt[, in_gt := idx_1 != -1]
+dt[, in_im := idx_2 != -1]
+dt[, dataset := sapply(strsplit(dt[, filename], "_"), function(e){e[[1]][1]})]
+dt[, area := ifelse(contourArea_1 >0 , contourArea_1, contourArea_2)]
+
+library("data.table")
+library("ggplot2")
+library("scales")
+
+RES_DIR = "/home/quentin/Desktop/flat-bug-val-res-premerge" # where all the CSV files are
+
+
+OUR_THEME <- theme_bw()
+
+scientific_10 <- function(x) {
+  parse(text=gsub("e", " %*% 10^", scales::scientific_format()(x)))
+}
+
+
 files = list.files(RES_DIR, pattern="*.csv", full.names=TRUE)
 
 all_data = lapply(files, function(f){
@@ -28,10 +60,12 @@ dt[, area := ifelse(contourArea_1 >0 , contourArea_1, contourArea_2)]
 
 dt[, .(precision = sum(in_gt & in_im)/ sum(in_im),
 		recall = sum(in_gt & in_im)/ sum(in_gt),
-		n_instances = .N)
+		n_instances = .N,
+		n_files = length(unique(filename)))
 		,
 		by="dataset"
 	]
+
 
 
 
