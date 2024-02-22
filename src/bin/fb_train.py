@@ -22,6 +22,7 @@ if __name__ == '__main__':
         "patience": 500,
         "optimizer": 'auto',
         "save_period": 100,
+        "max_instances": 150,
         # "optimizer": 'SGD',
         # "lr0": 0.01,
         # "lrf": 0.005,

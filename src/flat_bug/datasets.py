@@ -14,6 +14,9 @@ IMG_FORMATS = 'bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 
 
 
 class MyYOLODataset(YOLODataset):
+    def __init__(self, max_instances, *args, **kwargs):
+        self._max_instances = max_instances
+        super().__init__(*args, **kwargs)
 
     def _debug_write_loaded_images(self, out, index):
         m = np.ascontiguousarray(out["masks"].detach().numpy().transpose(1, 2, 0)) * 255
@@ -59,8 +62,8 @@ class MyYOLODataset(YOLODataset):
             RandomColorInv(),
             RandomFlip(direction="vertical", p=hyp.flipud),
             RandomFlip(direction="horizontal", p=hyp.fliplr),
-            MyRandomPerspective(imgsz=self.imgsz, degrees=180,translate=0),
-            RandomCrop(self.imgsz),
+            MyRandomPerspective(imgsz=self.imgsz, degrees=180, translate=0),
+            RandomCrop(self.imgsz, max_targets=self._max_instances),
             # MyAlbumentations(self.imgsz),
             # LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False),
             Format(bbox_format="xywh",
@@ -77,20 +80,7 @@ class MyYOLODataset(YOLODataset):
         return out
 
 
-class MyYOLOValidationDatasetEndToEnd(MyYOLODataset):
-    def build_transforms(self, hyp=None):
-        return Compose([
-            Format(bbox_format="xywh",
-                   normalize=True,
-                   return_mask=self.use_segments,
-                   return_keypoint=self.use_keypoints,
-                   batch_idx=True,
-                   mask_ratio=hyp.mask_ratio,
-                   mask_overlap=hyp.overlap_mask)
-        ])
-
 class MyYOLOValidationDataset(MyYOLODataset):
-
     _resample_n = 5
 
     def build_transforms(self, hyp=None):
@@ -105,10 +95,12 @@ class MyYOLOValidationDataset(MyYOLODataset):
                    mask_ratio=hyp.mask_ratio,
                    mask_overlap=hyp.overlap_mask)
         ])
+
     def __len__(self):
         return super().__len__() * self._resample_n
+
     #
 
     def __getitem__(self, index):
         i = index % super().__len__()
-        return  super().__getitem__(i)
+        return super().__getitem__(i)
