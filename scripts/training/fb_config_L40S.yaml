@@ -1,5 +1,5 @@
 batch: 8
-model: ./model_2023-11-20.pt
+#model: ./model_2023-11-20.pt
 epochs: 5000
 device: "cuda"
 patience: 9999
