@@ -28,7 +28,7 @@ fi
 # fixme retrieve hyper parameters from CLI
 
 
-MODEL_HASH=$(md5sum ~/Desktop/fb_2024-02-09_best.pt | cut -c1-8)
+MODEL_HASH=$(md5sum ${WEIGHTS} | cut -c1-8)
 DATE=$(date -u  +"%Y-%m-%dT%H-%M-%SZ")
 COMMIT_HASH=$(git rev-list --max-count=1 HEAD | cut -c1-8)
 
