@@ -61,7 +61,6 @@ class MySegmentationTrainer(SegmentationTrainer):
                 # stride=int(stride),
                 pad=0.0 if mode == "train" else 0.5,
                 single_cls=self.args.single_cls or False,
-                use_segments=True,
                 max_instances=self._max_instances
             )
         else:
@@ -77,7 +76,6 @@ class MySegmentationTrainer(SegmentationTrainer):
                 # stride=int(stride),
                 pad=0.0 if mode == "train" else 0.5,  # fixme... does not make sense...
                 single_cls=self.args.single_cls or False,
-                use_segments=True,
                 max_instances=np.Inf
             )
 
