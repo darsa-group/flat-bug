@@ -1,3 +1,4 @@
+import numpy as np
 from ultralytics.models.yolo.segment import SegmentationTrainer
 from flat_bug.datasets import MyYOLODataset, MyYOLOValidationDataset
 from ultralytics.utils import yaml_load, DEFAULT_CFG, RANK, LOGGER
@@ -12,9 +13,9 @@ from ultralytics.utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel,
 
 
 class MySegmentationTrainer(SegmentationTrainer):
-    def __init__(self, cfg=DEFAULT_CFG, overrides=None, _callbacks=None, val_every=10, *args, **kwargs):
+    def __init__(self, max_instances, cfg=DEFAULT_CFG, overrides=None, _callbacks=None, val_every=10, *args, **kwargs):
         """Initialize a SegmentationTrainer object with given arguments."""
-
+        self._max_instances = max_instances
         super().__init__(cfg, overrides, _callbacks, *args, **kwargs)
         if overrides["resume"]:
             self.args.resume = True
@@ -61,7 +62,7 @@ class MySegmentationTrainer(SegmentationTrainer):
                 pad=0.0 if mode == "train" else 0.5,
                 single_cls=self.args.single_cls or False,
                 use_segments=True,
-                max_instances=self.args.max_instances
+                max_instances=self._max_instances
             )
         else:
             dataset = MyYOLOValidationDataset(
@@ -77,7 +78,7 @@ class MySegmentationTrainer(SegmentationTrainer):
                 pad=0.0 if mode == "train" else 0.5,  # fixme... does not make sense...
                 single_cls=self.args.single_cls or False,
                 use_segments=True,
-                max_instances=self.args.max_instances
+                max_instances=np.Inf
             )
 
         return dataset

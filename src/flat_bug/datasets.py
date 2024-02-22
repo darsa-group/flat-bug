@@ -86,7 +86,7 @@ class MyYOLOValidationDataset(MyYOLODataset):
     def build_transforms(self, hyp=None):
         return Compose([
             MyRandomPerspective(imgsz=self.imgsz, degrees=0, scale=(.1, 1), translate=0),
-            RandomCrop(self.imgsz, max_targets=np.Inf),
+            RandomCrop(self.imgsz, max_targets=self._max_instances),
             Format(bbox_format="xywh",
                    normalize=True,
                    return_mask=self.use_segments,
