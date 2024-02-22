@@ -49,7 +49,7 @@ if __name__ == "__main__":
         os.mkdir(output_directory)
         print(f"Cleared output directory '{output_directory}'.")
 
-    eval_directory = os.path.join(directory, "eval")
+    eval_directory = os.path.join(directory, "")
     if not os.path.isdir(eval_directory):
         os.makedirs(eval_directory)
         print(f"Created eval directory '{eval_directory}'.")
