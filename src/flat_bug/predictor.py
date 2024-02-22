@@ -12,6 +12,10 @@ from ultralytics import YOLO
 from torchvision.io import read_image, ImageReadMode
 import torchvision.transforms as transforms
 
+from shapely.geometry import Polygon
+import shapely
+
+
 from typing import Union
 
 # Class for containing the results from a single _detect_instances call - This should probably not be its own class, but just a TensorPredictions object with a single element instead, but this would require altering the TensorPredictions._combine_predictions function to handle a single element differently or pass a flag or something
@@ -20,7 +24,8 @@ class Prepared_Results:
         self.wh_scale = torch.tensor(scale, device=device, dtype=dtype).unsqueeze(0)
         self._predictions = predictions
         self._predictions.boxes.data[:, :4] /= self.wh_scale.repeat(1, 2)
-        self._predictions.polygons = [poly / self.wh_scale for poly in self._predictions.polygons]
+        self._predictions.polygons = [(poly + torch.roll(poly, 1, dims=0)) / (2 * self.wh_scale) for poly in self._predictions.polygons]
+        # self._predictions.polygons = [torch.tensor(shapely.affinity.scale(Polygon(poly.cpu().numpy()), self.wh_scale[0][0].item(), self.wh_scale[0][1].item(), origin="centroid").exterior.coords, device=device, dtype=dtype) for poly in self._predictions.polygons]
         self.scale = sum(scale) / 2
         self.device = device
         self.dtype = dtype
@@ -60,7 +65,7 @@ class TensorPredictions:
 
     `TensorPredictions` also allows for easy conversion from mask to contours and back, plotting of the results, and (de-)serialization to save and load the results to/from disk.
     """
-    BOX_IS_EQUAL_MARGIN = 5 # How many pixels the boxes can differ by and still be considered equal? Used for removing duplicates before merging overlapping masks.
+    BOX_IS_EQUAL_MARGIN = 0 # How many pixels the boxes can differ by and still be considered equal? Used for removing duplicates before merging overlapping masks.
     PREFER_POLYGONS = False # If True, will use shapely Polygons instead of masks for NMS and drawing
     # These are simply initialized here to decrease clutter in the __init__ function and arguments
     mask_width = None 
@@ -270,7 +275,7 @@ class TensorPredictions:
         if self.PREFER_POLYGONS:
             nms_ind = nms_polygons(self.polygons, torch.tensor(self.scales, dtype=self.dtype, device=self.device) * self.confs, iou_threshold=iou_threshold, return_indices=True, dtype=self.dtype, boxes=self.boxes / image_to_mask_scale.repeat(2).unsqueeze(0), **kwargs)
         else:
-            nms_ind = nms_masks(self.masks.data, torch.tensor(self.scales, dtype=self.dtype, device=self.device) * self.confs, iou_threshold=iou_threshold, return_indices=True, dtype=self.dtype, boxes=self.boxes / image_to_mask_scale.repeat(2).unsqueeze(0), **kwargs)
+            nms_ind = nms_masks(self.masks.data, torch.tensor(self.scales, dtype=self.dtype, device=self.device) * self.confs, iou_threshold=iou_threshold, return_indices=True, boxes=self.boxes / image_to_mask_scale.repeat(2).unsqueeze(0), **kwargs)
         # Remove the elements that were not selected
         self = self[nms_ind]
         if self.time:
@@ -686,7 +691,9 @@ The JSON can be deserialized into a `TensorPredictions` object using `TensorPred
             if not fast:
                 self.plot(outpath=overview_path, linewidth=2, scale=1) 
             else:
-                self.plot(outpath=overview_path, linewidth=1, scale=1/2)
+                max_dim = max(self.image.shape[1:])
+                fast_scale = min(1/2, 3072 / max_dim)
+                self.plot(outpath=overview_path, linewidth=1, scale=fast_scale)
 
         # Save crops
         if crops:
@@ -746,8 +753,14 @@ class Predictor(object):
 
         self._yolo_predictor = None
 
-    def _detect_instances(self, tensor : torch.Tensor, scale=1.0):
+    def _detect_instances(self, tensor : torch.Tensor, scale=1.0, max_scale : bool=False):
         TILE_SIZE = 1024
+        this_MIN_MAX_OBJ_SIZE = list(self.MIN_MAX_OBJ_SIZE)
+        this_EDGE_CASE_MARGIN = self.EDGE_CASE_MARGIN
+        # If we are at the top level, we don't want to remove large instances - since there are no layers above to detect them as small instances
+        if max_scale:
+            this_MIN_MAX_OBJ_SIZE[1] = 4096
+            this_EDGE_CASE_MARGIN = 0
 
         if self.TIME:
             # Initialize timing calculations
@@ -835,7 +848,7 @@ class Predictor(object):
                     if self.TIME:
                         # Record end of forward
                         end_forward_event.record()
-                    tps = postprocess(tps, batch, max_det=1000, min_confidence=self.SCORE_THRESHOLD, iou_threshold=self.IOU_THRESHOLD, edge_margin=self.EDGE_CASE_MARGIN, nms=3, group_first=self.EXPERIMENTAL_NMS_OPTIMIZATION) # Important to prune within each tile first, this avoids having to carry around a lot of data
+                    tps = postprocess(tps, batch, max_det=1000, min_confidence=self.SCORE_THRESHOLD, iou_threshold=self.IOU_THRESHOLD, edge_margin=this_EDGE_CASE_MARGIN, valid_size_range=this_MIN_MAX_OBJ_SIZE, nms=3, group_first=self.EXPERIMENTAL_NMS_OPTIMIZATION) # Important to prune within each tile first, this avoids having to carry around a lot of data
                     if self.TIME:
                         # Record end of postprocess
                         end_postprocess_event.record()
@@ -868,15 +881,15 @@ class Predictor(object):
         
         ### DEBUG #####
         # if self.DEBUG:
-        #     print(f'Number of tiles processed before merging and plotting: {len(ps)}')
-        #     for i in range(len(ps)):
-        #         ps[i].orig_img = (ps[i].orig_img.detach().contiguous() * 255).to(torch.uint8).cpu().numpy() # Needed for compatibility with the Results.plot function
-        #     fig, axs = plt.subplots(y_n_tiles, x_n_tiles, figsize=(x_n_tiles * 5, y_n_tiles * 5))
-        #     axs = axs.flatten() if len(ims) > 1 else [axs]
-        #     [axs[i].imshow(p.plot(pil=False, masks=True, probs=False, labels=False, kpt_line=False)) for i, p in enumerate(ps)]
-        #     plt.savefig(f"debug_{scale:.3f}_fraw.png", dpi=300)
-        #     for i in range(len(ps)):
-        #         ps[i].orig_img = torch.tensor(ps[i].orig_img).squeeze(0).to(dtype=self._dtype, device=self._device) / 255.0 # Backtransform
+        # print(f'Number of tiles processed before merging and plotting: {len(ps)}')
+        # for i in range(len(ps)):
+        #     ps[i].orig_img = (ps[i].orig_img.detach().contiguous() * 255).to(torch.uint8).cpu().numpy() # Needed for compatibility with the Results.plot function
+        # fig, axs = plt.subplots(y_n_tiles, x_n_tiles, figsize=(x_n_tiles * 5, y_n_tiles * 5))
+        # axs = axs.flatten() if len(offsets) > 1 else [axs]
+        # [axs[i].imshow(p.plot(pil=False, masks=True, probs=False, labels=False, kpt_line=False)) for i, p in enumerate(ps)]
+        # plt.savefig(f"debug_{scale:.3f}_fraw.png", dpi=300)
+        # for i in range(len(ps)):
+        #     ps[i].orig_img = torch.tensor(ps[i].orig_img).squeeze(0).to(dtype=self._dtype, device=self._device) / 255.0 # Backtransform
         #################
 
         ## Combine the results from the tiles
@@ -895,23 +908,23 @@ class Predictor(object):
         orig_img = tensor[:, pad_lrtb[2]:(-pad_lrtb[3] if pad_lrtb[3] != 0 else None), pad_lrtb[0]:(-pad_lrtb[1] if pad_lrtb[1] != 0 else None)] if padded else tensor
         ps = merge_tile_results(ps, orig_img.permute(1,2,0), box_offsetters=box_offsetters.to(self._dtype), mask_offsetters=mask_offsetters, new_shape=new_mask_size, clamp_boxes=(h - sum(pad_lrtb[2:]), w - sum(pad_lrtb[:2])), max_mask_size=self.MAX_MASK_SIZE, exclude_masks=self.PREFER_POLYGONS)
 
-        # Apply the size filters - This could be done before merging the tiles, but would require some scaling logic
-        ps_sqrt_area = ((ps.boxes.data[:,2:4] - ps.boxes.data[:,:2]).log().sum(dim=1) / 2).exp()
-        # New criteria prunes images based on their area
-        big_enough = (ps_sqrt_area > self.MIN_MAX_OBJ_SIZE[0]) & (ps_sqrt_area < self.MIN_MAX_OBJ_SIZE[1])
-        ps = ps[big_enough]
+        # # Apply the size filters - This could be done before merging the tiles, but would require some scaling logic
+        # ps_sqrt_area = ((ps.boxes.data[:,2:4] - ps.boxes.data[:,:2]).log().sum(dim=1) / 2).exp()
+        # # New criteria prunes images based on their area
+        # big_enough = (ps_sqrt_area > self.MIN_MAX_OBJ_SIZE[0]) & (ps_sqrt_area < self.MIN_MAX_OBJ_SIZE[1])
+        # ps = ps[big_enough]
 
         #### DEBUG #####
         # if self.DEBUG:
-        #     print(f'Number of tiles processed after merging and filtering: {len(ps)}')
-        #     fig, ax = plt.subplots(1, 1, figsize=(10, 10))
-        #     ps.orig_img = (ps.orig_img.detach().contiguous() * 255).to(torch.uint8).cpu().numpy() # Needed for compatibility with the Results.plot function
-        #     # ps.boxes.data[:, :4] /= scale
-        #     print(ps.orig_img.shape)
-        #     ax.imshow(ps.plot(pil=False, masks=True, probs=False, labels=False, kpt_line=False))
-        #     plt.savefig(f"debug_{scale:.3f}_merged.png", dpi=300)
-        #     ps.orig_img = torch.tensor(ps.orig_img).squeeze(0).to(dtype=self._dtype, device=self._device) / 255.0 # Backtransform
-        #   ps.boxes.data[:, :4] *= scale
+        # print(f'Number of tiles processed after merging and filtering: {len(ps)}')
+        # fig, ax = plt.subplots(1, 1, figsize=(10, 10))
+        # ps.orig_img = (ps.orig_img.detach().contiguous() * 255).to(torch.uint8).cpu().numpy() # Needed for compatibility with the Results.plot function
+        # # ps.boxes.data[:, :4] /= scale
+        # print(ps.orig_img.shape)
+        # ax.imshow(ps.plot(pil=False, masks=True, probs=False, labels=False, kpt_line=False))
+        # plt.savefig(f"debug_{scale:.3f}_merged.png", dpi=300)
+        # ps.orig_img = torch.tensor(ps.orig_img).squeeze(0).to(dtype=self._dtype, device=self._device) / 255.0 # Backtransform
+        # # ps.boxes.data[:, :4] *= scale
         #################
 
         if self.TIME:
@@ -986,7 +999,7 @@ class Predictor(object):
         if self.TIME:
             self.total_detection_time = 0
             self.total_forward_time = 0
-        all_preds = [self._detect_instances(im_b, scale=s) for s in reversed(scales)] # 
+        all_preds = [self._detect_instances(im_b, scale=s,max_scale=s==min(scales)) for s in reversed(scales)] # 
 
         if self.TIME:
             print(f'Total detection time: {self.total_detection_time:.3f}s ({self.total_forward_time / self.total_detection_time * 100:.3g}% forward)')

@@ -77,8 +77,6 @@ from IPython.display import display, clear_output
 import ipywidgets as widgets
 import numpy as np
 
-DEBUG_DIRECTORY = "dev"
-
 def fb_to_coco(d : dict, coco : dict) -> dict:
     """
     Converts a FlatBug dataset to a COCO dataset.
@@ -163,7 +161,8 @@ def fb_to_coco(d : dict, coco : dict) -> dict:
             "segmentation": [contour],
             "area": 0.0,
             "bbox": box,
-            "iscrowd": 0
+            "iscrowd": 0,
+            "conf" : conf
         }
         coco["annotations"].append(annotation)
 
@@ -453,9 +452,14 @@ def plot_heatmap(mat : np.array, axis_labels : Union[List[str], None]=None, brea
     """
     if dimensions is None:
         dimensions = tuple([m * 10 for m in mat.shape[::-1]])
+        min_dim = min(dimensions)
+        if min_dim < 1000:
+            scale_dims = 1000 / min_dim
+            dimensions = tuple([int(d * scale_dims) for d in dimensions])
     if mat.shape[0] == 0 or mat.shape[1] == 0:
         print('WARNING: Empty matrix. Cannot plot heatmap.')
         return
+    
     # Create a colormap for viridis
     colormap = cv2.applyColorMap((mat / mat.max() * 255).astype(np.uint8), cv2.COLORMAP_VIRIDIS)
     # Expand colormap to 1000x1000
@@ -839,6 +843,15 @@ def compare_groups(group1 : list, group2 : list, group_labels : Union[str, None]
     # Set the IoU of unmatched geometries to 0
     matched_iou[unmatched_1] = 0
     matched_iou = np.concatenate([matched_iou, np.zeros(len(unmatched_2))])
+
+    # Get the confidences
+    conf1 = ["NA" for _ in range(len(matches))]
+    conf2 = ["NA" for _ in range(len(matches))]
+    for i, m in enumerate(matches):
+        if m[0] != -1 and "conf" in group1[m[0]]:
+            conf1[i] = group1[m[0]]["conf"]
+        if m[1] != -1 and "conf" in group2[m[1]]:
+            conf2[i] = group2[m[1]]["conf"]
     
     # Get the matched bounding boxes
     boxes1 = b1[matches[:, 0]]
@@ -881,6 +894,8 @@ def compare_groups(group1 : list, group2 : list, group_labels : Union[str, None]
     output = {
         "idx_1" : idx1, 
         "idx_2" : idx2, 
+        "conf1" : conf1,
+        "conf2" : conf2,
         "IoU" : matched_iou, 
         "contourArea_1" : careas1, 
         "contourArea_2": careas2, 
@@ -954,13 +969,17 @@ if __name__ == "__main__":
     # Find the differences between which images are in the ground truth and which are in the predictions
     gt_keys = set(gt_annotations.keys())
     pred_keys = set(pred_annotations.keys())
-    gt_diff_keys = gt_keys.difference(pred_keys)
-    pred_diff_keys = pred_keys.difference(gt_keys)
+    gt_diff_keys = sorted(list(gt_keys.difference(pred_keys)))
+    pred_diff_keys = sorted(list(pred_keys.difference(gt_keys)))
     shared_keys = gt_keys.intersection(pred_keys)
     if len(gt_diff_keys) > 0:
-        print(f"Ground truth has {len(gt_diff_keys)} images that are not in the predictions: {gt_diff_keys}")
+        show = min(2, len(gt_diff_keys))
+        missing_gt_diff_formatted = ', '.join(['"' + str(i) + '"' for i in gt_diff_keys[:show]])
+        print(f"Ground truth has {len(gt_diff_keys)} images that are not in the predictions: [{missing_gt_diff_formatted}{', ...' if len(gt_diff_keys) > show else ''}] and {len(gt_diff_keys) - show} more")
     if len(pred_diff_keys) > 0:
-        print(f"Predictions has {len(pred_diff_keys)} images that are not in the ground truth: {pred_diff_keys}")
+        show = min(2, len(pred_diff_keys))
+        missing_pred_diff_formatted = ', '.join(['"' + str(i) + '"' for i in pred_diff_keys[:show]])
+        print(f"Predictions has {len(pred_diff_keys)} images that are not in the ground truth: [{missing_pred_diff_formatted} {', ...' if len(pred_diff_keys) > show else ''}] and {len(pred_diff_keys) - show} more")
     if len(shared_keys) == 0:
         raise ValueError(f"No images in common between the ground truth and the predictions")
 

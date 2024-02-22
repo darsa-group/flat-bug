@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name=predict_erda_ias
-#SBATCH --output=pred_erda.out
+#SBATCH --job-name=fb_end_to_end_eval
+#SBATCH --output=eval.out
 #SBATCH --partition=GPUNodes
 #SBATCH --time=01:00:00
 #SBATCH --mem=2G
@@ -10,6 +10,8 @@
 
 echo "Starting job"
 ## Start of script ## 
+
+# The next three commands are only configured for my user on the ECE GPU cluster
 
 # List the available conda environments
 source /opt/anaconda-2022.05/bin/activate
@@ -21,7 +23,8 @@ conda activate /home/altair/.conda/envs/test
 cd /home/altair/flat-bug
 
 # Run the code
-python src/bin/fb_predict_erda.py -f -i AMI/storage/ias/slovakia -o test/ias_output -w best.pt -s 0.5 -p \\/[^\\/\\.]*snapshot[\\/\\.]*\\.jpg$ -n 10
+# python src/bin/fb_predict.py -i dev/reference/val -w model_snapshots/fb_2024-02-09_best.pt -o dev/output --no-crops -p **.jpg -f --gpu cuda:0 --verbose
+bash prototypes/end_to_end_eval.sh -w model_snapshots/fb_2024-02-19_best.pt -d dev
 
 ## End of script ##
 echo "Job finished"

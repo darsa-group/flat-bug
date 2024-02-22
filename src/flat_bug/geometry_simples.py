@@ -168,7 +168,14 @@ def simplify_contour(contour, tolerance=1.0):
     if isinstance(contour, list):
         return [simplify_contour(c, tolerance) for c in contour]
     else:
-        return cv2.approxPolyDP(contour, tolerance, True)
+        isTensor = isinstance(contour, torch.Tensor)
+        if isTensor:
+            device, dtype = contour.device, contour.dtype
+            contour = contour.cpu().numpy().astype(np.int32)
+        simplied_contour = cv2.approxPolyDP(contour, tolerance, True)
+        if isTensor:
+            simplied_contour = torch.tensor(simplied_contour, dtype=dtype, device=device).squeeze(1)
+        return simplied_contour
 
 def contours_to_masks(contours : list[torch.Tensor], height : int, width : int) -> torch.Tensor:
     """
