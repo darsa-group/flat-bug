@@ -166,6 +166,7 @@ runs/
 *.pth
 *.jpg
 *.yaml
+*.out
 datasets/
 
 test/

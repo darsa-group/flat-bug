@@ -4,17 +4,6 @@ import numpy as np
 import cv2
 import math
 
-## Helpers
-
-def expand_mask(mask, n=1, dtype=torch.float16):
-    """
-    Useful for plotting the mask with PyTorch.
-    """
-    if n == 0:
-        return mask
-    neighbor_kernel = torch.ones(1, 1, 1+2*n, 1+2*n, device=mask.device, dtype=dtype)
-    return torch.nn.functional.conv2d(mask.unsqueeze(0).unsqueeze(0).to(dtype=dtype, device=mask.device), neighbor_kernel, padding=n).squeeze(0).squeeze(0) > 0.5
-
 def duplicate_rows_and_columns(mask: torch.Tensor) -> torch.Tensor:
     """
     Expands a mask by a factor of two, by duplicating rows and columns.  
@@ -63,6 +52,32 @@ def interpolate_contour(contour : torch.Tensor) -> torch.Tensor:
     OBS: This functions mutates the input tensor.
     """
     return integer_lerp(contour)
+
+def intersect(rect1, rect2s, area_only=False):
+    """
+    Calculates the intersection of a rectangle with a set of rectangles.
+    """
+    if len(rect1.shape) == 1 and not rect1.shape[0] == 4 or len(rect1.shape) == 2 and not rect1.shape[1] == 4:
+        raise ValueError(f"Rectangles must be of shape (n, 4), not {rect1.shape}")
+    if len(rect2s.shape) == 1 and not rect2s.shape[0] == 4 or len(rect2s.shape) == 2 and not rect2s.shape[1] == 4:
+        raise ValueError(f"Rectangles must be of shape (n, 4), not {rect2s.shape}")
+    if len(rect1.shape) == 1:
+        rect1 = rect1.unsqueeze(0)
+    if len(rect2s.shape) == 1:
+        rect2s = rect2s.unsqueeze(0)
+    
+    intersections_max = torch.max(rect1[:, :2], rect2s[:, :2])
+    intersections_min = torch.min(rect1[:, 2:], rect2s[:, 2:])
+    if area_only:
+        intersections = (intersections_min - intersections_max).abs().prod(dim=1)
+    else:
+        intersections = torch.zeros_like(rect2s)
+        intersections[:, :2] = intersections_max
+        intersections[:, 2:] = intersections_min
+    # Check for no intersection
+    intersections[(intersections_min < intersections_max).any(dim=1)] = 0
+
+    return intersections
 
 def draw_boxes(image : torch.Tensor, points : torch.Tensor, box_size : int, color : torch.Tensor = torch.tensor([255, 0, 0])) -> torch.Tensor:
     """
@@ -131,17 +146,17 @@ def create_contour_mask(mask: torch.Tensor, width: int=1) -> torch.Tensor:
         raise ValueError(f"Invalid width: {width}")
 
 def find_contours(mask, largest_only=True, simplify=True):
-    contour = cv2.findContours(mask.to(torch.uint8).cpu().numpy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+    contour = cv2.findContours(mask.to(torch.uint8).cpu().numpy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)[0]
     if len(contour) == 0:
         print("No contours found; mask shape:", mask.shape, "mask sum:", mask.sum())
-        return torch.tensor([0, 0], device=mask.device, dtype=torch.long)
+        return torch.tensor([[0, 0]], device=mask.device, dtype=torch.long)
     if largest_only:
         # Calculate areas of each contour
         areas = np.array([cv2.contourArea(c) for c in contour])
         # Select the largest contour and convert it to a tensor
         contour = contour[np.argmax(areas)]
     if simplify:
-        contour = simplify_contour(contour, tolerance=0.5)
+        contour = simplify_contour(contour, tolerance=1 if isinstance(simplify, bool) else simplify)
     # Convert to tensor
     if isinstance(contour, list):
         return [torch.tensor(c, dtype=torch.long, device=mask.device).squeeze(1) for c in contour]
@@ -153,7 +168,14 @@ def simplify_contour(contour, tolerance=1.0):
     if isinstance(contour, list):
         return [simplify_contour(c, tolerance) for c in contour]
     else:
-        return cv2.approxPolyDP(contour, tolerance, True)
+        isTensor = isinstance(contour, torch.Tensor)
+        if isTensor:
+            device, dtype = contour.device, contour.dtype
+            contour = contour.cpu().numpy().astype(np.int32)
+        simplied_contour = cv2.approxPolyDP(contour, tolerance, True)
+        if isTensor:
+            simplied_contour = torch.tensor(simplied_contour, dtype=dtype, device=device).squeeze(1)
+        return simplied_contour
 
 def contours_to_masks(contours : list[torch.Tensor], height : int, width : int) -> torch.Tensor:
     """
@@ -185,227 +207,14 @@ def contours_to_masks(contours : list[torch.Tensor], height : int, width : int) 
     
     # Filling in the masks
     for i, contour in enumerate(contours):
-        masks[i] = cv2.fillPoly(masks[i], [contour.cpu().numpy()], True)
+        masks[i] = cv2.drawContours(masks[i], [contour.cpu().numpy()], -1, 1, -1)
 
     # Convert to tensors
     return torch.tensor(masks, dtype=torch.bool, device=device)
 
-
-################################################################################################
-################################################################################################
-##############################                                    ##############################
-##############################   Native PyTorch implementations   ##############################
-##############################                                    ##############################
-################################################################################################
-################################################################################################
-
-## Helpers
-
-def is_in_2d(point: torch.Tensor, points: torch.Tensor) -> bool:
+def contour_sum(contours : list[torch.Tensor], height : int, width : int) -> torch.Tensor:
     """
-    Checks if a point is in a set of points. Does this by checking the x-coordinates and y
-
-    Args:
-        point (`torch.Tensor`): The point of size (,2) to check.
-        points (`torch.Tensor`): The set of points of size (N, 2) to check against.
-
-    Returns:
-        `torch.Tensor` (torch.bool): Boolean tensor of size 1. True if the point is in the set of points, False otherwise.
-    """
-    return (point == points).all(dim=1).any()
-
-def order_points_clockwise(boundary_indices: torch.Tensor) -> torch.Tensor:
-    """
-    Orders the boundary points in a clockwise manner.
-
-    Args:
-        boundary_indices (`torch.Tensor`): Coordinates of the sparse boundary pixels of size (N, 2).
-
-    Returns:
-        `torch.Tensor`: Coordinates of the boundary pixels ordered clockwise of size (N, 2).
-    """
-    if len(boundary_indices) <= 1:
-        return [boundary_indices]
-    device = boundary_indices.device
-    # Find the top-leftmost point as the starting point
-    start_point = boundary_indices[boundary_indices[:, 0] == boundary_indices[:, 0].min()]
-    start_point = start_point[start_point[:, 1].argmax()]
-
-    # Directions to move: right, down, left, up (clockwise)
-    directions = torch.tensor([[0, 1], [1, 0], [0, -1], [-1, 0]], dtype=torch.long, device=device)
-
-    # Initialize helpers
-    ordered_points = torch.ones_like(boundary_indices) * -1
-    ordered_points[0] = start_point
-    current_point = start_point
-    dir_idx = 1
-    i = 1
-    other_regions = []
-
-    while i < len(boundary_indices):
-        found_next = False
-        for d in range(4):
-            this_dir = (dir_idx + d) % 4 # Always start with the current direction and go clockwise
-            next_point = current_point + directions[this_dir]
-            if is_in_2d(next_point, boundary_indices) and not is_in_2d(next_point, ordered_points[:i]):
-                ordered_points[i] = next_point
-                current_point = next_point
-                found_next = True
-                dir_idx = this_dir - 1 # Update to the new direction
-                i += 1
-                break
-        if not found_next and i != len(boundary_indices):
-            # This happens when there are more than one contiguous regions in the mask
-            # Here we simply call recursively on the remaining points
-            remaining_points = boundary_indices[~torch.stack([is_in_2d(p, ordered_points[:i]) for p in boundary_indices])]
-            other_regions = order_points_clockwise(remaining_points)
-            break
-        if i == len(boundary_indices):
-            break
-
-    return [ordered_points[:i]] + other_regions
-
-def remove_inserted_points(boundary_indices: torch.Tensor) -> torch.Tensor:
-    """
-    Removes the inserted points from the boundary indices by dividing the indices by 2 and removing duplicates.
-    This version preserves the original order of the unique points.
-
-    Args:
-        boundary_indices (`torch.Tensor`): Coordinates of the sparse boundary pixels of size (N, 2).
-
-    Returns:
-        `torch.Tensor`: Coordinates of the sparse boundary pixels without the inserted points of size (M, 2), where M <= N.
-    """
-    device = boundary_indices.device
-    # Divide by 2 to map back to original coordinates
-    scaled_down_points = boundary_indices // 2
-
-    # Get unique rows and their inverse indices
-    _, inverse_indices = torch.unique(scaled_down_points, return_inverse=True, sorted=False, dim=0)
-    
-    # Create an array to keep track of first occurrences
-    first_occurrences = torch.full((inverse_indices.max() + 1,), -1, dtype=torch.long, device=device)
-    
-    where_to_replace = first_occurrences[inverse_indices] == -1
-    first_occurrences[inverse_indices[where_to_replace]] = torch.arange(len(inverse_indices), device=device)[where_to_replace]
-    first_occurrences = first_occurrences[first_occurrences >= 0].sort().values
-
-    # Extract and return the first occurrences in the original order
-    return scaled_down_points[first_occurrences]
-
-def remove_consecutive_duplicates(elements: torch.Tensor) -> torch.Tensor:
-    return elements[(elements != elements.roll(1, 0)).any(dim=1)]
-
-def remove_unconnected_points(contour : torch.Tensor) -> torch.Tensor:
-    """
-    Takes a contour represented as (i, j) index-coordinates in a Nx2 tensor and removes unconnected points. A point is connected if the next element in the contour is a neighbor of the current element in the cardinal directions.
-
-    Args:
-        contour (`torch.Tensor`): Contour represented as (i, j) index-coordinates in a Nx2 tensor
-
-    Returns:
-        `torch.Tensor`: Contour with unconnected points removed of size Mx2, where M <= N
-    """
-    # All points are "unconnected" if there are two or less points
-    if len(contour) <= 2:
-        return contour
-    # Clone the contour to avoid modifying the original
-    neighbors = (torch.cdist(contour.float(), contour.float(), p=1) == 1)
-    keeper_mask = torch.ones(contour.shape[0], dtype=torch.bool)
-    # Remove the unconnected points, which may expose new unconnected points
-    for _ in range(len(contour)):
-        # If there are no points left, break
-        if ~keeper_mask.any():
-            break
-        # Find the current points with a single (or none) neighbor
-        single_neighbors = ((neighbors == 1).sum(dim=1) == 1).nonzero().flatten()
-        # Check if the single_neighbors tensor is empty
-        if len(single_neighbors) == 0:
-            break
-
-        keeper_mask[single_neighbors] = False
-        # Subtract the single neighbors from the neighbors tensor
-        if len(single_neighbors) == 1:
-            neighbors[single_neighbors, :] = False
-            neighbors[:, single_neighbors] = False
-        else:
-            for s in single_neighbors:
-                neighbors[s, :] = False
-                neighbors[:, s] = False
-
-    return contour[keeper_mask]
-
-def remove_consecute_numbers(numbers : torch.Tensor) -> torch.Tensor:
-    """
-    Remove consecutive numbers from a list of numbers, alternating between the left and the right side of each segment. If there is an odd number of consecutive groups, the last group is removed.
-
-    Args:
-        numbers (`torch.Tensor`): List of numbers of size N
-
-    Returns:
-        `torch.Tensor`: List of numbers with consecutive numbers removed of size M, where M <= N
-    """
-    l = (numbers - numbers.roll(1)) != 1
-    r = (numbers - numbers.roll(-1)) != -1
-    alternating = torch.cat((numbers[l][::2], numbers[r][1::2])).sort().values
-    if len(alternating) % 2 == 1:
-        alternating = alternating[:-1]
-    return alternating
-
-
-
-## Main functions
-
-def _find_contours(mask: torch.Tensor, largest_only: bool=False) -> torch.Tensor:
-    """
-    Efficiently finds the sparse boundary of a contiguous region in the mask.
-    
-    Args:
-        mask (`torch.Tensor`): A 2D boolean tensor representing the mask.
-        largest_only (`bool`, optional): If True, only the region with the longest boundary is returned. Defaults to `False`.
-
-    Returns:
-        `list[torch.Tensor]`: A list of tensors, where each tensor represents the boundary of a contiguous region in the mask.
-            or
-        `torch.Tensor`: Coordinates of the sparse boundary pixels.
-    """
-    device = mask.device
-    # Type checking
-    assert isinstance(mask, torch.Tensor), "'mask' must be a tensor"
-    assert isinstance(largest_only, bool), "'largest_only' argument must be a boolean"
-    if len(mask.shape) != 2:
-        if len(mask.shape) == 3 and mask.shape[0] == 1:
-            mask = mask[0]
-        else:
-            raise ValueError(f"The mask must be a 2D tensor not {mask.shape}")
-
-    # Duplicate rows and columns to make sure that the all boundaries have two valid neighbors
-    mask = duplicate_rows_and_columns(mask)
-
-    # Convert the mask to a contour mask (i.e. a mask where only True values with one or more zero neighbors are True)
-    boundary_mask = create_contour_mask(mask)
-
-    # Extract coordinates of boundary pixels
-    boundary_indices = torch.nonzero(boundary_mask, as_tuple=False)
-
-    # Find the regions
-    regions = order_points_clockwise(boundary_indices)
-
-    # Remove the inserted points
-    # regions = [remove_inserted_points(r) for r in regions]
-    regions = [remove_consecutive_duplicates(r // 2) for r in regions]
-
-    if largest_only:
-        # Find the largest region - this is not a correct implementation as it only considers the boundary length, not the area
-        region_sizes = torch.tensor([len(r) for r in regions], dtype=torch.long, device=device)
-        largest_region_idx = region_sizes.argmax()
-        return regions[largest_region_idx]
-    else:
-        return regions
-
-def _contours_to_masks(contours : list[torch.Tensor], height : int, width : int) -> torch.Tensor:
-    """
-    Takes a list of contours represented as (i, j) index-coordinates in a Xx2 tensor and returns a NxHxW tensor of boolean masks with the contours filled in.
+    Takes a list of contours represented as (i, j) index-coordinates in a Xx2 tensor and returns a HxW tensor of the sum of the contours filled in.
 
     Args:
         contours (`list[torch.Tensor]`): List of contours represented as (i, j) index-coordinates in a Nx2 tensor (OBS: dtype=torch.long)
@@ -413,10 +222,9 @@ def _contours_to_masks(contours : list[torch.Tensor], height : int, width : int)
         width (`int`): Width of the masks
 
     Returns:
-        `torch.Tensor`: NxHxW tensor of boolean masks with the contours filled in
+        `torch.Tensor`: HxW tensor of boolean masks with the sum of the contours filled in.
     """
     device = contours[0].device
-    N = len(contours)
     # Type checking
     assert all(c.dtype == torch.long for c in contours), "All contours must be of dtype=torch.long"
     assert all(c.device == device for c in contours), "All contours must be on the same device"
@@ -424,35 +232,105 @@ def _contours_to_masks(contours : list[torch.Tensor], height : int, width : int)
     assert isinstance(height, int) and isinstance(width, int), "Height and width must be integers"
     assert height > 0 and width > 0, "Height and width must be positive"
 
-    # Initialize the masks
-    masks = torch.zeros((N, height, width), dtype=torch.bool, device=device)
-    if N == 0:
+    # Initialize the mask as UMAT
+    mask = np.zeros((height, width), dtype=np.int32)
+    # If there are no contours, return the empty mask
+    if len(contours) == 0:
+        # Convert to tensors
+        return mask
+    
+    for contour in contours:
+        this_mask = np.zeros_like(mask, dtype=np.uint8)
+        this_mask = cv2.fillPoly(this_mask, [contour.cpu().numpy()], True)
+        mask += this_mask
+
+    # Convert to tensors
+    return torch.tensor(mask, device=device)
+    
+    
+def poly_normals(poly):
+    """
+    Calculates the normals of a polygon.
+
+    Args:
+        poly (torch.Tensor): A numpy array of shape (n, 2), where n is the number of vertices and the 2 columns are the x and y coordinates of the vertices.
+
+    Returns:
+        torch.Tensor: A PyTorch Tensor of shape (n, 2), where n is the number of vertices and the 2 columns are the x and y coordinates of the normals.
+    """
+    # Working version
+    v = np.roll(poly, -1, axis=0) - poly
+    n = np.column_stack([v[:, 1], -v[:, 0]])
+    n = (n + np.roll(n, 1, axis=0)) / 2
+    return n
+
+def linear_interpolate(poly, scale):
+    """
+    Linearly interpolates a N x 2 polygon to have N x scale vertices.
+    """
+    if scale < 1:
+        raise ValueError(f"Scale must be at least 1, not {scale}")
+    if len(poly) == 0:
+        return poly
+    if scale == 1:
+        return poly
+
+    new_poly = np.zeros((poly.shape[0] * scale, 2), dtype=np.float32)
+    for i in range(poly.shape[0] - 1):
+        new_poly[i*scale:(i+1)*scale] = np.linspace(poly[i], poly[i+1], scale, endpoint=False)
+    new_poly[-scale:] = np.linspace(poly[-1], poly[0], scale, endpoint=False)
+    return new_poly[~(new_poly == np.roll(new_poly, -1, axis=0)).all(axis=1)]
+
+def scale_contour(contour, scale, expand_by_one=False):
+    if len(contour.shape) != 2 or contour.shape[1] != 2:
+        if contour.shape[0] == 2:
+            contour = contour.reshape(1, 2)
+        else:
+            raise ValueError(f"Contour must be a Nx2 array, not {contour.shape}")
+    if len(contour) == 0:
+        return contour
+    if len(contour) == 1:
+        return np.round(contour * scale).astype(np.int32)
+    contour = contour * scale
+    centroid = contour.mean(axis=0)
+    n_interp = max(1, int(np.ceil(scale.max())) * 2)
+    contour = linear_interpolate(contour, n_interp)
+    contour_normals = poly_normals(contour)
+    if expand_by_one:
+        expand_one = np.sign(contour_normals) * (np.abs(contour_normals) > 0)
+        contour -= expand_one
+    
+    if scale[0] < 1:
+        contour[:, 0] += contour_normals[:, 0] / scale[0] / 2
+    if scale[1] < 1:
+        contour[:, 1] += contour_normals[:, 1] / scale[1] / 2
+    
+    contour[contour_normals > 0] = np.floor(contour[contour_normals > 0])
+    contour[contour_normals < 0] = np.ceil(contour[contour_normals < 0])
+    contour = contour.round()
+    drift = centroid - contour.mean(axis=0)
+    return (contour + drift).round().astype(np.int32)[(n_interp // 2)::n_interp].copy()
+
+def resize_mask(masks, new_shape) -> torch.Tensor:
+    """
+    Takes a mask (or a batch of masks) and resizes it by scaling the contour coordinates and snapping to the integer grid, ensuring that snapping is always done towards the outside of the mask.
+
+    Args:
+        mask (torch.Tensor): A mask of shape (H, W) or (N, H, W) where N is the batch size.
+        new_shape (tuple[int, int]): The new shape of the mask (H', W').
+
+    Returns:
+        torch.Tensor: The resized mask of shape (H', W') or (N, H', W').
+    """
+    dtype, device = masks.dtype, masks.device
+    # If the mask is a not a batch of masks, unsqueeze and call the function again
+    if len(masks.shape) == 2:
+        return resize_mask(masks.unsqueeze(0), new_shape).squeeze(0)
+    # If the mask is already the target shape, return it
+    if masks.shape[1:] == new_shape:
         return masks
-
-    # Filling in the masks
-    for i, contour in enumerate(contours):
-        # Remove unconnected points
-        trimmed_contour = contour # is this necessary? Don't think so. remove_unconnected_points(contour)
-        # Create a mask with the trimmed contour filled in
-        contour_mask = torch.zeros((height, width), dtype=torch.bool, device=device)
-        contour_mask[trimmed_contour[:, 0], trimmed_contour[:, 1]] = True
-        # The smallest polygon with a hole has 9 points
-        if len(trimmed_contour) > 9:
-            # For each row, fill in the pixels between each consecutive pair of contour pixels
-            for j, row in enumerate(contour_mask):
-                # Find the indices of the contour pixels in this row
-                contour_pixels = torch.nonzero(row, as_tuple=False).flatten()
-                # Remove consecutive neighbors (following a horizontal line)
-                contour_pixels_boundaries = remove_consecute_numbers(contour_pixels)
-                # Fill in the pixels between each pair of contour pixels
-                for k in range(0, len(contour_pixels_boundaries) - 1, 2):
-                    xmin, xmax = contour_pixels_boundaries[k], contour_pixels_boundaries[k + 1] + 1
-                    contour_mask[j, xmin:xmax] = True
-                # Remember to add the points which were removed by remove_unconnected_points - why is this necessary?
-                contour_mask[j, contour_pixels] = True
-        # Remember to add the points which were removed by remove_unconnected_points
-        contour_mask[contour[:, 0], contour[:, 1]] = True
-        # Add the mask to the list of masks
-        masks[i] = contour_mask
-
-    return masks
+    # If the target shape is smaller than 2x2, raise an error
+    if new_shape[0] <= 1 or new_shape[1] <= 1:
+        raise ValueError(f"Target shape must be at least 2x2, not {new_shape}")
+    # Resize the mask
+    return F.interpolate(masks.float()[None], new_shape, mode='nearest-exact', antialias=False)[0] > 0.5

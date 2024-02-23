@@ -11,8 +11,14 @@ from ultralytics.utils.instance import Instances
 class MyRandomPerspective(RandomPerspective):
     fill_value = (0, 0, 0)
 
+    def __init__(self, imgsz, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.imgsz = imgsz
+
     def affine_transform(self, img, border):
         """Center."""
+
+        self.scale = self.imgsz / max(img.shape), 1  # fime hardcoded
         C = np.eye(3, dtype=np.float32)
 
         C[0, 2] = -img.shape[1] / 2  # x translation (pixels)
@@ -57,9 +63,8 @@ class RandomCrop:
     bg_fill = (0, 0, 0)
     min_size = 20  # px
 
-
     def __init__(self, imsize,
-                 max_targets = 150   # randomly inpaint when too many targets?! # fixme implement
+                 max_targets=150  # randomly inpaint when too many targets?! # fixme implement
                  ):
         self._imsize = imsize
         self.max_targets = max_targets
@@ -91,7 +96,7 @@ class RandomCrop:
             py0 = py1 = 0
 
         or_img = cv2.copyMakeBorder(or_img, py0, py1, px0, px1, cv2.BORDER_CONSTANT, value=self.bg_fill)
-        
+
         img = or_img[start_y: start_y + self._imsize, start_x: start_x + self._imsize, :]
 
         if img.shape != (self._imsize, self._imsize, 3):
@@ -161,7 +166,7 @@ class RandomCrop:
                              offset=(px0 - x_offset, py0 - y_offset)
                              )
         labels["img"] = np.copy(np.ascontiguousarray(img))
-            # cv2.imwrite(f"/tmp/{os.path.basename(labels['im_file'])}", or_img)
+        # cv2.imwrite(f"/tmp/{os.path.basename(labels['im_file'])}", or_img)
         valid_i = np.nonzero(valid)[0]
 
         if len(valid_i) == 0:
@@ -177,7 +182,6 @@ class RandomCrop:
         # print(os.path.basename(labels["im_file"]), labels["cls"] = labels["cls"][valid_i])
 
         labels["instances"] = instances
-        # print(labels)
 
         return labels
 

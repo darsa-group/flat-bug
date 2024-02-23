@@ -11,19 +11,32 @@ import matplotlib.pyplot as plt
 from ultralytics.utils import ops
 from ultralytics.engine.results import Results, Masks
 
-from functools import lru_cache
+from .geometry_simples import find_contours, resize_mask
 
-from typing import Union, Tuple, List
+from typing import Union, List, Tuple
 
 
 class ResultsWithTiles(Results):
-    def __init__(self, tiles=None, *args, **kwargs):
+    def __init__(self, tiles=None, polygons=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.tiles = tiles
+        self.polygons = polygons
 
     def new(self):
         new = super().new()
         new.tiles = self.tiles
+        new.polygons = self.polygons
+        return new
+
+    def __getitem__(self, idx) -> 'ResultsWithTiles':
+        new = super().__getitem__(idx)
+        new.tiles = self.tiles[idx]
+        if isinstance(idx, int) or isinstance(idx, slice):
+            new.polygons = self.polygons[idx]
+        elif isinstance(idx, torch.Tensor) and not idx.dtype == torch.bool or isinstance(idx, list) or isinstance(idx, tuple):
+            new.polygons = [self.polygons[i] for i in idx]
+        elif isinstance(idx, torch.Tensor) and idx.dtype == torch.bool:
+            new.polygons = [self.polygons[i] for i in torch.where(idx)[0]]
         return new
 
 def offset_box(boxes, offset, max_x = None, max_y = None):
@@ -36,44 +49,46 @@ def offset_box(boxes, offset, max_x = None, max_y = None):
         boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(0, max_x - 1)
     return boxes
 
-def offset_mask(mask, offset, new_shape=None, max_size=None):
+def offset_mask(mask, offset, new_shape=None, max_size=700):
+    # Due to memory use, it is beneficial to restrict the maximum size of the masks. A 700x700 boolean tensor uses ~0.5 MB of memory
     n, h, w = mask.shape
     if new_shape is not None: #isinstance(new_shape, tuple) or isinstance(new_shape, list) or isinstance(new_shape, torch.Tensor) and len(new_shape.shape) == 2:
         assert len(new_shape) == 2, f"new_shape must be a tuple or list of length 2, not {len(new_shape)}"
         new_shape = int(n), int(new_shape[0]), int(new_shape[1])
     elif new_shape is None:
         raise ValueError("new_shape must be specified")
+    new_mask = torch.zeros(new_shape, dtype=torch.bool, device=mask.device)
+    
     # Calculate the possible clamped size of the mask (if it needs to be clamped)
     clamp_factor = (max(new_shape[1:]) / max_size) if max_size is not None else 1
-    clamped_size = [int(s // clamp_factor) for s in new_shape[1:]]
-    # Edge case: If the mask is empty and the clamp_factor is greater than 1, return an empty mask at the clamped size
-    if n == 0 and clamp_factor > 1:
-        return torch.zeros([0] + clamped_size, dtype=torch.bool, device=mask.device)
-    # Edge case: If the mask is empty and the clamp_factor is less than or equal to 1, return an empty mask at the new size
-    new_mask = torch.zeros(new_shape, dtype=torch.bool, device=mask.device)
+    clamp_shape = [int(n), new_shape[1] / clamp_factor, new_shape[2] / clamp_factor]
+    # And ensure that both direction are rounded in the same direction (down or up)
+    clmp_delta = round(sum([c % 1 for c in clamp_shape[1:]]) / 2)
+    clamp_shape[1:] = [int(c) + clmp_delta for c in clamp_shape[1:]]
+
     if n == 0:
-        return new_mask
+        if clamp_factor <= 1:
+            return new_mask
+        else:
+            return torch.zeros(clamp_shape, dtype=torch.bool, device=mask.device)
 
     # Calculate the overlap of the mask with the new mask (in the new mask's coordinate system)
     mask_overlap = [None, None]
     for i, (mask_d, new_mask_d, offset_d) in enumerate(zip([h, w], new_shape[1:], offset)):
         mask_overlap[i] = torch.arange(mask_d, device=mask.device) + offset_d
         mask_overlap[i] = mask_overlap[i][(mask_overlap[i] < new_mask_d) & (mask_overlap[i] >= 0)]
-        if mask_overlap[i].shape[0] == 0:
-            return new_mask
         mask_overlap[i] = mask_overlap[i][torch.tensor([0, -1], device=mask.device, dtype=torch.long)]
 
     # Insert the overlapping part of the old mask into the overlapping section of the new mask
     new_mask[:, mask_overlap[0][0]:mask_overlap[0][1], mask_overlap[1][0]:mask_overlap[1][1]] = mask[:, (mask_overlap[0][0] - offset[0]):(mask_overlap[0][1] - offset[0]), (mask_overlap[1][0] - offset[1]):(mask_overlap[1][1] - offset[1])]
 
-    # Due to memory use, it is beneficial to restrict the maximum size of the masks. A 700x700 boolean tensor uses ~0.5 MB of memory
+    # If the mask is larger than the maximum size, clamp it by downscaling it such that the largest dimension is max_size
     if clamp_factor > 1:
-        # Downsample the mask by the clamp_factor for each dimension, such that the largest dimension is clamped to max_size. The minor dimension may be smaller than max_size.
-        resizer = torchvision.transforms.Resize(clamped_size, interpolation=torchvision.transforms.InterpolationMode.NEAREST_EXACT)
-        new_mask = resizer(new_mask)
+        new_mask = resize_mask(new_mask, clamp_shape[1:]) # F.interpolate(new_mask.float().unsqueeze(0), clamp_shape[1:], mode='bilinear', align_corners=False, antialias=True).squeeze(0) > 0.25
+    
     return new_mask
 
-def merge_tile_results(results = list[Results], orig_img=None, box_offsetters=None, mask_offsetters=None, new_shape=None, clamp_boxes=(None, None), max_mask_size=(700, 700)):
+def merge_tile_results(results = List[Results], orig_img=None, box_offsetters=None, mask_offsetters=None, new_shape=None, clamp_boxes=(None, None), max_mask_size=700, exclude_masks=False):
     """
     Merges results from multiple images into a single Results object, possibly with a new image.
     """
@@ -83,8 +98,6 @@ def merge_tile_results(results = list[Results], orig_img=None, box_offsetters=No
     assert isinstance(orig_img, torch.Tensor), f"orig_img must be a torch.Tensor, not {type(orig_img)}"
     if box_offsetters is None:
         box_offsetters = torch.zeros((len(results), 2), device=_device).int()
-    else:
-        box_offsetters = box_offsetters.int()
     if mask_offsetters is None:
         mask_offsetters = torch.zeros((len(results), 2), device=_device).int()
     else:
@@ -94,50 +107,20 @@ def merge_tile_results(results = list[Results], orig_img=None, box_offsetters=No
     names = results[0].names
     tile_indices = torch.concatenate([torch.tensor([i] * len(r), dtype=torch.long, device=_device) for i, r in enumerate(results)])
     boxes = torch.cat([offset_box(r.boxes.data, o.flip(0), mx, my) for r, o in zip(results, box_offsetters)])
-    masks = torch.cat([offset_mask(r.masks.data, o, new_shape, max_mask_size) for r, o in zip(results, mask_offsetters)]) # Instead of offsetting the masks statically, we instantiate a new OffsetMask object which offsets the masks dynamically
+    polygons = [find_contours(resize_mask(mask, [256 * 3, 256 * 3]), True) * (1024 / 256) / 3 + o.flip(0).unsqueeze(0) for r, o in zip(results, box_offsetters) for mask in r.masks.data]
+    if exclude_masks:
+        masks = torch.cat([r.masks.data for r in results])
+    else:
+        masks = torch.cat([offset_mask(r.masks.data, o, new_shape, max_mask_size) for r, o in zip(results, mask_offsetters)])
+    if len(masks.shape) == 2:
+        masks = masks.unsqueeze(0)
     if not all([r.probs is None for r in results]):
         raise NotImplementedError("'Probs' not implemented yet")
     if not all([r.keypoints is None for r in results]):
         raise NotImplementedError("'Keypoints' not implemented yet")
-    return ResultsWithTiles(tiles=tile_indices, orig_img=orig_img, path=path, names=names, boxes=boxes, masks=masks, probs=None, keypoints=None)
+    return ResultsWithTiles(tiles=tile_indices, orig_img=orig_img, path=path, names=names, boxes=boxes, masks=masks, polygons=polygons, probs=None, keypoints=None)
 
-def smooth_mask(mask, kernel_size=7):
-    # Check kernel size parameter
-    if kernel_size == 1:
-        return mask
-    elif kernel_size < 1:
-        print(f"kernel_size ({kernel_size}) should be greater than or equal to 1")
-        return mask
-    elif kernel_size > 50:
-        print(f'Very large kernel_size ({kernel_size}) may cause memory issues')
-    
-    def gaussian_kernel(size):
-        if size % 2 == 0:
-            raise ValueError("Size must be an odd number")
-        w = size // 2
-        sigma = w / 3
-
-        # Create a coordinate grid
-        x, y = torch.meshgrid(torch.arange(size) - w, torch.arange(size) - w, indexing="ij")
-
-        # Calculate the 2D Gaussian kernel
-        g = torch.exp(-(x**2 + y**2) / (2*sigma**2))
-        g[w, w] = 1
-
-        # Normalize the kernel to ensure the sum is 1
-        return g / g.sum()
-
-    # Create a 2D Gaussian kernel
-    kernel = gaussian_kernel(kernel_size).to(mask.device).unsqueeze(0).unsqueeze(0)
-    # Create a 2D kernel for expanding the mask by 1 pixel
-    expand_kernel = torch.ones(1, 1, 3, 3, device=mask.device)
-
-    # Apply convolution separately to each mask
-    mask = mask.float().unsqueeze(1)
-    mask = (torch.nn.functional.conv2d(mask, expand_kernel,  padding=1) > 0.5).float()
-    return  torch.nn.functional.conv2d(mask, kernel,         padding=kernel_size // 2).squeeze(1) > 0.5
-
-def stack_masks(masks, orig_shape=None, antialias=False):
+def stack_masks(masks, orig_shape=None):
     """
     Stacks a list of ultralytics.engine.results.Masks objects (or torch.Tensor) into a single ultralytics.engine.results.Masks object.
 
@@ -164,8 +147,6 @@ def stack_masks(masks, orig_shape=None, antialias=False):
     max_h = max([m.shape[1] for m in masks])
     max_w = max([m.shape[2] for m in masks])
     masks_in_each = [len(m) for m in masks]
-    interpolation_method = torchvision.transforms.InterpolationMode.NEAREST
-    resizer = torchvision.transforms.Resize((max_h, max_w), interpolation=interpolation_method, antialias=antialias)
 
     new_masks = torch.zeros((sum(masks_in_each), max_h, max_w), dtype=torch.bool, device=_device)
 
@@ -173,14 +154,11 @@ def stack_masks(masks, orig_shape=None, antialias=False):
     for n, m in zip(masks_in_each, masks):
         if n == 0:
             continue
-        if not (m.shape[1] == max_h and m.shape[2] == max_w):
-            m = resizer(m)
-        if antialias:
-            smooth_radius = torch.ceil(torch.tensor([max_h, max_w]) / torch.tensor(m.shape[1:])).max().long().item() * 4
-            if smooth_radius % 2 == 0:
-                smooth_radius += 1
-            m = smooth_mask(m, smooth_radius)
-        new_masks[i:(i+n)] = m
+        for j in range(n):
+            if m[[j]].shape[1] == max_h and m[[j]].shape[2] == max_w:
+                new_masks[i + j] = m[[j]]
+            else:
+                new_masks[i + j] = resize_mask(m[[j]], (max_h, max_w))
         i += n
 
     return Masks(new_masks, orig_shape=orig_shape)
@@ -230,104 +208,29 @@ def process_mask(protos, masks_in, bboxes, shape, upsample=False):
     downsampled_bboxes[:, 1] *= mh / ih
 
     masks = crop_mask(masks, downsampled_bboxes)  # CHW
+
+    # masks = expand_bottom_right(masks)  # HW
+
     if upsample:
         masks = F.interpolate(masks[None], shape, mode='bilinear', align_corners=False)[0]  # CHW
-    return masks.gt_(0.5).bool()
-
-def fix2btlr(rects : torch.Tensor):
-    """
-    If a rectangle is not in the format [x_min, y_min, x_max, y_max], this function will fix it.
-    """
-    return torch.cat((torch.min(rects[:, :2], rects[:, 2:]), torch.max(rects[:, :2], rects[:, 2:])), dim=1, out=rects)
-
-def check_bltr_validity(rects : torch.Tensor, strict=True):
-    """
-    This function checks if the rectangles are in the format [x_min, y_min, x_max, y_max].
-    """
-    if len(rects.shape) == 1 and not rects.shape[0] == 4 or len(rects.shape) == 2 and not rects.shape[1] == 4:
-        raise ValueError(f"Rectangles must be of shape (n, 4), not {rects.shape}")
-    if len(rects.shape) == 1:
-        rects = rects.unsqueeze(0)
-    # Check if the bottom left corner is less than the top right corner
-    checks = (rects[:, 0] < rects[:, 2]) & (rects[:, 1] < rects[:, 3])
-    if not (checks).all():
-        if strict:
-            raise ValueError(f"Bottom left corner ({rects[~checks, :2]}) must be less than top right corner ({rects[~checks, 2:]}) of rectangles {torch.where(~checks)[0].tolist()}")
-        else:
-            return False
-    else:
-        return True
-
-def intersect(rect1, rect2s, area_only=False, debug=False):
-    """
-    Calculates the intersection of a rectangle with a set of rectangles.
-    """
-    if len(rect1.shape) == 1 and not rect1.shape[0] == 4 or len(rect1.shape) == 2 and not rect1.shape[1] == 4:
-        raise ValueError(f"Rectangles must be of shape (n, 4), not {rect1.shape}")
-    if len(rect2s.shape) == 1 and not rect2s.shape[0] == 4 or len(rect2s.shape) == 2 and not rect2s.shape[1] == 4:
-        raise ValueError(f"Rectangles must be of shape (n, 4), not {rect2s.shape}")
-    if len(rect1.shape) == 1:
-        rect1 = rect1.unsqueeze(0)
-    if len(rect2s.shape) == 1:
-        rect2s = rect2s.unsqueeze(0)
-
-    # Safer to enable this, but it is slower
-    # # Check the validity of the rectangles
-    # if not check_bltr_validity(rect1, debug):
-    #     rect1 = fix2btlr(rect1)
-    # if not check_bltr_validity(rect2s, debug):
-    #     rect2s = fix2btlr(rect2s)
-
-    # # Calculate vectors from each corner of rect1 to each corner of rect2s
-    # blbltrtr = rect2s - rect1
-    # bl_to_bl = blbltrtr[:, :2]
-    # tr_to_tr = blbltrtr[:, 2:] 
-    # bltrtrbl = rect2s[:, [2, 3, 0, 1]] - rect1
-    # bl_to_tr = bltrtrbl[:, :2]
-    # tr_to_bl = bltrtrbl[:, 2:]
     
-    # # Determine if each corner of rect1 is inside each rect2
-    # inside_tr = (tr_to_tr[:, 0] >= 0) & (tr_to_tr[:, 1] >= 0) & (tr_to_bl[:, 0] <= 0) & (tr_to_bl[:, 1] <= 0)
-    # inside_bl = (bl_to_bl[:, 0] <= 0) & (bl_to_bl[:, 1] <= 0) & (bl_to_tr[:, 0] >= 0) & (bl_to_tr[:, 1] >= 0)
-    # inside_tl = (bl_to_bl[:, 0] <= 0) & (tr_to_tr[:, 1] >= 0) & (bl_to_tr[:, 0] >= 0) & (tr_to_bl[:, 1] <= 0)
-    # inside_br = (tr_to_tr[:, 0] >= 0) & (bl_to_bl[:, 1] <= 0) & (tr_to_bl[:, 0] <= 0) & (bl_to_tr[:, 1] >= 0)
+    masks = masks.gt_(0.5).bool()
 
-    # # Check for enclosure
-    # enclosure = (rect1[:, :2] <= rect2s[:, :2]) & (rect1[:, 2:] >= rect2s[:, 2:])
+    return masks
 
-    # # Check for intersection with the "infinitely" extended cross of rect1
-    # in_cross = ((bl_to_bl[:, 0] <= 0) & (bl_to_tr[:, 0] >= 0)) | ((tr_to_tr[:, 0] >= 0) & (tr_to_bl[:, 0] <= 0)), ((bl_to_bl[:, 1] <= 0) & (bl_to_tr[:, 1] >= 0)) | ((tr_to_tr[:, 1] >= 0) & (tr_to_bl[:, 1] <= 0))
+def expand_bottom_right(mask):
+    """
+    Add an extra pixel above next to bottom/right edges of the region of 1s.
 
-    # # Check for equality - if equal, return the original rectangles
-    # zero = torch.tensor(0, dtype=rect1.dtype, device=rect1.device)
-    # is_equal = (bl_to_bl.isclose(zero).all(dim=1)) & (tr_to_tr.isclose(zero).all(dim=1))
+    Args:
+        mask (torch.Tensor): A binary mask tensor of shape [h, w].
 
-    # # Check for no intersection - if no intersection, return the intersection rectangle [0, 0, 0, 0]
-    # is_intersecting = inside_tl | inside_br | inside_bl | inside_tr | (enclosure[:, 0] & in_cross[1]) | (enclosure[:, 1] & in_cross[0]) | (enclosure[:, 0] & enclosure[:, 1]) | is_equal
-
-    # if not area_only:
-    #     intersections = is_intersecting.unsqueeze(1) * torch.cat((torch.max(rect1[:, :2], rect2s[:, :2]), torch.min(rect1[:, 2:], rect2s[:, 2:])), dim=1)
-    #     intersections[is_equal] = rect1
-    # else:
-    #     intersections = torch.zeros(rect2s.shape[0], dtype=rect1.dtype, device=rect1.device)
-    #     intersections[is_intersecting] = (torch.min(rect1[:, 2:], rect2s[is_intersecting, 2:]) - torch.max(rect1[:, :2], rect2s[is_intersecting, :2])).abs().prod(dim=1)
-    
-    intersections_max = torch.max(rect1[:, :2], rect2s[:, :2])
-    intersections_min = torch.min(rect1[:, 2:], rect2s[:, 2:])
-    if area_only:
-        intersections = (intersections_min - intersections_max).abs().prod(dim=1)
-    else:
-        intersections = torch.zeros_like(rect2s)
-        intersections[:, :2] = intersections_max
-        intersections[:, 2:] = intersections_min
-    # Check for no intersection
-    intersections[(intersections_min < intersections_max).any(dim=1)] = 0
-
-        # if debug:
-        #     # Used for debugging
-        #     return intersections, torch.stack((inside_tl, inside_tr, inside_br, inside_bl), dim=1), enclosure, in_cross
-        # else:
-    return intersections
+    Returns:
+        (torch.Tensor): A binary mask tensor of shape [h, w], where an extra pixel is added above next to left/top edges of the region of 1s.
+    """
+    bottom_right_kernel = torch.tensor([[-1, -1, -1], [-1, -1, 1], [-1, 1, 1]], dtype=torch.float16, device=mask.device).t()
+    bottom_right = F.conv2d(mask.to(torch.float16).unsqueeze(1), bottom_right_kernel.unsqueeze(0).unsqueeze(0), padding=1).squeeze(1).clamp(0)
+    return mask + bottom_right
     
 def iou_boxes(rectangles):
     """
@@ -339,17 +242,7 @@ def iou_boxes(rectangles):
     Returns:
         torch.Tensor: A tensor of shape (n, n), where n is the number of rectangles, containing the IoU of each rectangle with each other rectangle.
     """
-    if not len(rectangles.shape) == 2 and rectangles.shape[1] == 4:
-        raise ValueError(f"Rectangles must be of shape (n, 4), not {rectangles.shape}")
-    # Could improve stability, but would require making a copy of the boxes tensor
-    rectangles = (rectangles / (rectangles[:, :4].max() + 1e-6)) * (10**(3/2)) # Normalize the box-coordinates to the square root of 1000 such that the areas are [0, 1000].
-    # Calculate the areas of the rectangles
-    areas = (rectangles[:, 2:] - rectangles[:, :2]).abs().prod(dim=1)
-    # Calculate the intersections of the rectangles with each other
-    intersections = torch.stack([intersect(rect, rectangles, area_only=True) for rect in rectangles])
-    # Calculate the IoU
-    ious = intersections / (areas.unsqueeze(1) + areas.unsqueeze(0) - intersections + 1e-3)
-    return ious
+    return torchvision.ops.box_iou(rectangles, rectangles)
 
 def iou_boxes_2sets(rectangles1, rectangles2):
     """
@@ -372,21 +265,7 @@ def iou_boxes_2sets(rectangles1, rectangles2):
             rectangles2 = rectangles2.unsqueeze(0)
         else:
             raise ValueError(f"Rectangles must be of shape (n, 4), not {rectangles2.shape}")
-    # Calculate the areas of the rectangles
-    areas1 = (rectangles1[:, 2:] - rectangles1[:, :2]).abs().prod(dim=1)
-    if rectangles1.shape[0] > 1:
-        areas1 = areas1.T
-    areas2 = (rectangles2[:, 2:] - rectangles2[:, :2]).abs().prod(dim=1)
-
-    # Calculate the intersections of the rectangles with each other
-    if len(rectangles1) < 2:
-        intersections = intersect(rectangles1, rectangles2, area_only=True).unsqueeze(0)
-    else:
-        intersections = torch.stack([intersect(rect, rectangles2, area_only=True) for rect in rectangles1])
-
-    ious = intersections / (areas1.unsqueeze(1) + areas2.unsqueeze(0) - intersections + 1e-3)
-
-    return ious
+    return torchvision.ops.box_iou(rectangles1, rectangles2)
     
 def fancy_nms_boxes(objects, iou_fun, scores, iou_threshold=0.5, return_indices=False):
     """
@@ -430,7 +309,8 @@ def fancy_nms_boxes(objects, iou_fun, scores, iou_threshold=0.5, return_indices=
     else:
         return objects[indices], scores[indices]
     
-def intersect_masks_2sets(m1s, m2s, dtype=torch.int32):
+@torch.jit.script
+def intersect_masks_2sets(m1s : torch.Tensor, m2s : torch.Tensor, dtype : torch.dtype=torch.float32) -> torch.Tensor:
     """
     Computes intersection between all pairs between two sets of masks
     """
@@ -451,41 +331,47 @@ def iou_masks_2sets(m1s : torch.Tensor, m2s : torch.Tensor, a1s : Union[torch.Te
     if len(m2s.shape) == 2:
         m2s = m2s.unsqueeze(0)
     if a1s is None:
-        a1s = m1s.sum(dim=(1, 2)).unsqueeze(0)
+        a1s = m1s.sum(dim=(1, 2), dtype=torch.int32).unsqueeze(0)
         if a1s.shape[0] > 0:
             a1s = a1s.T
+    else:
+        a1s = a1s.to(torch.int32)
     if a2s is None:
-        a2s = m2s.sum(dim=(1, 2)).unsqueeze(0)
-    intersections = intersect_masks_2sets(m1s, m2s, dtype)
-
-    unions = a1s.to(dtype) + a2s.to(dtype) - intersections
-    del a1s, a2s
+        a2s = m2s.sum(dim=(1, 2), dtype=torch.int32).unsqueeze(0)
+    else:
+        a2s = a2s.to(torch.int32)
     
-    return intersections / unions
+    intersections = intersect_masks_2sets(m1s, m2s)
+    unions = a1s + a2s - intersections
+    
+    return (intersections / (unions + 1e-6)).to(dtype)
 
-def ios_masks_2sets(m1s, m2s, a1s = None, a2s = None, dtype=torch.float32):
+@torch.jit.script
+def ios_masks_2sets(m1s : torch.Tensor, m2s : torch.Tensor, a1s : Union[torch.Tensor, None]=None, a2s : Union[torch.Tensor, None]=None, dtype : torch.dtype=torch.float32) -> torch.Tensor:
     """
-    Computes IoU between all pairs between two sets of masks
+    Computes IoS between all pairs between two sets of masks
     """
     if len(m1s.shape) == 2:
         m1s = m1s.unsqueeze(0)
     if len(m2s.shape) == 2:
         m2s = m2s.unsqueeze(0)
     if a1s is None:
-        a1s = m1s.sum(dim=(1, 2)).unsqueeze(0)
+        a1s = m1s.sum(dim=(1, 2), dtype=torch.int32).unsqueeze(0)
         if a1s.shape[0] > 0:
             a1s = a1s.T
+    else:
+        a1s = a1s.to(torch.int32)
     if a2s is None:
-        a2s = m2s.sum(dim=(1, 2)).unsqueeze(0)
-    a1s = a1s.to(dtype)
-    a2s = a2s.to(dtype)
-    intersections = intersect_masks_2sets(m1s, m2s, dtype)
+        a2s = m2s.sum(dim=(1, 2), dtype=torch.int32).unsqueeze(0)
+    else:
+        a2s = a2s.to(torch.int32)
 
+    intersections = intersect_masks_2sets(m1s, m2s, dtype)
     smaller_area = torch.min(a1s, a2s)
     
-    return intersections / smaller_area
+    return intersections / (smaller_area + 1e-6)
 
-def iou_masks(masks, areas = None, dtype=torch.float32):
+def iou_masks(masks : torch.Tensor, areas : Union[torch.Tensor, None]= None, dtype :torch.dtype=torch.float32) -> torch.Tensor:
     """
     Compute IoU between all pairs of masks
     """
@@ -881,7 +767,7 @@ def detect_duplicate_boxes(boxes, scores, margin=9, return_indices=False):
         * Instead of IoU we use the maximum difference between the sides of the boxes as the metric for determining whether two boxes are duplicates.
         * To make this metric compatible with NMS we negate the metric and the threshold, such that large side difference are very negative and thus below the threshold.
     """
-    def negated_max_side_difference(box1 : torch.Tensor, boxs : torch.Tensor):
+    def negated_max_side_difference(box1 : torch.Tensor, boxs : torch.Tensor, dtype : None=None):
         """
         Calculates the **NEGATED** maximum difference between the sides of box1 and boxs.
 
@@ -912,7 +798,7 @@ def cumsum(nums : list) -> list:
         sums[i] = running_sum
     return sums
     
-def postprocess(preds, imgs, max_det=300, min_confidence=0, iou_threshold=0.1, nms=0, edge_margin=None):
+def postprocess(preds, imgs, max_det=300, min_confidence=0, iou_threshold=0.1, nms=0, valid_size_range=None, edge_margin=None, group_first=True):
     """Postprocesses the predictions of the model.
 
     Args:
@@ -923,6 +809,7 @@ def postprocess(preds, imgs, max_det=300, min_confidence=0, iou_threshold=0.1, n
         iou_threshold (float, optional): The IoU threshold for non-maximum suppression. Defaults to 0.1.
         nms (int, optional): The type of non-maximum suppression to use. Defaults to 0. 0 is no NMS, 1 is standard NMS, 2 is fancy NMS and 3 is mask NMS.
         edge_margin (int, optional): The minimum gap between the edge of the image and the bounding box in pixels for a prediction to be considered valid. Defaults to None (no edge margin).
+        group_first (bool, optional): A flag to indicate whether to group the masks using the boxes before performing NMS. Only relevant when nms=3. Defaults to True.
 
     Returns:
         list: A list of postprocessed predictions.
@@ -940,6 +827,9 @@ def postprocess(preds, imgs, max_det=300, min_confidence=0, iou_threshold=0.1, n
     # if min_confidence != 0:
     #     # Filter out the predictions with a confidence less than min_confidence
     #     p = p[..., (p[:, 4, :] > min_confidence).squeeze(0)]
+    if min_confidence > 0:
+        num_above_min_conf = (p[:, 4, :] > min_confidence).sum(dim=1)
+        max_det = min(max_det, num_above_min_conf.max().item())
     if max_det != 0:
         # Filter out the predictions with the lowest confidence
         p = p.gather(2, torch.argsort(p[:, 4, :], dim=1, descending=True)[:, :max_det].unsqueeze(1).expand(-1, p.size(1), -1))
@@ -954,22 +844,24 @@ def postprocess(preds, imgs, max_det=300, min_confidence=0, iou_threshold=0.1, n
         # Remove the predictions with a confidence less than min_confidence
         if min_confidence != 0:
             pred = pred[pred[:, 4] > min_confidence]
-        # # Use cosine similarity to quickly remove duplicate detections
-        # nms_ind = fancy_nms_boxes(pred[:, -32:] / (pred[:, -32] ** 2).sum(dim=0, keepdim=True).sqrt(), lambda x: (1 + (x @ x.T)) / 2, pred[:, 4], iou_threshold=0.75, return_indices=True)
-        # pred = pred[nms_ind]
         boxes = ops.scale_boxes((1024, 1024), pred[:, :4], imgs[i].shape[-2:], padding=False)
+        if valid_size_range is not None:
+            valid_size = ((boxes[:, 2:] - boxes[:, :2]).log() / 2).sum(dim=1).exp()
+            valid = (valid_size >= valid_size_range[0]) & (valid_size <= valid_size_range[1])
+            pred = pred[valid]
+            boxes = boxes[valid]
         if edge_margin is not None:
             close_to_edge = (boxes[:, :2] < edge_margin).any(dim=1) | (boxes[:, 2:] > (1024 - edge_margin)).any(dim=1)
             pred = pred[~close_to_edge]
             boxes = boxes[~close_to_edge]
         if nms != 0:
             if nms == 1:
-                nms_ind = nms_boxes(boxes, pred[:, 4], iou_threshold=iou_threshold, strict=False, return_indices=True)
+                nms_ind = nms_boxes(boxes, pred[:, 4], iou_threshold=iou_threshold)
             elif nms == 2:
                 nms_ind = fancy_nms_boxes(boxes, iou_boxes, pred[:, 4], iou_threshold=iou_threshold, return_indices=True)
             elif nms == 3:
                 masks = process_mask(protos[i], pred[:, -32:], boxes, imgs[i].shape[-2:], False) # pred[:, -32:] - not sure this is correct for more than one class
-                nms_ind = nms_masks(masks, pred[:, 4], iou_threshold=iou_threshold, return_indices=True, dtype=pred.dtype)
+                nms_ind = nms_masks(masks, pred[:, 4], iou_threshold=iou_threshold, return_indices=True, boxes=boxes / 4, group_first=False)
                 masks = masks[nms_ind]
             else:
                 raise ValueError(f"nms must be 0, 1, 2 or 3, not {nms}")
@@ -980,51 +872,3 @@ def postprocess(preds, imgs, max_det=300, min_confidence=0, iou_threshold=0.1, n
         pred[:, :4] = boxes
         results.append(Results(imgs[i].permute(1,2,0), path="", names=["insect"], boxes=pred[:, :6], masks=masks))
     return results
-    
-def plot_boxes(proc_preds, extra = None, focus=None):
-    """
-    This function takes the processed predictions and plots the bounding boxes on the image.
-
-    Args:
-        proc_preds (ultralytics.engine.results.Results): The processed predictions.
-
-    Returns:
-        None
-    """
-    img = proc_preds.orig_img / 255
-    if isinstance(img, torch.Tensor):
-        img = img.detach().float().cpu()
-    boxes = proc_preds.boxes.xyxy
-    if isinstance(boxes, torch.Tensor):
-        boxes = boxes.detach().float().cpu()
-    confidences = proc_preds.boxes.conf
-    if isinstance(confidences, torch.Tensor):
-        confidences = confidences.detach().float().cpu()
-
-    _, ax = plt.subplots(1, figsize=(10, 10))
-    ax.imshow(img)
-    for box, conf in zip(boxes, confidences):
-        box = box.numpy()
-        rect = mpl.patches.Rectangle((box[0], box[1]), box[2] - box[0], box[3] - box[1], linewidth=1, edgecolor="none", facecolor="r", alpha=conf.item() / 4)
-        ax.add_patch(rect)
-    if extra is not None:
-        if isinstance(extra, torch.Tensor):
-            if len(extra.shape) == 1:
-                extra = extra.unsqueeze(0)
-            if not extra.shape[1] == 4:
-                raise ValueError(f"extra must be of shape (n, 4), not {extra.shape}")
-            extra = extra.detach().float().cpu()
-            for e in extra:
-                rect = mpl.patches.Rectangle((e[0], e[1]), e[2] - e[0], e[3] - e[1], linewidth=1, edgecolor="none", facecolor="b", alpha=0.15)
-                ax.add_patch(rect)
-        else:
-            raise ValueError(f"extra must be a torch.Tensor, not {type(extra)}")
-    if focus is not None:
-        if not isinstance(focus, int) or (isinstance(focus, list) or isinstance(focus, tuple) or isinstance(focus, torch.Tensor) or isinstance(focus, np.ndarray)) and len(focus) != 1:
-            raise ValueError(f"focus must be an int, not {type(focus)}")
-        if not isinstance(focus, int):
-            focus = int(focus[0])
-        box = boxes[focus].numpy()
-        rect = mpl.patches.Rectangle((box[0], box[1]), box[2] - box[0], box[3] - box[1], linewidth=2, edgecolor="g", facecolor="none", alpha=1)
-        ax.add_patch(rect)
-    plt.show()
