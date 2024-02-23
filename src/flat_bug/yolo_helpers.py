@@ -3,6 +3,7 @@ import torch.nn.functional as F
 import torchvision
 
 import numpy as np
+from shapely.geometry import Polygon
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -12,7 +13,7 @@ from ultralytics.engine.results import Results, Masks
 
 from functools import lru_cache
 
-from typing import Union
+from typing import Union, Tuple, List
 
 
 class ResultsWithTiles(Results):
@@ -433,14 +434,15 @@ def intersect_masks_2sets(m1s, m2s, dtype=torch.int32):
     """
     Computes intersection between all pairs between two sets of masks
     """
-
-    intersections = torch.zeros((m1s.shape[0], m2s.shape[0]), dtype=dtype, device=m1s.device)
-    for i in range(m1s.shape[0]):
-        intersections[i] = (m1s[i].unsqueeze(0) & m2s).sum(dim=(1, 2)).to(dtype)
+    return (torch.matmul(m1s.reshape(m1s.shape[0], -1).to(dtype), m2s.reshape(m2s.shape[0], -1).t().to(dtype))).to(torch.int32)
+    # intersections = torch.zeros((m1s.shape[0], m2s.shape[0]), dtype=dtype, device=m1s.device)
+    # for i in range(m1s.shape[0]):
+    #     intersections[i] = (m1s[i].unsqueeze(0) & m2s).sum(dim=(1, 2), dtype=dtype)
     
-    return intersections
+    # return intersections
 
-def iou_masks_2sets(m1s, m2s, a1s = None, a2s = None, dtype=torch.float32):
+@torch.jit.script
+def iou_masks_2sets(m1s : torch.Tensor, m2s : torch.Tensor, a1s : Union[torch.Tensor, None]=None, a2s : Union[torch.Tensor, None]=None, dtype : torch.dtype=torch.float32) -> torch.Tensor:
     """
     Computes IoU between all pairs between two sets of masks
     """
@@ -497,8 +499,301 @@ def iou_masks(masks, areas = None, dtype=torch.float32):
     ious = ious + ious.T
     ious = ious.fill_diagonal_(1)
     return ious
+    
+@torch.jit.script
+def nms_masks_(masks : torch.Tensor, scores : torch.Tensor, iou_threshold : float=0.5) -> torch.Tensor:
+    # Sort the boxes by score (implicitly)
+    indices = torch.argsort(scores, descending=True)
 
-def nms_(objects, iou_fun, scores, iou_threshold=0.5, strict=True, return_indices=False, **kwargs) -> Union[torch.Tensor, tuple]:
+    # Initialize tensors for winners (selected boxes), possible boxes and counters
+    winners = -torch.ones(masks.shape[0], dtype=torch.long, device=masks.device)
+    possible = torch.ones(masks.shape[0], dtype=torch.bool, device=masks.device)
+    i = 0
+
+    while True:
+        possible_idx = possible.nonzero().squeeze()
+        n_possible = possible_idx.numel()
+        if n_possible < 2:
+            if n_possible == 1:
+                possible[possible_idx] = False
+                winners[i] = possible_idx
+                i += 1
+            break
+        # Pick the box with the highest score
+        winners[i] = possible_idx[0]
+        # Remove the picked box from the possible boxes
+        possible[possible_idx[0]] = False
+        # Calculate the IoU between the picked box and the remaining possible boxes
+        ious = iou_masks_2sets(masks[indices[possible_idx[0]]], masks[indices[possible_idx[1:]]], dtype=torch.float32).squeeze(0)
+        # Get the indices of the boxes with an IoU greater than the threshold
+        winner_mask = ious <= iou_threshold
+        # Remove the boxes with an IoU greater than the threshold from the possible boxes
+        possible[possible_idx[1:]] = winner_mask
+        i += 1
+
+    # Map the indices back to the original indices and sort them (returns boxes, scores & indices in the original order of the input)
+    winners = indices[winners[:i]].sort().values 
+    
+    # Return the winning indices
+    return winners
+
+def iou_polygons(polygons1, polygons2=None, dtype=torch.float32):
+    if polygons2 is None:
+        polygons2 = polygons1
+    for polygon in polygons1 + polygons2:
+        if len(polygon.shape) != 2 or polygon.shape[1] != 2:
+            raise ValueError(f"Polygons must be of shape (n, 2), not {polygon.shape}: {polygon}")
+    device = polygons1[0].device
+    iou_mat = np.zeros((len(polygons1), len(polygons2)), dtype=np.float32)
+    polygons1 = [Polygon(polygon.cpu().numpy()).buffer(0) for polygon in polygons1]
+    polygons2 = [Polygon(polygon.cpu().numpy()).buffer(0) for polygon in polygons2]
+    areas1 = np.array([polygon.area for polygon in polygons1], dtype=np.float32)
+    areas2 = np.array([polygon.area for polygon in polygons2], dtype=np.float32)
+    for i, polygon1 in enumerate(polygons1):
+        areas1_i = areas1[i]
+        for j, polygon2 in enumerate(polygons2):
+            if polygon1.intersects(polygon2):
+                intersection = polygon1.intersection(polygon2).area
+                union = areas1_i + areas2[j] - intersection
+                iou_mat[i, j] = intersection / (union + 1e-6)
+    return torch.tensor(iou_mat, dtype=dtype, device=device)
+
+def nms_polygons_(polys : List[torch.Tensor], scores : torch.Tensor, iou_threshold : float=0.5) -> torch.Tensor:
+    if len(polys) == 0 or len(polys) == 1:
+        return torch.arange(len(polys))
+    if len(scores.shape) != 1:
+        raise ValueError(f"Scores must be of shape (n,), not {scores.shape}")
+    device = polys[0].device
+
+    # Sort the boxes by score (implicitly)
+    indices = torch.argsort(scores, descending=True)
+
+    # Initialize tensors for winners (selected boxes), possible boxes and counters
+    winners = -torch.ones(len(polys), dtype=torch.long, device=device)
+    possible = torch.ones(len(polys), dtype=torch.bool, device=device)
+    i = 0
+
+    while True:
+        possible_idx = possible.nonzero().squeeze()
+        n_possible = possible_idx.numel()
+        if n_possible < 2:
+            if n_possible == 1:
+                possible[possible_idx] = False
+                winners[i] = possible_idx
+                i += 1
+            break
+        # Pick the box with the highest score
+        winners[i] = possible_idx[0]
+        # Remove the picked box from the possible boxes
+        possible[possible_idx[0]] = False
+        # Calculate the IoU between the picked box and the remaining possible boxes
+        ious = iou_polygons([polys[indices[possible_idx[0]].item()]], [polys[pi.item()] for pi in indices[possible_idx[1:]]]).squeeze(0)
+        # Get the indices of the boxes with an IoU greater than the threshold
+        winner_mask = ious <= iou_threshold
+        # Remove the boxes with an IoU greater than the threshold from the possible boxes
+        possible[possible_idx[1:]] = winner_mask
+        i += 1
+
+    # Map the indices back to the original indices and sort them (returns boxes, scores & indices in the original order of the input)
+    winners = indices[winners[:i]].sort().values 
+
+    # Return the winning indices
+    return winners
+
+@torch.jit.script
+def compute_transitive_closure_cpu(adjacency_matrix : torch.Tensor) -> torch.Tensor:
+    """
+    Computes the transitive closure of a boolean matrix.
+    """
+    # Convert the adjacency matrix to float16, this is just done to ensure that the values don't overflow when squaring the matrix before clamping - if there existed a "or-matrix multiplication" for boolean matrices, this would not be necessary
+    closure = adjacency_matrix.to(torch.float16) 
+    # Expand the adjacency matrix to the transitive closure matrix, by squaring the matrix and clamping the values to 1 - each step essentially corresponds to one step of parallel breadth-first search for all nodes
+    last_max = 1
+    for _ in range(int(torch.log2(torch.tensor(closure.shape[0], dtype=torch.float16)).ceil())):
+        this_square = torch.matmul(closure, closure)
+        this_max = this_square.max().item()
+        if this_max == last_max:
+            break
+        closure[:] = this_square.clamp(max=1) # We don't need to worry about overflow, since overflow results in +inf, which is clamped to 1
+        last_max = this_max
+    # Convert the matrix back to boolean and return it
+    return closure > 0.5
+
+@torch.jit.script
+def compute_transitive_closure_cuda(adjacency_matrix : torch.Tensor) -> torch.Tensor:
+    """
+    Computes the transitive closure of a boolean matrix.
+    """
+    # torch._int_mm only supports matrices larger than 
+    if len(adjacency_matrix) < 32:
+        padding = 32 - len(adjacency_matrix)
+    elif len(adjacency_matrix) % 8 != 0:
+        padding = 8 - len(adjacency_matrix) % 8
+    else:
+        padding = 0
+    # Convert the adjacency matrix to float16, this is just done to ensure that the values don't overflow when squaring the matrix before clamping - if there existed a "or-matrix multiplication" for boolean matrices, this would not be necessary
+    closure = F.pad(adjacency_matrix, (0, padding, 0, padding), value=0.).to(torch.int8) 
+    # Expand the adjacency matrix to the transitive closure matrix, by squaring the matrix and clamping the values to 1 - each step essentially corresponds to one step of parallel breadth-first search for all nodes
+    last_max = 1
+    for _ in range(int(torch.log2(torch.tensor(adjacency_matrix.shape[0], dtype=torch.float16)).ceil())):
+        this_square = torch._int_mm(closure, closure)
+        this_max = this_square.max().item()
+        if this_max == last_max:
+            break
+        closure[:] = this_square >= 1
+        last_max = this_max
+    # Convert the matrix back to boolean and return it
+    return (closure > 0.5)[:adjacency_matrix.shape[0], :adjacency_matrix.shape[1]]
+
+@torch.jit.script
+def compute_transitive_closure(adjacency_matrix : torch.Tensor) -> torch.Tensor:
+    if len(adjacency_matrix.shape) != 2 or adjacency_matrix.shape[0] != adjacency_matrix.shape[1]:
+        raise ValueError(f"Matrix must be of shape (n, n), not {adjacency_matrix.shape}")
+    # If the matrix is a 0x0, 1x1 or 2x2 matrix, the transitive closure is the matrix itself, since there are no transitive relations
+    if len(adjacency_matrix) <= 2:
+        return adjacency_matrix    
+    # There can be a quite significant difference in performance between the CPU and GPU implementation, however this function is not the bottleneck, so it might not be noticeable in practice
+    if adjacency_matrix.is_cuda and len(adjacency_matrix) > 32:
+        return compute_transitive_closure_cuda(adjacency_matrix)
+    else:
+        return compute_transitive_closure_cpu(adjacency_matrix)
+
+@torch.jit.script
+def extract_components(transitive_closure : torch.Tensor) -> Tuple[List[torch.Tensor], torch.Tensor]:
+    """
+    Extracts the connected components of a transitive closure matrix.
+
+    Args:
+        transitive_closure (torch.Tensor): A boolean matrix of shape (n, n), where n is the number of objects.
+
+    Returns:
+        List[torch.Tensor]: A list of tensors, where each tensor contains the indices of the objects in a cluster.
+        torch.Tensor: A tensor of shape (n, ) containing the cluster index of each object.
+    """
+    n = len(transitive_closure)
+    cluster_vec = -torch.ones(n, dtype=torch.long, device=transitive_closure.device)
+    not_visited = torch.ones(n, dtype=torch.bool, device=transitive_closure.device)
+
+    cluster_id = 0
+    rounds = 0
+    while not_visited.any() and rounds < n:
+        rounds += 1
+        pick = not_visited.nonzero().squeeze()
+        if pick.numel() == 1:
+            pick = pick
+        else:
+            pick = pick[0]
+        visitors = transitive_closure[pick]
+        not_visited &= ~visitors
+        cluster_vec[visitors] = cluster_id # Profiling shows that this line is often the bottleneck
+        cluster_id += 1
+
+    clusters = [torch.where(cluster_vec == i)[0].sort().values for i in torch.unique(cluster_vec).sort().values]
+    
+    return clusters, cluster_vec
+
+@torch.jit.script
+def cluster_iou_boxes(boxes : torch.Tensor, iou_threshold : float=0.5, time : bool=False) -> Tuple[List[torch.Tensor], torch.Tensor]:
+    """
+    Computes the connected components of a set of boxes, where boxes are connected if their IoU is greater than the threshold.
+
+    Args:
+        boxes (any): A set of boxes with a __len__ method.
+        iou_threshold (float): The IoU threshold for clustering. Defaults to 0.5.
+
+    Returns:
+        List[torch.Tensor]: A list of tensors, where each tensor contains the indices of the objects in a cluster.
+        torch.Tensor: A tensor of shape (n, ) containing the cluster index of each object.
+    """
+    ## Due to the how torch.jit.script works, we have to record the timings even if we don't use them - so I have commented out the timing code for now
+    # if time:
+    #     stream = torch.cuda.current_stream(device=boxes.device)
+    #     start = torch.cuda.Event(enable_timing=True, blocking=False, interprocess=False)
+    #     end_adjacency = torch.cuda.Event(enable_timing=True, blocking=False, interprocess=False)
+    #     end_transitive = torch.cuda.Event(enable_timing=True, blocking=False, interprocess=False)
+    #     end_components = torch.cuda.Event(enable_timing=True, blocking=False, interprocess=False)
+    #     start.record(stream)
+    
+    adjacency_matrix = iou_boxes(boxes) >= iou_threshold
+    # if time:
+    #     end_adjacency.record(stream)
+    
+    transitive_closure = compute_transitive_closure(adjacency_matrix)
+    # if time:
+    #     end_transitive.record(stream)
+    
+    components = extract_components(transitive_closure)
+    # if time:
+    #     end_components.record(stream)
+    #     torch.cuda.synchronize(device=boxes.device)
+    #     total_time = start.elapsed_time(end_components)
+    #     print()
+    #     # F-strings are not compatible with torch.jit.script
+    #     print("Adjacency Matrix:", str(round(start.elapsed_time(end_adjacency) / total_time * 100, 2)) + "%")
+    #     print("Transitive Closure:", str(round(start.elapsed_time(end_transitive) / total_time * 100, 2)) + "%")
+    #     print("Components:", str(round(start.elapsed_time(end_components) / total_time * 100, 2)) + "%")
+
+    return components
+
+# @torch.jit.script
+def nms_masks(masks : torch.Tensor, scores : torch.Tensor, iou_threshold : float=0.5, return_indices : bool=False, group_first : bool=True, boxes : torch.Tensor=None) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    """
+    Efficiently perform non-maximum suppression on a set of masks.
+    """
+    if not group_first or len(masks) < 10:
+        return nms_masks_(masks=masks, scores=scores, iou_threshold=iou_threshold)
+    else:
+        if boxes is None:
+            raise ValueError("'boxes' must be specified for nms_masks when 'group_first' is True")
+        # We decrease the iou_threshold for the clustering, since there is no straight-forward relationship between the IoU of the boxes and the IoU of the polygons
+        groups, _ = cluster_iou_boxes(boxes=boxes, iou_threshold=iou_threshold / 2, time=False)
+        _nms_ind = [torch.empty(0) for i in range(len(groups))]
+        for i, group in enumerate(groups):
+            if len(group) == 1:
+                _nms_ind[i] = group
+            else:
+                group_boxes = boxes[group].round().long()
+                xmin, ymin, xmax, ymax = group_boxes[:, 0].min(), group_boxes[:, 1].min(), group_boxes[:, 2].max(), group_boxes[:, 3].max()
+                _nms_ind[i] = group[nms_masks_(masks=masks[group, ymin:(ymax+1), xmin:(xmax+1)], scores=scores[group], iou_threshold=iou_threshold)]
+        if len(_nms_ind) > 0:
+            nms_ind = torch.cat(_nms_ind)
+        else:
+            nms_ind = torch.tensor([], dtype=torch.long, device=masks.device)
+        if return_indices:
+            return nms_ind
+        else:
+            return masks[nms_ind], scores[nms_ind]
+
+def nms_polygons(polygons, scores, iou_threshold=0.5, return_indices=False, dtype=None, group_first : bool=True, boxes=None):
+    """
+    Efficiently perform non-maximum suppression on a set of polygons.
+    """
+    if dtype is None:
+        raise ValueError("'dtype' must be specified for nms_masks")
+    device = polygons[0].device
+    if not group_first or len(polygons) < 10:
+        return nms_polygons_(polys=polygons, scores=scores, iou_threshold=iou_threshold)
+    else:
+        if boxes is None:
+            raise ValueError("'boxes' must be specified for nms_masks when 'group_first' is True")
+        # We decrease the iou_threshold for the clustering, since there is no straight-forward relationship between the IoU of the boxes and the IoU of the polygons
+        groups, _ = cluster_iou_boxes(boxes=boxes, iou_threshold=iou_threshold / 2, time=False) 
+        nms_ind = [None for _ in range(len(groups))]
+        for i, group in enumerate(groups):
+            if len(group) == 1:
+                nms_ind[i] = group
+            else:
+                nms_ind[i] = group[nms_polygons_(polys=[polygons[gi] for gi in group], scores=scores[group], iou_threshold=iou_threshold)]
+        if len(nms_ind) > 0:
+            nms_ind = torch.cat(nms_ind)
+        else:
+            nms_ind = torch.tensor([], dtype=torch.long, device=device)
+        if return_indices:
+            return nms_ind
+        else:
+            return [polygons[ni] for ni in nms_ind], scores[nms_ind]
+
+def base_nms_(objects, iou_fun, scores : torch.Tensor, iou_threshold : float=0.5, strict : bool=True, return_indices : bool=False, **kwargs) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
     """
     Implements the standard non-maximum suppression algorithm.
 
@@ -572,26 +867,11 @@ def nms_(objects, iou_fun, scores, iou_threshold=0.5, strict=True, return_indice
     else:
         return objects[winners], scores[winners]
 
-def nms_masks(masks, scores, iou_threshold=0.5, return_indices=False, dtype=None, metric="IoU", strict=False):
+def nms_boxes(boxes, scores, iou_threshold=0.5):
     """
     Wrapper for the standard non-maximum suppression algorithm.
     """
-    metric = metric.lower()
-    if metric == "iou":
-        metric = iou_masks_2sets
-    elif metric == "ios":
-        metric = ios_masks_2sets
-    else:
-        raise ValueError(f"metric must be one of ['IoU', 'IoS', 'IoS/D'], not {metric}")
-    if dtype is None:
-        raise ValueError("'dtype' must be specified for nms_masks")
-    return nms_(masks, metric, scores, iou_threshold=iou_threshold, return_indices=return_indices, dtype=dtype, strict=strict)
-
-def nms_boxes(boxes, scores, iou_threshold=0.5, return_indices=False, strict=False):
-    """
-    Wrapper for the standard non-maximum suppression algorithm.
-    """
-    return nms_(boxes, iou_boxes_2sets, scores, iou_threshold=iou_threshold, strict=strict, return_indices=return_indices)
+    return torchvision.ops.nms(boxes, scores, iou_threshold)
 
 def detect_duplicate_boxes(boxes, scores, margin=9, return_indices=False):
     """
@@ -613,7 +893,7 @@ def detect_duplicate_boxes(boxes, scores, margin=9, return_indices=False):
             torch.Tensor: A tensor of shape (n, ) representing the **NEGATED** maximum difference between the sides of box1 and each box in boxs.
         """
         return -(boxs - box1).abs().max(dim=1).values
-    return nms_(boxes, negated_max_side_difference, scores, iou_threshold=-margin, return_indices=return_indices, strict=False)
+    return base_nms_(boxes, negated_max_side_difference, scores, iou_threshold=-margin, return_indices=return_indices, strict=False)
 
 def cumsum(nums : list) -> list:
     """
