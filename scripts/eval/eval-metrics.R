@@ -60,7 +60,7 @@ results <- dt[, .(precision = sum(in_gt & in_im)/ sum(in_im),
 				by="dataset"
 			]
 
-write.csv2(results, paste0(opts$output_directory, "/results.csv"))
+fwrite(results, paste0(opts$output_directory, "/results.csv"))
 
 # print(as_tibble(dt))
 
@@ -97,17 +97,20 @@ hist_layers = function(){list(
 		scale_y_continuous(limits = y_hist_limits, breaks = c(0,500,1000)),
 		OUR_THEME
 )}
+pdf(paste0(opts$output_directory, "/eval-plots.pdf"), w=10, h=10)
 
 p <- ggplot(dt[in_gt==T], aes(area, as.numeric(in_gt & in_im))) + 
 	layers(y_name='Recall') + 
 	facet_wrap(~dataset) +
 	coord_cartesian(expand = FALSE)
 
-ggsave(paste0(opts$output_directory, "/recall.png"), p, width=10, height=10)
+
+print(p)
 
 p <- ggplot(dt[in_im==T], aes(area, as.numeric(in_gt & in_im))) + 
 	layers(y_name='Precision') + 
 	facet_wrap(~dataset) +
 	coord_cartesian(expand = FALSE)
+print(p)
 
-ggsave(paste0(opts$output_directory, "/precision.png"), p, width=10, height=10)
+ dev.off()

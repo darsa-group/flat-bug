@@ -14,8 +14,10 @@ import json
 
 
 #
-COMPLETE_COCO = "/home/quentin/Desktop/abram-2023-sticky-cards/results/coco_dataset.json"
-OVERWRITE_WITH = "/home/quentin/Desktop/flat-bug-sorted-data/pre-pro/abram-2023-sticky-cards/instances_default.json"  # incomplete, but valid
+#  DATASET=blair2020;  fb_predict.py -i /home/quentin/Desktop/flat-bug-sorted-data/pre-pro/${DATASET}  -w ~/Desktop/fb_2024-02-09_best.pt -o /home/quentin/Desktop/flat-bug-preannot/${DATASET}
+DATASET="BIOSCAN"
+COMPLETE_COCO = f"/home/quentin/Desktop/flat-bug-preannot/{DATASET}/coco_dataset.json"
+OVERWRITE_WITH = f"/home/quentin/Desktop/flat-bug-sorted-data/pre-pro/{DATASET}/instances_default.json"  # incomplete, but valid
 #
 
 
@@ -26,7 +28,7 @@ OVERWRITE_WITH = "/home/quentin/Desktop/flat-bug-sorted-data/pre-pro/abram-2023-
 # COMPLETE_COCO = "/home/quentin/Desktop/dirt-prelim/coco_dataset.json"
 # OVERWRITE_WITH = "/home/quentin/Desktop/flat-bug-sorted-data/pre-pro/DIRT/instances_default.json" # incomplete, but valid
 
-OUT_COCO = "/tmp/instances_default_refined.json"
+OUT_COCO = f"/tmp/instances_refined_{DATASET}.json"
 
 
 with open(COMPLETE_COCO) as f:
