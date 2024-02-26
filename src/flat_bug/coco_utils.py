@@ -138,7 +138,7 @@ def fb_to_coco(d: dict, coco: dict) -> dict:
         "id": image_id,
         "width": image_width,
         "height": image_height,
-        "file_name": image_path,
+        "file_name": os.path.basename(image_path),
         "license": 0,
         "flickr_url": "",
         "coco_url": "",
