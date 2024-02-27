@@ -49,9 +49,9 @@ if __name__ == '__main__':
                             help="Downscale the image before detection, but crops from the original image."
                                  "Default is 0.5, i.e. downscale the image to half the size before detection."
                             )
-    args_parse.add_argument("-n", "--nmax", type=int, default=-1, help="Number of images to process\nSet to -1 to process all. ")
+    args_parse.add_argument("-n", "--nmax", type=int, default=-1, help="Number of images to process. Set to -1 to process all. ")
     args_parse.add_argument("-O", "--tile_overlap", type=int, default=384, help="Minimum overlap between tiles in pixels. Default is 384, lower is faster, but may miss larger instances.")
-    args_parse.add_argument("-c", "--conf_threshold", type=float, default=0.2, help="Confidence threshold for predictions. Default is 0.2 (20%), the larger the faster, but more instances will be missed. A very low value can result in many false positives.")
+    args_parse.add_argument("-c", "--conf_threshold", type=float, default=0.2, help="Confidence threshold for predictions. Default is 0.2 (20%%), the larger the faster, but more instances will be missed. A very low value can result in many false positives.")
     args_parse.add_argument("-f", "--fast", action="store_true", help="Use fast mode, which is faster, but may miss larger instances.")
     args_parse.add_argument("-g", "--gpu", type=str, default="cuda:0", help="Which device to use for inference. Default is 'cuda:0', i.e. the first GPU.")
     args_parse.add_argument("-d", "--dtype", type=str, default="float16", help="Which dtype to use for inference. Default is 'float16'.")
@@ -80,6 +80,11 @@ if __name__ == '__main__':
     pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype)
     pred.MINIMUM_TILE_OVERLAP = option_dict["tile_overlap"]
     pred.SCORE_THRESHOLD = option_dict["conf_threshold"]
+    pred.MAX_MASK_SIZE = 1024 # Doesn't matter when PREFER_POLYGONS is True
+    pred.IOU_THRESHOLD = 0.15
+    pred.EDGE_CASE_MARGIN = 128 + 64
+    pred.PREFER_POLYGONS = True
+    pred.EXPERIMENTAL_NMS_OPTIMIZATION = True
 
     with IOHandler(verbose = False, clean = False) as io:
 

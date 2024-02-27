@@ -195,8 +195,8 @@ def contours_to_masks(contours : list[torch.Tensor], height : int, width : int) 
     assert all(c.dtype == torch.long for c in contours), "All contours must be of dtype=torch.long"
     assert all(c.device == device for c in contours), "All contours must be on the same device"
     assert all(len(c.shape) == 2 and c.shape[1] == 2 for c in contours), "All contours must be Xx2 tensors"
-    assert isinstance(height, int) and isinstance(width, int), "Height and width must be integers"
-    assert height > 0 and width > 0, "Height and width must be positive"
+    assert isinstance(height, int) and isinstance(width, int), f"Height and width must be integers not {type(height)} and {type(width)}"
+    assert height > 0 and width > 0, f"Height and width must be positive not {height} and {width}"
 
     # Initialize the masks as UMATs
     masks = np.zeros((N, height, width), dtype=np.uint8)

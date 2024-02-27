@@ -12,8 +12,7 @@ from ultralytics import YOLO
 from torchvision.io import read_image, ImageReadMode
 import torchvision.transforms as transforms
 
-from shapely.geometry import Polygon
-import shapely
+import base64, tempfile, shutil
 
 
 from typing import Union
@@ -367,7 +366,64 @@ class TensorPredictions:
                 setattr(new_tp, k, new_value)
         return new_tp
     
-    def plot(self, linewidth=2, masks=True, boxes=True, conf=True, outpath=None, scale=1):
+    def plot(self, *args, **kwargs):
+        return self._plot_jpeg(*args, **kwargs)
+
+    def _plot_svg(self, linewidth=2, masks=True, boxes=True, conf=True, outpath=None, scale=1):
+        image = self.image.round().to(torch.uint8).permute(1, 2, 0).cpu().numpy()
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        embed_jpeg = True
+        if scale != 1:
+            image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
+
+        tmp_svg = tempfile.mktemp(suffix='.svg')
+
+        try:
+            height, width = image.shape[0:2]
+
+            encoded_string = base64.b64encode(cv2.imencode('.jpg', image)[1])
+            desc = ''
+
+            with open(tmp_svg, 'w+') as f:
+                f.write('<svg width="' + str(width) + '"' +
+                        ' height="' + str(height) + '"' +
+                        ' xmlns:xlink="http://www.w3.org/1999/xlink"' +
+                        ' xmlns="http://www.w3.org/2000/svg"' +
+                        ' >')
+                #     f.write('<metadata  id="sticky_pi"> "%s" </metadata>' % str(self.metadata()))
+                if embed_jpeg:
+                    f.write('<image %s width="%i" height="%i" x="0" y="0" xlink:href="data:image/jpeg;base64,%s"/>' % (
+                        desc,
+                        width, height, str(encoded_string, 'utf-8')))
+
+                for c, conf in zip(self.contours, self.confs):
+                    f.write(self._contour_to_svg_element(c, scale=scale, confidence=conf))
+                f.write('</svg>')
+
+            if outpath:
+                shutil.move(tmp_svg, outpath)
+
+        except Exception as e:
+            os.remove(tmp_svg)
+            raise e
+
+    def _contour_to_svg_element(self, contour, confidence, scale=1.0):
+        d_list = []
+
+        value = confidence
+        stroke_colour = '#ff0000'
+        fill_colour ='#0000ff'
+        fill_opacity = 0.3
+        for i in range(len(contour)):
+            name=i
+            x, y = contour[i][0] * scale
+            d_list.append(str(x) + ',' + str(y))
+        d_str = ' '.join(d_list)
+        out = '<path name="%s" value="%i" style="stroke:%s;stroke-opacity:1;fill:%s;fill-opacity:%f" d="M%s Z"/>' % \
+              (name, value, stroke_colour, fill_colour, fill_opacity, d_str)
+        return out
+
+    def _plot_jpeg(self, linewidth=2, masks=True, boxes=True, conf=True, outpath=None, scale=1):
         # Convert torch tensor to numpy array
         image = self.image.round().to(torch.uint8).permute(1, 2, 0).cpu().numpy()
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
@@ -377,7 +433,8 @@ class TensorPredictions:
         if len(self) > 0:
             # Draw masks
             if masks:
-                contours = [simplify_contour((c * scale).round().to(torch.int32).cpu().numpy(), scale / 2) for c in self.contours]
+                contours = [simplify_contour((c * scale).round().to(torch.int32).cpu().numpy(), scale / 2) for c in
+                            self.contours]
                 ih, iw = image.shape[:2]
                 ALPHA = 0.3
                 _alpha = int(255 * ALPHA)
@@ -388,7 +445,7 @@ class TensorPredictions:
                     cv2.drawContours(this_poly_alpha, [c], -1, 1, -1)
                     poly_alpha += this_poly_alpha * _alpha
                 poly_alpha = poly_alpha.clip(0, 255) / 255
-                
+
                 # Create a red fill for the polygons
                 poly_fill = np.zeros_like(image)
                 poly_fill[:, :, 2] = 255
@@ -411,13 +468,13 @@ class TensorPredictions:
                     cv2.rectangle(image, start_point, end_point, (0, 0, 0), linewidth)  # Red box
                     if conf:
                         cv2.putText(
-                            img =       image, 
-                            text =      f"{conf*100:.3g}%", 
-                            org =       (start_point[0], start_point[1] - round(10 * scale)),
-                            fontFace =  cv2.FONT_HERSHEY_SIMPLEX, 
-                            fontScale = 1 * scale, 
-                            color =     (0, 0, 0), 
-                            thickness = max(1, round(2 * scale))
+                            img=image,
+                            text=f"{conf * 100:.3g}%",
+                            org=(start_point[0], start_point[1] - round(10 * scale)),
+                            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                            fontScale=1 * scale,
+                            color=(0, 0, 0),
+                            thickness=max(1, round(2 * scale))
                         )
 
         # Save or show the image
@@ -626,6 +683,7 @@ The JSON can be deserialized into a `TensorPredictions` object using `TensorPred
                     # If no masks are found, we need to convert the contours to masks
                     v = [torch.tensor(vi, device=new_tp.device, dtype=torch.long).T for vi in v] # For compatibility reasons we convert to tensor, but we will convert to numpy in contours_to_masks anyway, since we are using openCV to reconstruct the masks
                     v = contours_to_masks(v, height=json_data["mask_height"], width=json_data["mask_width"])
+                    continue
                     # Change the attribute key to masks, since contours is a property method derived from masks and not a true property
                 # Confidences and classes are 1-d tensors (arrays)
                 elif k in ["confs", "classes"]:
