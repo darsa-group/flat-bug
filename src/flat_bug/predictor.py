@@ -327,18 +327,34 @@ class TensorPredictions:
 
     @contours.setter
     def contours(self, value):
-        self.masks = contours_to_masks(value, self.mask_height, self.mask_width).to(self.device)
+        if self.PREFER_POLYGONS:
+            if not isinstance(value, list):
+                raise RuntimeError(f"Unknown type `{type(value)}` for `contours` - should be a list of polygons")
+            image_h, image_w = self.image.shape[1:]
+            for i in range(len(value)):
+                if not isinstance(value[i], np.ndarray):
+                    value[i] = np.array(value[i])
+                if value[i].shape[1] != 2:
+                    if value[i].shape[0] == 2:
+                        value[i] = np.transpose(value[i], (1, 0))
+                    else:
+                        raise RuntimeError(f"Unknown shape `{value[i].shape}` for `contours[{i}]` - should be (N, 2)")
+                value[i] = scale_contour(value[i], np.array([(image_h - 1) / (self.mask_height - 1), (image_w - 1) / (self.mask_width - 1)]), True)
+                value[i] = torch.tensor(value[i], device=self.device, dtype=torch.long)
+            self.polygons = value
+            self.masks = [torch.empty((0, 0), device=self.device, dtype=self.dtype) for _ in range(len(value))]  # Initialize empty masks
+        else:
+            self.masks = contours_to_masks(value, self.mask_height, self.mask_width).to(self.device)
 
     def contour_to_image_coordinates(self, contour: torch.Tensor, scale: float = 1, interpolate: bool = False):
         """
         Converts a contour from mask coordinates to image coordinates. 
         """
-        mask_h, mask_w = self.masks.data.shape[1:]
         image_h, image_w = self.image.shape[1:]
-        mask_to_image_scale = torch.tensor([(image_h - 1) / (mask_h - 1), (image_w - 1) / (mask_w - 1)], device=self.device, dtype=torch.float32) * scale
+        mask_to_image_scale = torch.tensor([(image_h - 1) / (self.mask_height - 1), (image_w - 1) / (self.mask_width - 1)], device=self.device, dtype=torch.float32) * scale
         scaled_contour = scale_contour(contour.cpu().numpy(), mask_to_image_scale.cpu().numpy(), True)
         scaled_contour = simplify_contour(scaled_contour, (mask_to_image_scale / 2).mean().item())
-        scaled_contour = torch.tensor(scaled_contour, device=self.device, dtype=self.dtype)
+        scaled_contour = torch.tensor(scaled_contour, device=self.device, dtype=torch.long).squeeze(1)
 
         # Possibly interpolate the contour using integer linear interpolation
         if interpolate:
@@ -346,7 +362,7 @@ class TensorPredictions:
         return scaled_contour
 
     def __len__(self):
-        return len(self.masks.data)
+        return len(self.polygons)
 
     def new(self):
         return TensorPredictions([], **{k: self.__dict__[k] for k in self.CONSTANTS if k in self.__dict__})
@@ -528,6 +544,7 @@ class TensorPredictions:
         if mask:
             image_ext = ".png"
 
+        contours = self.contours
         # For each bounding box, save the corresponding crop
         for i, (_box, _mask) in enumerate(zip(self.boxes, self.masks)):
             # Define name of the crop 
@@ -536,9 +553,9 @@ class TensorPredictions:
             # Extract the crop from the image tensor
             if mask:
                 if self.PREFER_POLYGONS:
-                    contour_offset = torch.tensor([x1, y1], device=self.device, dtype=self.dtype)
+                    contour_offset = torch.tensor([x1, y1], device=self.device, dtype=torch.long)
                     scaled_mask = contours_to_masks(
-                        [self.contour_to_image_coordinates(self.contours[i], scale=1, interpolate=False) - contour_offset], 
+                        [contours[i] - contour_offset], 
                         height = y2 - y1, 
                         width = x2 - x1
                     )
@@ -702,26 +719,30 @@ The JSON can be deserialized into a `TensorPredictions` object using `TensorPred
             if dtype is None:
                 dtype = torch.float32
 
-            empty_image = torch.zeros((3, json_data["image_height"], json_data["image_width"]), device=device, dtype=dtype)
+            empty_image = torch.zeros((3, json_data["image_height"], json_data["image_width"]), device=device, dtype=dtype) + 255
             new_tp = TensorPredictions(image=empty_image, device=device, dtype=dtype)
+            setattr(new_tp, "PREFER_POLYGONS", True) # Since we only store contours in the .json file, we prefer polygons on loading
+
+            # Load constants
+            for k, v in json_data.items():
+                if k in self.CONSTANTS:
+                    setattr(new_tp, k, v)
 
             # Load the data
             for k, v in json_data.items():
-                # Skip attributes in the json file that are not in the TensorPredictions object
-                if k in ["identifier", "image_path", "image_width", "image_height", "mask_width", "mask_height",
-                         "scales"]:
+                # Skip constants in second round
+                if k in self.CONSTANTS:
                     continue
+                # Skip the identifier 
+                if k in ["identifier", "image_height", "image_width"]:
+                    continue                
+                # Catch attributes that don't need special treatment
+                elif k in ["scales", "contours"]:
+                    pass
                 # Bounding boxes are easy (as usual)
-                if k == "boxes":
+                elif k == "boxes":
                     v = torch.tensor(v, device=new_tp.device, dtype=new_tp.dtype)
                 # While masks are a bit more complicated
-                elif k == "contours":
-                    # If no masks are found, we need to convert the contours to masks
-                    v = [torch.tensor(vi, device=new_tp.device, dtype=torch.long).T for vi in
-                         v]  # For compatibility reasons we convert to tensor, but we will convert to numpy in contours_to_masks anyway, since we are using openCV to reconstruct the masks
-                    v = contours_to_masks(v, height=json_data["mask_height"], width=json_data["mask_width"])
-                    continue
-                    # Change the attribute key to masks, since contours is a property method derived from masks and not a true property
                 # Confidences and classes are 1-d tensors (arrays)
                 elif k in ["confs", "classes"]:
                     v = torch.tensor(v, device=new_tp.device, dtype=new_tp.dtype)
