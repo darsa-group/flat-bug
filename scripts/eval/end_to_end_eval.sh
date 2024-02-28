@@ -53,6 +53,6 @@ echo "commit: ${COMMIT_HASH}" >> ${METADATA_FILE}
 # Run the model on the validation set
 fb_predict.py -i "${DIR}/reference" -w "${WEIGHTS}" -o "$DIR/${ID}/preds" -p '**.jpg' -f --gpu cuda:0 --no-crops  --verbose &&
 # Compare the predictions with the ground truth
-fb_eval.py -p "${DIR}/${ID}/preds/**/**.json" -g "${DIR}/reference/instances_default.json" -I "${DIR}/reference" -P -o ${DIR}/${ID}/eval &&
+fb_eval.py -p "${DIR}/${ID}/preds/coco_instances.json" -g "${DIR}/reference/instances_default.json" -I "${DIR}/reference" -P  -c -o ${DIR}/${ID}/eval &&
 # Produce the evaluation metrics and figures
 Rscript eval-metrics.R --input_directory ${DIR}/${ID}/eval --output_directory ${DIR}/${ID}/results
