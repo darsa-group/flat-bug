@@ -26,7 +26,8 @@ setup(
         'torchvision',
         'scikit-learn',
         "IPython",
-        "ipywidgets"],
+        "ipywidgets",
+        "tqdm"],
     extras_require={
         'test': ['nose', 'pytest', 'pytest-cov', 'codecov', 'coverage'],
     },

@@ -1,7 +1,9 @@
 #!/bin/bash
 ## USAGE:
 # -w weights (MANDATORY): the path to the weights file.
-# -d directory (MANDATORY): the directory where the data is located and where the results will be saved the directory should have a "reference" directory with the ground truth json in "reference/gt/instances_default.json" and the images in "reference/val".
+# -d directory (MANDATORY): the directory where the data is located and where the results will be saved the directory
+#                           should have a "reference" directory with the ground truth json in
+#                           "instances_default.json" and the matching images".
  
 WEIGHTS=""
 DIR=""
@@ -22,19 +24,35 @@ if [[ -z "$WEIGHTS" || -z "$DIR" ]]; then
     exit 1
 fi
 
-# Check that our current directory ends with "/flat-bug"
-if [[ $PWD != */flat-bug ]]; then
-    echo "Please run this script from the flat-bug directory"
-    exit 1
-fi
+# fixme, R dependencies should be checked before
+# fixme retrieve hyper parameters from CLI
 
-# Prepare the environment for end-to-end evaluation
-python prepare_environment_for_end_to_end_eval.py --dir "$DIR"
+
+MODEL_HASH=$(md5sum ${WEIGHTS} | cut -c1-8)
+DATE=$(date -u  +"%Y-%m-%dT%H-%M-%SZ")
+COMMIT_HASH=$(git rev-list --max-count=1 HEAD | cut -c1-8)
+
+ID=${DATE}_${MODEL_HASH}_${COMMIT_HASH}_${SLURM_JOB_ID}
+
+METADATA_FILE=${DIR}/${ID}/metadata.yml
+
+
+echo "Saving outputs and results in ${DIR}/${ID}"
+
+mkdir -p ${DIR}/${ID}/eval
+mkdir -p ${DIR}/${ID}/preds
+mkdir -p ${DIR}/${ID}/results
+
+echo "date: ${DATE}" > ${METADATA_FILE}
+echo "model: ${WEIGHTS}" >> ${METADATA_FILE}
+echo "model_hash: ${MODEL_HASH}" >> ${METADATA_FILE}
+echo "commit: ${COMMIT_HASH}" >> ${METADATA_FILE}
+# todo add hyperparam here
+ #todo, copy inference time to results?
+
 # Run the model on the validation set
-fb_predict.py -i "$DIR/reference/val" -w "$WEIGHTS" -o "$DIR/output" -p **.jpg -f --gpu cuda:0 --no-crops --no-overviews --verbose
+fb_predict.py -i "${DIR}/reference" -w "${WEIGHTS}" -o "$DIR/${ID}/preds" -p '**.jpg' -f --gpu cuda:0 --no-crops  --verbose &&
 # Compare the predictions with the ground truth
-fb_eval.py -p "$DIR/output/**/**.json" -g "$DIR/reference/gt/instances_default.json" -I "$DIR/reference/val" -P -o "$DIR/eval"
+fb_eval.py -p "${DIR}/${ID}/preds/**/**.json" -g "${DIR}/reference/instances_default.json" -I "${DIR}/reference" -P -o ${DIR}/${ID}/eval &&
 # Produce the evaluation metrics and figures
-Rscript prototypes/eval-metrics.R --input_directory "$DIR/eval" --output_directory "$DIR/results"
-# Clean up the environment
-python ./clean_up_end_to_end_eval.py --dir "$DIR" --clear-all
+Rscript eval-metrics.R --input_directory ${DIR}/${ID}/eval --output_directory ${DIR}/${ID}/results
