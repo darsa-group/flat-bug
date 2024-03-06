@@ -51,9 +51,6 @@ class BaseMaskRefiner(object):
                 del ann
                 continue
 
-            bbox = floor(x), floor(y), ceil(x + w), ceil(y + h)
-
-            roi = cv2.cvtColor(im[bbox[1]: bbox[3] + self._image_padding*2, bbox[0]: bbox[2] + self._image_padding*2], cv2.COLOR_BGR2RGB)
             # roi = cv2.medianBlur(roi, 5)
             #
             # if len(ann["segmentation"]) > 1:
@@ -72,6 +69,14 @@ class BaseMaskRefiner(object):
             seg = ann["segmentation"]
             contour = np.round(seg).astype(np.int32)
             contour = contour.reshape((len(contour[0]) // 2, 1, 2))
+
+            x,y,w,h = cv2.boundingRect(contour)
+
+            bbox = floor(x), floor(y), ceil(x + w), ceil(y + h)
+            print(bbox)
+            roi = cv2.cvtColor(im[bbox[1]: bbox[3] + self._image_padding * 2, bbox[0]: bbox[2] + self._image_padding * 2],
+                               cv2.COLOR_BGR2RGB)
+
             x += 1
             y += 1
             if w > self._min_bbox_size and h > self._min_bbox_size:
@@ -82,9 +87,12 @@ class BaseMaskRefiner(object):
 
 
                     # if abs(bb[2] - w) / w < .25 and abs(bb[3] - h) / h < .25:
-                    contour = candidate_contour
+
                     cv2.drawContours(roi, [contour], -1, (255, 0, 0), 2, lineType=cv2.LINE_AA,
+                                     offset=(-int(x-  self._image_padding), -int(y- self._image_padding)))
+                    cv2.drawContours(roi, [candidate_contour], -1, (0, 0, 255), 2, lineType=cv2.LINE_AA,
                                      offset=(-int(x), -int(y)))
+                    contour = candidate_contour
                     contour = contour - (self._image_padding, self._image_padding)
                     bb = cv2.boundingRect(contour)
 
@@ -95,7 +103,9 @@ class BaseMaskRefiner(object):
                     cv2.waitKey(1)
                 else:
                     print("No countour after refinement")
-                # refine_mask(roi, contour, offset=(-int(x),-int(y)))
+                # refine_mask(roi, contour, offset=(-int(x),-int(y))
+            else:
+                print("skipping small contour")
             assert im is not None
         return coco
 
@@ -173,9 +183,12 @@ class YoloMaskRefiner(BaseMaskRefiner):
         roi = cv2.bitwise_and(roi, roi, mask=rough_mask)
         # roi[np.where(roi == 0)] = 0
         results = self._model([roi])
-
+        if results[0].masks is None:
+            print("No detection")
+            return contour
         new_contours = results[0].masks.xy
         if len(new_contours) != 1:
+            print("more than one detection?")
             return contour
 
         contour = np.round(new_contours[0] - offset).astype(np.uint32)
@@ -185,9 +198,10 @@ class YoloMaskRefiner(BaseMaskRefiner):
         #     im_array = r.plot()  # plot a BGR numpy array of predictions
         #     im = Image.fromarray(im_array[..., ::-1])  # RGB PIL image
         #     im.save('results.jpg')  # save image
+        print("Refined")
         return contour
 
 mr = YoloMaskRefiner("~/Desktop/fb_weights/fb_2024-02-29_large_best.pt")
-coco = mr.run("./annotations/instances_default.json", "./annotations/images")
-with open("./annotations/refined.json", 'w') as f:
+coco = mr.run("/home/quentin/Desktop/flat-bug-preannot/blair2020/coco_instances.json", "/home/quentin/Desktop/flat-bug-sorted-data/pre-pro/blair2020")
+with open("/tmp/refined.json", 'w') as f:
     json.dump(coco, f)
