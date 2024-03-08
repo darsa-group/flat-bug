@@ -16,14 +16,14 @@ import json
 #
 #  DATASET=blair2020;  fb_predict.py -i /home/quentin/Desktop/flat-bug-sorted-data/pre-pro/${DATASET}  -w ~/Desktop/fb_2024-02-09_best.pt -o /home/quentin/Desktop/flat-bug-preannot/${DATASET}
 # DATASET=
-for DATASET in ["NHM-beetles-mini",
-                "anTraX",
-                "gernat2018",
-                "au-scanned-sticky",
-                "PeMaToEuroPep",
-                "abram-2023-sticky-cards",
-                "ALUS-mixed",
-                "ALUS",
+for DATASET in [
+
+                # "gernat2018",
+                # # "au-scanned-sticky",
+                # "PeMaToEuroPep",
+                # "abram-2023-sticky-cards",
+                # "ALUS-mixed",
+                "blair2020",
                 ]:
     OVERWRITE_WITH = f"/home/quentin/Desktop/flat-bug-sorted-data/pre-pro/{DATASET}/instances_default.json"  # incomplete, but valid
     COMPLETE_COCO = f"/home/quentin/Desktop/flat-bug-preannot/{DATASET}/coco_instances.json"

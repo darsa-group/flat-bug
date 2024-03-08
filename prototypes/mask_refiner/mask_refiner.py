@@ -20,14 +20,14 @@ import cv2
 
 class BaseMaskRefiner(object):
     _min_bbox_size = 40  # below this size, we keep original values
-    _image_padding = 256
+    _image_padding = 128
     def __init__(self):
         pass
 
     def _refine_one_mask(self, roi, contour, offset):
         return contour
 
-    def run(self, coco_annotations, images_root_dir):
+    def run(self, coco_annotations, images_root_dir, output_crop_dir):
 
         with open(coco_annotations) as f:
             coco = json.load(f)
@@ -38,8 +38,13 @@ class BaseMaskRefiner(object):
         # image_file_map_rev = {im["file_name"]: im["id"] for im in coco["images"]}
 
         cache_fn = ""
+        images = [i for i in sorted(image_file_map.values())]
+
         for ann in coco["annotations"]:
             im_filename = image_file_map[ann["image_id"]]
+            if im_filename not in images[0:50]:
+                print("skipping")
+                continue
 
             if im_filename != cache_fn:
                 im = cv2.imread(os.path.join(root_dir, im_filename))
@@ -73,10 +78,12 @@ class BaseMaskRefiner(object):
             x,y,w,h = cv2.boundingRect(contour)
 
             bbox = floor(x), floor(y), ceil(x + w), ceil(y + h)
-            print(bbox)
-            roi = cv2.cvtColor(im[bbox[1]: bbox[3] + self._image_padding * 2, bbox[0]: bbox[2] + self._image_padding * 2],
-                               cv2.COLOR_BGR2RGB)
 
+            roi = im[bbox[1]: bbox[3] + self._image_padding * 2, bbox[0]: bbox[2] + self._image_padding * 2]
+
+            crop_name = f"{x}_{y}_{self._image_padding}_{im_filename}"
+            print(crop_name)
+            cv2.imwrite(os.path.join(output_crop_dir, crop_name), roi)
             x += 1
             y += 1
             if w > self._min_bbox_size and h > self._min_bbox_size:
@@ -111,6 +118,7 @@ class BaseMaskRefiner(object):
 
 
 class SAMMaskRefiner(BaseMaskRefiner):
+    _image_padding = 64
     def __init__(self, model_weights):
         from segment_anything import SamAutomaticMaskGenerator
         from segment_anything import sam_model_registry
@@ -147,12 +155,16 @@ class SAMMaskRefiner(BaseMaskRefiner):
         rough_mask = cv2.drawContours(rough_mask, [contour], -1, (255,), -1, lineType=cv2.LINE_8,
                                       offset=offset)
         result = self._mask_generator.generate(roi)
-        cv2.imshow("mask_refiner", rough_mask)
+        cv2.imshow("ROI", roi)
+        cv2.imshow("mask_refiner2", rough_mask)
 
         rough_mask = rough_mask.astype(np.bool_)
         best_mask = None
         best_score = 0
+        print("len(result)")
+        print(len(result))
         for r in result:
+
             for i in ["normal", "negative"]:
                 if i == "negative":
                     m = np.bitwise_not(r["segmentation"])
@@ -160,27 +172,28 @@ class SAMMaskRefiner(BaseMaskRefiner):
                     m = r["segmentation"]
 
                 score = self._mask_goodness(rough_mask, m)
+                print(score)
                 if score > best_score:
                     best_mask = m
                     best_score = score
                 # cv2.imwrite(f"/tmp/test_{i}.png", m.astype(np.uint8) * 255)
-        best_mask = np.bitwise_and(best_mask, rough_mask)
-
+        # best_mask = np.bitwise_and(best_mask, rough_mask)
+        best_mask = cv2.dilate(best_mask.astype(np.uint8), cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3)))
         pol = self._mask_to_polygon(best_mask)
         # cv2.drawContours(image_rgb, [pol], -1, (255, 0, 255), 3, lineType=cv2.LINE_AA)
-        return pol
+        return pol - offset
 class YoloMaskRefiner(BaseMaskRefiner):
     def __init__(self, model_weights):
         from ultralytics import YOLO
         from PIL import Image
         self._model = YOLO("/home/quentin/Desktop/fb_weights/fb_2024-02-29_large_best.pt")
     def _refine_one_mask(self, roi, contour, offset):
-        rough_mask = np.zeros((roi.shape[0], roi.shape[1]), np.uint8)
-        rough_mask = cv2.drawContours(rough_mask, [contour], -1, (255,), -1, lineType=cv2.LINE_8,
-                                       offset=offset)
-        rough_mask = cv2.dilate(rough_mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(51,51)))
-        #
-        roi = cv2.bitwise_and(roi, roi, mask=rough_mask)
+        # rough_mask = np.zeros((roi.shape[0], roi.shape[1]), np.uint8)
+        # rough_mask = cv2.drawContours(rough_mask, [contour], -1, (255,), -1, lineType=cv2.LINE_8,
+        #                                offset=offset)
+        # rough_mask = cv2.dilate(rough_mask, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(51,51)))
+        # #
+        # roi = cv2.bitwise_and(roi, roi, mask=rough_mask)
         # roi[np.where(roi == 0)] = 0
         results = self._model([roi])
         if results[0].masks is None:
@@ -201,7 +214,13 @@ class YoloMaskRefiner(BaseMaskRefiner):
         print("Refined")
         return contour
 
-mr = YoloMaskRefiner("~/Desktop/fb_weights/fb_2024-02-29_large_best.pt")
-coco = mr.run("/home/quentin/Desktop/flat-bug-preannot/blair2020/coco_instances.json", "/home/quentin/Desktop/flat-bug-sorted-data/pre-pro/blair2020")
-with open("/tmp/refined.json", 'w') as f:
+mr = BaseMaskRefiner()
+# mr = YoloMaskRefiner("~/Desktop/fb_weights/fb_2024-03-07_large_best.pt")
+# mr = SAMMaskRefiner("../sam_vit_h_4b8939.pth")
+coco = mr.run("/home/quentin/Desktop/flat-bug-preannot/00_NHM-beetles/coco_instances.json",
+              "/home/quentin/Desktop/flat-bug-sorted-data/pre-pro/00_NHM-beetles",
+                "/home/quentin/Desktop/nhm_crops"
+              )
+# coco = mr.run("/home/quentin/Desktop/flat-bug-preannot/blair2020/coco_instances.json", "/home/quentin/Desktop/flat-bug-sorted-data/pre-pro/blair2020")
+with open("/tmp/abram_refined.json", 'w') as f:
     json.dump(coco, f)
