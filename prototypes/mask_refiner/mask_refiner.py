@@ -79,7 +79,7 @@ class BaseMaskRefiner(object):
 
             bbox = floor(x), floor(y), ceil(x + w), ceil(y + h)
 
-            roi = im[bbox[1]: bbox[3] + self._image_padding * 2, bbox[0]: bbox[2] + self._image_padding * 2]
+            roi = np.copy(im[bbox[1]: bbox[3] + self._image_padding * 2, bbox[0]: bbox[2] + self._image_padding * 2])
 
             crop_name = f"{x}_{y}_{self._image_padding}_{im_filename}"
             print(crop_name)
