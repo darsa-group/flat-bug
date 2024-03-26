@@ -172,3 +172,5 @@ datasets/
 test/
 s3/
 dev/
+utils/eval_slurm.sh
+utils/zip_output_for_ERDA.sh
