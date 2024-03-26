@@ -1,0 +1,11 @@
+batch: 8
+model: "./yolov8l-seg.pt"
+epochs: 5000
+device: "cuda"
+patience: 9999
+lr0: 0.01
+lrf: 0.0001
+optimizer: 'SGD'
+workers: 8
+fb_max_instances: 9999
+

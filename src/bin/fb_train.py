@@ -13,7 +13,6 @@ if __name__ == '__main__':
     DEFAULT_CONF = {
         "batch": 8,
         "imgsz": 1024,
-
         "model": "yolov8m-seg.pt",
         "task": "detect",
         # "task": "segment", #fixme why not segment?!
@@ -25,7 +24,8 @@ if __name__ == '__main__':
         # "optimizer": 'SGD',
         # "lr0": 0.01,
         # "lrf": 0.005,
-        "workers": 4  # fixme
+        "workers": 4,
+        "fb_max_instances": 150,
     }
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
@@ -65,7 +65,17 @@ if __name__ == '__main__':
     else:
         overrides["resume"] = False
     # print(settings)
-    t = MySegmentationTrainer(overrides=overrides)
+    custom_fb_args = {}
+    todel = []
+    for k, v in overrides.items():
+        if k.startswith("fb_"):
+            custom_fb_args[k] = v
+            todel.append(k)
+
+    for d in todel:
+        del overrides[d]
+    print(overrides)
+    t = MySegmentationTrainer(overrides=overrides, max_instances=custom_fb_args["fb_max_instances"])
 
     if not option_dict["resume"]:
         t.start_epoch = 0
