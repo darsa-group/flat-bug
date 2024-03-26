@@ -3,8 +3,6 @@ import torch.nn.functional as F
 import torchvision
 
 import numpy as np
-
-import cv2
 from shapely.geometry import Polygon
 
 import matplotlib as mpl
@@ -344,33 +342,34 @@ def iou_masks_2sets(m1s : torch.Tensor, m2s : torch.Tensor, a1s : Union[torch.Te
         a2s = a2s.to(torch.int32)
     
     intersections = intersect_masks_2sets(m1s, m2s)
-
     unions = a1s + a2s - intersections
-    del a1s, a2s
     
-    return (intersections / unions).to(dtype)
+    return (intersections / (unions + 1e-6)).to(dtype)
 
-def ios_masks_2sets(m1s, m2s, a1s = None, a2s = None, dtype=torch.float32):
+@torch.jit.script
+def ios_masks_2sets(m1s : torch.Tensor, m2s : torch.Tensor, a1s : Union[torch.Tensor, None]=None, a2s : Union[torch.Tensor, None]=None, dtype : torch.dtype=torch.float32) -> torch.Tensor:
     """
-    Computes IoU between all pairs between two sets of masks
+    Computes IoS between all pairs between two sets of masks
     """
     if len(m1s.shape) == 2:
         m1s = m1s.unsqueeze(0)
     if len(m2s.shape) == 2:
         m2s = m2s.unsqueeze(0)
     if a1s is None:
-        a1s = m1s.sum(dim=(1, 2)).unsqueeze(0)
+        a1s = m1s.sum(dim=(1, 2), dtype=torch.int32).unsqueeze(0)
         if a1s.shape[0] > 0:
             a1s = a1s.T
+    else:
+        a1s = a1s.to(torch.int32)
     if a2s is None:
-        a2s = m2s.sum(dim=(1, 2)).unsqueeze(0)
-    a1s = a1s.to(dtype)
-    a2s = a2s.to(dtype)
-    intersections = intersect_masks_2sets(m1s, m2s, dtype)
+        a2s = m2s.sum(dim=(1, 2), dtype=torch.int32).unsqueeze(0)
+    else:
+        a2s = a2s.to(torch.int32)
 
+    intersections = intersect_masks_2sets(m1s, m2s, dtype)
     smaller_area = torch.min(a1s, a2s)
     
-    return intersections / smaller_area
+    return intersections / (smaller_area + 1e-6)
 
 def iou_masks(masks : torch.Tensor, areas : Union[torch.Tensor, None]= None, dtype :torch.dtype=torch.float32) -> torch.Tensor:
     """
@@ -431,16 +430,19 @@ def iou_polygons(polygons1, polygons2=None, dtype=torch.float32):
         if len(polygon.shape) != 2 or polygon.shape[1] != 2:
             raise ValueError(f"Polygons must be of shape (n, 2), not {polygon.shape}: {polygon}")
     device = polygons1[0].device
-    iou_mat = torch.zeros((len(polygons1), len(polygons2)), dtype=dtype, device=device)
+    iou_mat = np.zeros((len(polygons1), len(polygons2)), dtype=np.float32)
     polygons1 = [Polygon(polygon.cpu().numpy()).buffer(0) for polygon in polygons1]
     polygons2 = [Polygon(polygon.cpu().numpy()).buffer(0) for polygon in polygons2]
+    areas1 = np.array([polygon.area for polygon in polygons1], dtype=np.float32)
+    areas2 = np.array([polygon.area for polygon in polygons2], dtype=np.float32)
     for i, polygon1 in enumerate(polygons1):
+        areas1_i = areas1[i]
         for j, polygon2 in enumerate(polygons2):
             if polygon1.intersects(polygon2):
-                intersection = polygon1.intersection(polygon2)
-                union = polygon1.union(polygon2)
-                iou_mat[i, j] = torch.tensor(intersection.area / union.area, dtype=dtype, device=device)
-    return iou_mat
+                intersection = polygon1.intersection(polygon2).area
+                union = areas1_i + areas2[j] - intersection
+                iou_mat[i, j] = intersection / (union + 1e-6)
+    return torch.tensor(iou_mat, dtype=dtype, device=device)
 
 def nms_polygons_(polys : List[torch.Tensor], scores : torch.Tensor, iou_threshold : float=0.5) -> torch.Tensor:
     if len(polys) == 0 or len(polys) == 1:
@@ -483,25 +485,64 @@ def nms_polygons_(polys : List[torch.Tensor], scores : torch.Tensor, iou_thresho
 
     # Return the winning indices
     return winners
-    
+
 @torch.jit.script
-def compute_transitive_closure(adjacency_matrix : torch.Tensor) -> torch.Tensor:
+def compute_transitive_closure_cpu(adjacency_matrix : torch.Tensor) -> torch.Tensor:
     """
     Computes the transitive closure of a boolean matrix.
-    
     """
+    # Convert the adjacency matrix to float16, this is just done to ensure that the values don't overflow when squaring the matrix before clamping - if there existed a "or-matrix multiplication" for boolean matrices, this would not be necessary
+    closure = adjacency_matrix.to(torch.float16) 
+    # Expand the adjacency matrix to the transitive closure matrix, by squaring the matrix and clamping the values to 1 - each step essentially corresponds to one step of parallel breadth-first search for all nodes
+    last_max = 1
+    for _ in range(int(torch.log2(torch.tensor(closure.shape[0], dtype=torch.float16)).ceil())):
+        this_square = torch.matmul(closure, closure)
+        this_max = this_square.max().item()
+        if this_max == last_max:
+            break
+        closure[:] = this_square.clamp(max=1) # We don't need to worry about overflow, since overflow results in +inf, which is clamped to 1
+        last_max = this_max
+    # Convert the matrix back to boolean and return it
+    return closure > 0.5
+
+@torch.jit.script
+def compute_transitive_closure_cuda(adjacency_matrix : torch.Tensor) -> torch.Tensor:
+    """
+    Computes the transitive closure of a boolean matrix.
+    """
+    # torch._int_mm only supports matrices such that the output is larger than 32x32 and a multiple of 8
+    if len(adjacency_matrix) < 32:
+        padding = 32 - len(adjacency_matrix)
+    elif len(adjacency_matrix) % 8 != 0:
+        padding = 8 - len(adjacency_matrix) % 8
+    else:
+        padding = 0
+    # Convert the adjacency matrix to float16, this is just done to ensure that the values don't overflow when squaring the matrix before clamping - if there existed a "or-matrix multiplication" for boolean matrices, this would not be necessary
+    closure = F.pad(adjacency_matrix, (0, padding, 0, padding), value=0.).to(torch.int8) 
+    # Expand the adjacency matrix to the transitive closure matrix, by squaring the matrix and clamping the values to 1 - each step essentially corresponds to one step of parallel breadth-first search for all nodes
+    last_max = 1
+    for _ in range(int(torch.log2(torch.tensor(adjacency_matrix.shape[0], dtype=torch.float16)).ceil())):
+        this_square = torch._int_mm(closure, closure)
+        this_max = this_square.max().item()
+        if this_max == last_max:
+            break
+        closure[:] = this_square >= 1
+        last_max = this_max
+    # Convert the matrix back to boolean and return it
+    return (closure > 0.5)[:adjacency_matrix.shape[0], :adjacency_matrix.shape[1]]
+
+@torch.jit.script
+def compute_transitive_closure(adjacency_matrix : torch.Tensor) -> torch.Tensor:
     if len(adjacency_matrix.shape) != 2 or adjacency_matrix.shape[0] != adjacency_matrix.shape[1]:
         raise ValueError(f"Matrix must be of shape (n, n), not {adjacency_matrix.shape}")
     # If the matrix is a 0x0, 1x1 or 2x2 matrix, the transitive closure is the matrix itself, since there are no transitive relations
     if len(adjacency_matrix) <= 2:
-        return adjacency_matrix
-    # Convert the adjacency matrix to float16, this is just done to ensure that the values don't overflow when squaring the matrix before clamping - if there existed a "or-matrix multiplication" for boolean matrices, this would not be necessary
-    closure = adjacency_matrix.to(torch.float16)
-    # Expand the adjacency matrix to the transitive closure matrix, by squaring the matrix and clamping the values to 1 - each step essentially corresponds to one step of parallel breadth-first search for all nodes
-    for _ in range(int(torch.log2(torch.tensor(closure.shape[0], dtype=torch.float16)).ceil())):
-        closure += torch.matmul(closure, closure).clamp(max=1)
-    # Convert the matrix back to boolean and return it
-    return closure > 0.5
+        return adjacency_matrix    
+    # There can be a quite significant difference in performance between the CPU and GPU implementation, however this function is not the bottleneck, so it might not be noticeable in practice
+    if adjacency_matrix.is_cuda and len(adjacency_matrix) > 32:
+        return compute_transitive_closure_cuda(adjacency_matrix)
+    else:
+        return compute_transitive_closure_cpu(adjacency_matrix)
 
 @torch.jit.script
 def extract_components(transitive_closure : torch.Tensor) -> Tuple[List[torch.Tensor], torch.Tensor]:
@@ -538,7 +579,7 @@ def extract_components(transitive_closure : torch.Tensor) -> Tuple[List[torch.Te
     return clusters, cluster_vec
 
 @torch.jit.script
-def cluster_iou_boxes(boxes : torch.Tensor, iou_threshold : float=0.5) -> Tuple[List[torch.Tensor], torch.Tensor]:
+def cluster_iou_boxes(boxes : torch.Tensor, iou_threshold : float=0.5, time : bool=False) -> Tuple[List[torch.Tensor], torch.Tensor]:
     """
     Computes the connected components of a set of boxes, where boxes are connected if their IoU is greater than the threshold.
 
@@ -550,9 +591,35 @@ def cluster_iou_boxes(boxes : torch.Tensor, iou_threshold : float=0.5) -> Tuple[
         List[torch.Tensor]: A list of tensors, where each tensor contains the indices of the objects in a cluster.
         torch.Tensor: A tensor of shape (n, ) containing the cluster index of each object.
     """
-    connectivity_matrix = iou_boxes(boxes) >= iou_threshold
-    transitive_closure = compute_transitive_closure(connectivity_matrix)
-    return extract_components(transitive_closure)
+    ## Due to the how torch.jit.script works, we have to record the timings even if we don't use them - so I have commented out the timing code for now
+    # if time:
+    #     stream = torch.cuda.current_stream(device=boxes.device)
+    #     start = torch.cuda.Event(enable_timing=True, blocking=False, interprocess=False)
+    #     end_adjacency = torch.cuda.Event(enable_timing=True, blocking=False, interprocess=False)
+    #     end_transitive = torch.cuda.Event(enable_timing=True, blocking=False, interprocess=False)
+    #     end_components = torch.cuda.Event(enable_timing=True, blocking=False, interprocess=False)
+    #     start.record(stream)
+    
+    adjacency_matrix = iou_boxes(boxes) >= iou_threshold
+    # if time:
+    #     end_adjacency.record(stream)
+    
+    transitive_closure = compute_transitive_closure(adjacency_matrix)
+    # if time:
+    #     end_transitive.record(stream)
+    
+    components = extract_components(transitive_closure)
+    # if time:
+    #     end_components.record(stream)
+    #     torch.cuda.synchronize(device=boxes.device)
+    #     total_time = start.elapsed_time(end_components)
+    #     print()
+    #     # F-strings are not compatible with torch.jit.script
+    #     print("Adjacency Matrix:", str(round(start.elapsed_time(end_adjacency) / total_time * 100, 2)) + "%")
+    #     print("Transitive Closure:", str(round(start.elapsed_time(end_transitive) / total_time * 100, 2)) + "%")
+    #     print("Components:", str(round(start.elapsed_time(end_components) / total_time * 100, 2)) + "%")
+
+    return components
 
 # @torch.jit.script
 def nms_masks(masks : torch.Tensor, scores : torch.Tensor, iou_threshold : float=0.5, return_indices : bool=False, group_first : bool=True, boxes : torch.Tensor=None) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
@@ -564,7 +631,8 @@ def nms_masks(masks : torch.Tensor, scores : torch.Tensor, iou_threshold : float
     else:
         if boxes is None:
             raise ValueError("'boxes' must be specified for nms_masks when 'group_first' is True")
-        groups, _ = cluster_iou_boxes(boxes=boxes, iou_threshold=iou_threshold / 2)
+        # We decrease the iou_threshold for the clustering, since there is no straight-forward relationship between the IoU of the boxes and the IoU of the polygons
+        groups, _ = cluster_iou_boxes(boxes=boxes, iou_threshold=iou_threshold / 2, time=False)
         _nms_ind = [torch.empty(0) for i in range(len(groups))]
         for i, group in enumerate(groups):
             if len(group) == 1:
@@ -594,7 +662,8 @@ def nms_polygons(polygons, scores, iou_threshold=0.5, return_indices=False, dtyp
     else:
         if boxes is None:
             raise ValueError("'boxes' must be specified for nms_masks when 'group_first' is True")
-        groups, _ = cluster_iou_boxes(boxes=boxes, iou_threshold=iou_threshold / 2)
+        # We decrease the iou_threshold for the clustering, since there is no straight-forward relationship between the IoU of the boxes and the IoU of the polygons
+        groups, _ = cluster_iou_boxes(boxes=boxes, iou_threshold=iou_threshold / 2, time=False) 
         nms_ind = [None for _ in range(len(groups))]
         for i, group in enumerate(groups):
             if len(group) == 1:
@@ -709,8 +778,8 @@ def detect_duplicate_boxes(boxes, scores, margin=9, return_indices=False):
         Returns:
             torch.Tensor: A tensor of shape (n, ) representing the **NEGATED** maximum difference between the sides of box1 and each box in boxs.
         """
-        return -(boxs - box1).abs().sum(dim=1)
-    return base_nms_(objects=boxes, iou_fun=negated_max_side_difference, scores=scores, iou_threshold=-margin, return_indices=return_indices, strict=False)
+        return -(boxs - box1).abs().max(dim=1).values
+    return base_nms_(boxes, negated_max_side_difference, scores, iou_threshold=-margin, return_indices=return_indices, strict=False)
 
 def cumsum(nums : list) -> list:
     """
