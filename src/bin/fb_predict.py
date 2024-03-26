@@ -4,6 +4,8 @@ import argparse
 import logging
 import os
 import glob
+
+from flat_bug.coco_utils import fb_to_coco
 from flat_bug.predictor import Predictor
 import torch
 import uuid
@@ -34,6 +36,7 @@ if __name__ == '__main__':
     args_parse.add_argument("--no-crops", action="store_true", help="Do not save the crops.")
     args_parse.add_argument("--no-overviews", action="store_true", help="Do not save the overviews.")
     args_parse.add_argument("-S", "--no-save", action="store_true", help="Do not save the results.")
+    args_parse.add_argument("-C", "--no-compiled-coco", action="store_true", help="Skip the production of a compiled COCO file (for all images).")
     args_parse.add_argument("--single-scale", action="store_true", help="Use single scale.")
     args_parse.add_argument("--verbose", action="store_true", help="Verbose mode.")
     
@@ -54,7 +57,7 @@ if __name__ == '__main__':
     pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype)
     pred.MIN_MAX_OBJ_SIZE = 16, 768 # Size is measured as the square root of the area
     pred.MAX_MASK_SIZE = 1024 # Loss of precision may occur if the mask is larger than this, but all shapes are possible. 
-    pred.SCORE_THRESHOLD = 0.5
+    pred.SCORE_THRESHOLD = 0.3
     pred.IOU_THRESHOLD = 0.15
     pred.MINIMUM_TILE_OVERLAP = 384
     pred.EDGE_CASE_MARGIN = 128 + 64
@@ -86,6 +89,7 @@ if __name__ == '__main__':
     if option_dict["max_images"] is not None:
         files = files[:option_dict["max_images"]]
     j = 1
+    all_json_results = []
     pbar = tqdm(enumerate(files), total=len(files), desc="Processing images", dynamic_ncols=True, unit="image")
     for i, f in pbar:
         if option_dict["verbose"]:
@@ -105,8 +109,23 @@ if __name__ == '__main__':
                     mask_crops = not option_dict["fast"],
                     identifier = "ChangeThisTEMPORARY", #str(uuid.uuid4()),
                 )
+                json_files = [f for f in  glob.glob(os.path.join(result_directory, "*.json"))]
+                assert len(json_files) == 1
+                all_json_results.append(json_files[0])
         except Exception as e:
             logging.error(f"Issue whilst processing {f}")
             #fixme, what is going on with /home/quentin/todo/toup/20221008_16-01-04-226084_raw_jpg.rf.0b8d397da3c47408694eeaab2cde06e5.jpg?
             logging.error(e)
             raise e
+    if not option_dict["no_compiled_coco"]:
+        import json
+
+        compiled_coco = os.path.join(option_dict["results_dir"], "coco_instances.json")
+        pred_coco = {}
+        
+        flat_bug_predictions = [json.load(open(p)) for p in all_json_results]
+        for d in flat_bug_predictions:
+            fb_to_coco(d, pred_coco)
+        with open(compiled_coco,"w") as f:
+            json.dump(pred_coco, f)
+
