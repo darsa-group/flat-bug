@@ -510,7 +510,7 @@ def compute_transitive_closure_cuda(adjacency_matrix : torch.Tensor) -> torch.Te
     """
     Computes the transitive closure of a boolean matrix.
     """
-    # torch._int_mm only supports matrices larger than 
+    # torch._int_mm only supports matrices such that the output is larger than 32x32 and a multiple of 8
     if len(adjacency_matrix) < 32:
         padding = 32 - len(adjacency_matrix)
     elif len(adjacency_matrix) % 8 != 0:

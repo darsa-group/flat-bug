@@ -119,6 +119,7 @@ if __name__ == '__main__':
         if option_dict["nmax"] != -1:
             assert option_dict["nmax"] > 0, ValueError(f"'--nmax'/'-n' must be positive not {option_dict['nmax']}") # It is not allowed to set nmax to any values less than 1, except -1 (which means all)
             path_iterator.remote_paths = path_iterator.remote_paths[:option_dict["nmax"]]
+            shuffle(path_iterator.remote_paths)
 
         dataset = RemotePathDataset(path_iterator, prefetch=16, device=device, dtype=dtype, return_local_path=True, gbif=False)
     
