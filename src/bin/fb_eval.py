@@ -35,9 +35,9 @@ if __name__ == "__main__":
     else:
         files = sorted(glob(args.predictions, recursive=True))
         flat_bug_predictions = [json.load(open(p)) for p in files]
-        files = sorted(glob(args.predictions, recursive=True))
         pred_coco = {}
-        [fb_to_coco(d, pred_coco) for d in flat_bug_predictions]
+        for d in flat_bug_predictions:
+            fb_to_coco(d, pred_coco)
 
     if not os.path.exists(args.ground_truth):
         raise ValueError(f"Ground truth file not found: {args.ground_truth}")
