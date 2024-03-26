@@ -74,6 +74,7 @@ def merge_cocos(files, out_file, delete=False):
     if delete:
         for c in files:
             os.remove(c)
+
 def prepare_coco_file(source_file, image_list, out):
     with open(source_file) as f:
         coco = json.load(f)
@@ -81,7 +82,6 @@ def prepare_coco_file(source_file, image_list, out):
     image_ids_to_keep = []
 
     new_image = []
-
     for i in coco["images"]:
         if i["file_name"] in image_list:
             images_to_keep.append(i)
