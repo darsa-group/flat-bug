@@ -12,11 +12,108 @@
 #     im.save('results.jpg')  # save image
 import json
 import os
+from typing import List, Tuple, Dict, Union
 from math import floor, ceil
-import numpy as np
 
+import numpy as np
+import torch
 import cv2
 
+from torchvision import io as tio
+
+from ultralytics.engine.results import Results, Masks
+
+from flat_bug.predictor import Predictor
+from flat_bug.yolo_helpers import postprocess
+
+
+class AutoMaskRefiner:
+    def __init__(self, weights, device=torch.device("cpu"), dtype=torch.float32):
+        self.device, self.dtype = device, dtype
+        self.model = Predictor(weights, device=self.device, dtype=self.dtype)
+
+    def __call__(self, crops : List[torch.Tensor]) -> List[Results]:
+        with torch.no_grad():
+            return postprocess(
+                preds = self.model._model(crops),
+                imgs = crops,
+                max_det = 100,
+                min_confidence=0.1,
+                iou_threshold=0,
+                valid_size_range=self.model.MIN_MAX_OBJ_SIZE,
+                edge_margin=0,
+                nms=3,
+                group_first=self.model.EXPERIMENTAL_NMS_OPTIMIZATION # Doesn't have an effect at the moment, feature disabled for postprocessing
+            )
+    
+    def refine_contours(self, contours : list[torch.Tensor], image : Union[str, torch.Tensor]) -> list[torch.Tensor]:
+        # Convert contours (or boxes) to boxes
+        bboxes_bottom_left = torch.stack([c.min(dim=0).values for c in contours]).to(self.device).round().long()
+        bboxes_top_right = torch.stack([c.max(dim=0).values for c in contours]).to(self.device).round().long()
+        bboxes = torch.cat([bboxes_bottom_left, bboxes_top_right], dim=1)
+        if bboxes.device != self.device:
+            bboxes = bboxes.to(self.device)
+
+        # Crop the image
+        if isinstance(image, str):
+            image = tio.read_image(image, tio.ImageReadMode.RGB).to(device=self.device, dtype=self.dtype) / 255.
+        if image.device != self.device:
+            image = image.to(self.device)
+        if image.dtype != self.dtype:
+            image = image.to(self.dtype)
+
+        paddings = []
+        scalings = []
+        contours = []
+        
+        batch_start = list(range(0, len(bboxes), 16))
+        batch_end = batch_start[1:] + [len(bboxes)]
+
+        for start, end in zip(batch_start, batch_end):
+            crops = [image[:, bbox[1]:bbox[3], bbox[0]:bbox[2]] for bbox in bboxes[start:end]]
+
+            # Pad the crops to 1024x1024 if they are smaller, and resize them to 1024x1024 if they are larger
+            for i, crop in enumerate(crops):
+                h, w = crop.shape[-2:]
+                # Calculate the necessary padding
+                pad_h = max(0, 1024 - h)
+                pad_w = max(0, 1024 - w)
+                # Split the padding into top/bottom and left/right
+                pad_h_top = pad_h // 2
+                pad_h_bottom = pad_h - pad_h_top
+                pad_w_left = pad_w // 2
+                pad_w_right = pad_w - pad_w_left
+                # Add the padding to the list
+                paddings.append((pad_h_top, pad_h_bottom, pad_w_left, pad_w_right))
+                # If padding is necessary, add the padding
+                if pad_h > 0 or pad_w > 0:
+                    h, w = h + pad_h, w + pad_w
+                    crops[i] = torch.nn.functional.pad(crop, (pad_w_left, pad_w_right, pad_h_top, pad_h_bottom), mode="constant", value=0)
+                # Calculate the necessary scaling
+                scale_h, scale_w = 1024 / h, 1024 / w
+                # Add the scaling to the list
+                scalings.append((scale_h, scale_w))
+                # If scaling is necessary, scale the crop
+                if scale_h != 1 or scale_w != 1:
+                    crops[i] = torch.nn.functional.interpolate(crop.unsqueeze(0), size=(1024, 1024), mode="bilinear", align_corners=False).squeeze(0)
+
+            # Run the crops through the model
+            contours.extend([result.masks.xy for result in self(torch.stack(crops))]) # Mutably extend the results list with the results of the model on each batch of crops
+
+        print(paddings)
+
+        # Undo the padding and scaling
+        for i, (contour, padding, scaling) in enumerate(zip(contours, paddings, scalings)):
+            if not contour:
+                continue
+            contour = torch.tensor(contour[0], device=self.device, dtype=self.dtype)
+            # Undo the scaling
+            scale_factor = torch.tensor(scaling).to(contour.device, dtype=contour.dtype)
+            # Undo the padding
+            padding_offset = -torch.tensor([padding[2], padding[0]]).to(contour.device, dtype=contour.dtype)
+            contours[i] = ((contour + padding_offset) / scale_factor).round().long() + bboxes_bottom_left[i, :2]
+
+        return contours
 
 class BaseMaskRefiner(object):
     _min_bbox_size = 40  # below this size, we keep original values
@@ -214,13 +311,15 @@ class YoloMaskRefiner(BaseMaskRefiner):
         print("Refined")
         return contour
 
-mr = BaseMaskRefiner()
-# mr = YoloMaskRefiner("~/Desktop/fb_weights/fb_2024-03-07_large_best.pt")
-# mr = SAMMaskRefiner("../sam_vit_h_4b8939.pth")
-coco = mr.run("/home/quentin/Desktop/flat-bug-preannot/00_NHM-beetles/coco_instances.json",
-              "/home/quentin/Desktop/flat-bug-sorted-data/pre-pro/00_NHM-beetles",
-                "/home/quentin/Desktop/nhm_crops"
-              )
-# coco = mr.run("/home/quentin/Desktop/flat-bug-preannot/blair2020/coco_instances.json", "/home/quentin/Desktop/flat-bug-sorted-data/pre-pro/blair2020")
-with open("/tmp/abram_refined.json", 'w') as f:
-    json.dump(coco, f)
+if __name__ == "__main__":    
+
+    mr = BaseMaskRefiner()
+    # mr = YoloMaskRefiner("~/Desktop/fb_weights/fb_2024-03-07_large_best.pt")
+    # mr = SAMMaskRefiner("../sam_vit_h_4b8939.pth")
+    coco = mr.run("/home/quentin/Desktop/flat-bug-preannot/00_NHM-beetles/coco_instances.json",
+                "/home/quentin/Desktop/flat-bug-sorted-data/pre-pro/00_NHM-beetles",
+                    "/home/quentin/Desktop/nhm_crops"
+                )
+    # coco = mr.run("/home/quentin/Desktop/flat-bug-preannot/blair2020/coco_instances.json", "/home/quentin/Desktop/flat-bug-sorted-data/pre-pro/blair2020")
+    with open("/tmp/abram_refined.json", 'w') as f:
+        json.dump(coco, f)

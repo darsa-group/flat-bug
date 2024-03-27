@@ -809,7 +809,7 @@ def postprocess(preds, imgs, max_det=300, min_confidence=0, iou_threshold=0.1, n
         iou_threshold (float, optional): The IoU threshold for non-maximum suppression. Defaults to 0.1.
         nms (int, optional): The type of non-maximum suppression to use. Defaults to 0. 0 is no NMS, 1 is standard NMS, 2 is fancy NMS and 3 is mask NMS.
         edge_margin (int, optional): The minimum gap between the edge of the image and the bounding box in pixels for a prediction to be considered valid. Defaults to None (no edge margin).
-        group_first (bool, optional): A flag to indicate whether to group the masks using the boxes before performing NMS. Only relevant when nms=3. Defaults to True.
+        group_first (bool, optional): **OBS: Disabled due to performance issues.** A flag to indicate whether to group the masks using the boxes before performing NMS. Only relevant when nms=3. Defaults to True.
 
     Returns:
         list: A list of postprocessed predictions.

@@ -1097,8 +1097,9 @@ class Predictor(object):
             raise TypeError(f"Unknown type for image: {type(image)}, expected str or torch.Tensor")
 
         c, h, w = im.shape
-        transform_list = [transforms.Normalize(0,
-                                               255)]  # add transforms.toDType(self._dtype) here? (probably slower than forcing the user to precast the image)
+        transform_list = [
+            transforms.Normalize(0, 255)
+            ] # add transforms.toDType(self._dtype) here? (probably slower than forcing the user to precast the image)
 
         if scale_before != 1:
             w, h = int(w * scale_before), int(h * scale_before)
