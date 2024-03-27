@@ -37,19 +37,19 @@ class AutoMaskRefiner:
             return postprocess(
                 preds = self.model._model(crops),
                 imgs = crops,
-                max_det = 100,
+                max_det = 300,
                 min_confidence=0.1,
-                iou_threshold=0,
+                iou_threshold=0.5,
                 valid_size_range=self.model.MIN_MAX_OBJ_SIZE,
                 edge_margin=0,
                 nms=3,
                 group_first=self.model.EXPERIMENTAL_NMS_OPTIMIZATION # Doesn't have an effect at the moment, feature disabled for postprocessing
             )
     
-    def refine_contours(self, contours : list[torch.Tensor], image : Union[str, torch.Tensor]) -> list[torch.Tensor]:
+    def refine_contours(self, inputs : list[torch.Tensor], image : Union[str, torch.Tensor]) -> list[torch.Tensor]:
         # Convert contours (or boxes) to boxes
-        bboxes_bottom_left = torch.stack([c.min(dim=0).values for c in contours]).to(self.device).round().long()
-        bboxes_top_right = torch.stack([c.max(dim=0).values for c in contours]).to(self.device).round().long()
+        bboxes_bottom_left = torch.stack([c.min(dim=0).values for c in inputs]).to(self.device).round().long()
+        bboxes_top_right = torch.stack([c.max(dim=0).values for c in inputs]).to(self.device).round().long()
         bboxes = torch.cat([bboxes_bottom_left, bboxes_top_right], dim=1)
         if bboxes.device != self.device:
             bboxes = bboxes.to(self.device)
@@ -100,13 +100,20 @@ class AutoMaskRefiner:
             # Run the crops through the model
             contours.extend([result.masks.xy for result in self(torch.stack(crops))]) # Mutably extend the results list with the results of the model on each batch of crops
 
-        print(paddings)
-
         # Undo the padding and scaling
         for i, (contour, padding, scaling) in enumerate(zip(contours, paddings, scalings)):
             if not contour:
+                # When no contour is found, return the original box
+                this_box = inputs[i].to(self.device).round().long()
+                # But the contour need to be extend to include the top left and bottom right corners
+                xmin, ymin, xmax, ymax = this_box[0, 0], this_box[0, 1], this_box[1, 0], this_box[1, 1]
+                contours[i] = torch.tensor([[xmin, ymin], [xmin, ymax], [xmax, ymax], [xmax, ymin], [xmin, ymin]], device=self.device, dtype=self.dtype)
                 continue
-            contour = torch.tensor(contour[0], device=self.device, dtype=self.dtype)
+            contour = [torch.tensor(c, device=self.device, dtype=self.dtype) for c in contour]
+            # Find the longest contour - heuristic: the longest contour within a bounding box is the most likely to be the correct one
+            lengths = [torch.linalg.norm(c[1:] - c[:-1], ord=2, dim=1).sum() for c in contour]
+            max_length = torch.argmax(torch.tensor(lengths))
+            contour = contour[max_length]
             # Undo the scaling
             scale_factor = torch.tensor(scaling).to(contour.device, dtype=contour.dtype)
             # Undo the padding
