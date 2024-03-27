@@ -339,7 +339,7 @@ class TensorPredictions:
                         value[i] = np.transpose(value[i], (1, 0))
                     else:
                         raise RuntimeError(f"Unknown shape `{value[i].shape}` for `contours[{i}]` - should be (N, 2)")
-                value[i] = scale_contour(value[i], np.array([(image_h - 1) / (self.mask_height - 1), (image_w - 1) / (self.mask_width - 1)]), True)
+                # value[i] = scale_contour(value[i], np.array([(image_h - 1) / (self.mask_height - 1), (image_w - 1) / (self.mask_width - 1)]), True)
                 value[i] = torch.tensor(value[i], device=self.device, dtype=torch.long)
             self.polygons = value
             self.masks = [torch.empty((0, 0), device=self.device, dtype=self.dtype) for _ in range(len(value))]  # Initialize empty masks
@@ -720,13 +720,13 @@ The JSON can be deserialized into a `TensorPredictions` object using `TensorPred
                 dtype = torch.float32
 
             empty_image = torch.zeros((3, json_data["image_height"], json_data["image_width"]), device=device, dtype=dtype) + 255
-            new_tp = TensorPredictions(image=empty_image, device=device, dtype=dtype)
-            setattr(new_tp, "PREFER_POLYGONS", True) # Since we only store contours in the .json file, we prefer polygons on loading
+            self.__init__(image=empty_image, device=device, dtype=dtype)
+            setattr(self, "PREFER_POLYGONS", True) # Since we only store contours in the .json file, we prefer polygons on loading
 
             # Load constants
             for k, v in json_data.items():
                 if k in self.CONSTANTS:
-                    setattr(new_tp, k, v)
+                    setattr(self, k, v)
 
             # Load the data
             for k, v in json_data.items():
@@ -741,16 +741,15 @@ The JSON can be deserialized into a `TensorPredictions` object using `TensorPred
                     pass
                 # Bounding boxes are easy (as usual)
                 elif k == "boxes":
-                    v = torch.tensor(v, device=new_tp.device, dtype=new_tp.dtype)
+                    v = torch.tensor(v, device=self.device, dtype=self.dtype)
                 # While masks are a bit more complicated
                 # Confidences and classes are 1-d tensors (arrays)
                 elif k in ["confs", "classes"]:
-                    v = torch.tensor(v, device=new_tp.device, dtype=new_tp.dtype)
+                    v = torch.tensor(v, device=self.device, dtype=self.dtype)
                 else:
                     raise RuntimeError(f"Unknown key in json file: {k}")
-                setattr(new_tp, k, v)
+                setattr(self, k, v)
 
-            self = new_tp
             return self
         else:
             raise RuntimeError(f"Unknown file-extension: {ext} for path: {path}")
