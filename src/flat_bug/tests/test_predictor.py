@@ -15,7 +15,7 @@ class TestTensorPredictions(unittest.TestCase):
     def test_load(self):
         tp = TensorPredictions()
         tp.load(SERIALISED_TENSOR_PREDS)
-        self.assertEqual(len(tp), N_PREDICTIONS)
+        self.assertEqual(len(tp), N_PREDICTIONS, msg=f"Number of predictions ({len(tp)}) does not match the expected number of predictions ({N_PREDICTIONS})")
 
     def test_save(self):
         tp = TensorPredictions()
@@ -23,14 +23,14 @@ class TestTensorPredictions(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_directory:
             save_dir = tp.save(tmp_directory, mask_crops=True)
             self.assertTrue(os.path.exists(os.path.join(save_dir, "crops")))
-            self.assertEqual(len(glob(os.path.join(save_dir, "crops", "*"))), N_PREDICTIONS)
+            n_crops = len(glob(os.path.join(save_dir, "crops", "*")))
+            self.assertEqual(n_crops, N_PREDICTIONS, msg=f"Number of crops ({n_crops}) saved does not match the expected number of predictions ({N_PREDICTIONS})")
             centroid_initial = [i.float().mean(dim=0).numpy() for i in tp.contours]
             centroid_reloaded = [i.float().mean(dim=0).numpy() for i in TensorPredictions().load(glob(os.path.join(save_dir, "metadata*.json"))[0]).contours]
             centroid_initial = np.stack(centroid_initial)
             centroid_reloaded = np.stack(centroid_reloaded)
             abs_diff = np.abs(centroid_initial - centroid_reloaded).max()
-            print(f"Reserialization centroid difference: {abs_diff}")
-            self.assertTrue(abs_diff < 0.01)
+            self.assertTrue(abs_diff < 0.01, msg=f"Centroid difference between initial and reloaded contours ({abs_diff}) is too large")
 
 if __name__ == '__main__':
     unittest.main()
