@@ -339,7 +339,7 @@ class TensorPredictions:
                         value[i] = np.transpose(value[i], (1, 0))
                     else:
                         raise RuntimeError(f"Unknown shape `{value[i].shape}` for `contours[{i}]` - should be (N, 2)")
-                # value[i] = scale_contour(value[i], np.array([(image_h - 1) / (self.mask_height - 1), (image_w - 1) / (self.mask_width - 1)]), True)
+                value[i] = scale_contour(value[i], np.array([(image_h - 1) / (self.mask_height - 1), (image_w - 1) / (self.mask_width - 1)]), True)
                 value[i] = torch.tensor(value[i], device=self.device, dtype=torch.long)
             self.polygons = value
             self.masks = [torch.empty((0, 0), device=self.device, dtype=self.dtype) for _ in range(len(value))]  # Initialize empty masks
