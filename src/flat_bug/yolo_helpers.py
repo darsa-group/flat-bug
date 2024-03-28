@@ -654,8 +654,6 @@ def nms_polygons(polygons, scores, iou_threshold=0.5, return_indices=False, dtyp
     """
     Efficiently perform non-maximum suppression on a set of polygons.
     """
-    if dtype is None:
-        raise ValueError("'dtype' must be specified for nms_masks")
     device = polygons[0].device
     if not group_first or len(polygons) < 10:
         return nms_polygons_(polys=polygons, scores=scores, iou_threshold=iou_threshold)

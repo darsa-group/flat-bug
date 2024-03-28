@@ -12,6 +12,8 @@
 #     im.save('results.jpg')  # save image
 import json
 import os
+import datetime
+from tqdm import tqdm
 from typing import List, Tuple, Dict, Union
 from math import floor, ceil
 
@@ -23,14 +25,20 @@ from torchvision import io as tio
 
 from ultralytics.engine.results import Results, Masks
 
+import flat_bug
 from flat_bug.predictor import Predictor
-from flat_bug.yolo_helpers import postprocess
+from flat_bug.yolo_helpers import postprocess, nms_polygons
 
 
 class AutoMaskRefiner:
     def __init__(self, weights, device=torch.device("cpu"), dtype=torch.float32):
         self.device, self.dtype = device, dtype
         self.model = Predictor(weights, device=self.device, dtype=self.dtype)
+        self.model.PREFER_POLYGONS = True
+        self.model.EXPERIMENTAL_NMS_OPTIMIZATION = True
+        self.model.SCORE_THRESHOLD = 0.3
+        self.model.MINIMUM_TILE_OVERLAP = 384
+        self.model.EDGE_CASE_MARGIN = 128 + 64
 
     def __call__(self, crops : List[torch.Tensor]) -> List[Results]:
         with torch.no_grad():
@@ -46,7 +54,7 @@ class AutoMaskRefiner:
                 group_first=self.model.EXPERIMENTAL_NMS_OPTIMIZATION # Doesn't have an effect at the moment, feature disabled for postprocessing
             )
     
-    def refine_contours(self, inputs : list[torch.Tensor], image : Union[str, torch.Tensor]) -> list[torch.Tensor]:
+    def refine_contours(self, inputs : list[torch.Tensor], path : str, progress : bool=False) -> list[torch.Tensor]:
         # Convert contours (or boxes) to boxes
         bboxes_bottom_left = torch.stack([c.min(dim=0).values for c in inputs]).to(self.device).round().long()
         bboxes_top_right = torch.stack([c.max(dim=0).values for c in inputs]).to(self.device).round().long()
@@ -55,21 +63,26 @@ class AutoMaskRefiner:
             bboxes = bboxes.to(self.device)
 
         # Crop the image
-        if isinstance(image, str):
-            image = tio.read_image(image, tio.ImageReadMode.RGB).to(device=self.device, dtype=self.dtype) / 255.
+        image = tio.read_image(path, tio.ImageReadMode.RGB).to(device=self.device, dtype=self.dtype) / 255.
         if image.device != self.device:
             image = image.to(self.device)
         if image.dtype != self.dtype:
             image = image.to(self.dtype)
 
+        tile_pbar = tqdm(total=1, desc="Tile predictions", unit="image", disable=not progress, dynamic_ncols=True, leave=False)
+        tile_results  = self.model.pyramid_predictions(image * 255., path, scale_before=3/4, scale_increment=1/2, single_scale=False)
+        tile_pbar.update(1)
+        tile_polygons = tile_results.polygons
+        tile_bboxes   = tile_results.boxes
+
         paddings = []
         scalings = []
-        contours = []
+        results  = []
         
         batch_start = list(range(0, len(bboxes), 16))
         batch_end = batch_start[1:] + [len(bboxes)]
 
-        for start, end in zip(batch_start, batch_end):
+        for start, end in tqdm(zip(batch_start, batch_end), total=len(batch_start), desc="Refining a priori boxes", unit="batch", disable=not progress, dynamic_ncols=True, leave=False):
             crops = [image[:, bbox[1]:bbox[3], bbox[0]:bbox[2]] for bbox in bboxes[start:end]]
 
             # Pad the crops to 1024x1024 if they are smaller, and resize them to 1024x1024 if they are larger
@@ -98,7 +111,9 @@ class AutoMaskRefiner:
                     crops[i] = torch.nn.functional.interpolate(crop.unsqueeze(0), size=(1024, 1024), mode="bilinear", align_corners=False).squeeze(0)
 
             # Run the crops through the model
-            contours.extend([result.masks.xy for result in self(torch.stack(crops))]) # Mutably extend the results list with the results of the model on each batch of crops
+            results.extend([result for result in self(torch.stack(crops))])
+        
+        contours = [result.masks.xy for result in results]
 
         # Undo the padding and scaling
         for i, (contour, padding, scaling) in enumerate(zip(contours, paddings, scalings)):
@@ -118,9 +133,80 @@ class AutoMaskRefiner:
             scale_factor = torch.tensor(scaling).to(contour.device, dtype=contour.dtype)
             # Undo the padding
             padding_offset = -torch.tensor([padding[2], padding[0]]).to(contour.device, dtype=contour.dtype)
-            contours[i] = ((contour + padding_offset) / scale_factor).round().long() + bboxes_bottom_left[i, :2]
+            contours[i] = ((contour + padding_offset) / scale_factor).round().long() + bboxes_bottom_left[i, :2] + 1
 
-        return contours
+        origin = torch.cat([torch.zeros(len(bboxes), device=self.device, dtype=torch.long), torch.ones(len(tile_bboxes), device=self.device, dtype=torch.long)], dim=0)
+        bboxes = torch.cat([bboxes, tile_bboxes], dim=0)
+        contours = contours + tile_polygons
+
+        keep = nms_polygons(contours, 1 - origin, iou_threshold=0.15, boxes=bboxes, group_first=True, return_indices=True).sort().values
+
+        return bboxes[keep], [c for i, c in enumerate(contours) if i in keep], origin[keep]
+    
+    def to_coco(self, boxes : torch.Tensor, contours : List[torch.Tensor], origin : Union[List[Union[str, int]], torch.Tensor], image : str, coco : Union[dict, None] = None) -> dict:
+        if coco is None:
+            coco = {
+                "info": {
+                    "description": "Flat-Bug mask refinements",
+                    "version" : flat_bug.__version__ if "__version__" in flat_bug.__dict__ else "Unknown",
+                    "year": datetime.datetime.now().year,
+                    "contributor": "Flat-Bug",
+                    "url": "To be announced!",
+                    "date_created": datetime.datetime.now().isoformat()
+                },
+                "licenses": [],
+                "images": [],
+                "annotations": [],
+                "categories": [
+                    {
+                        "id" : 1,
+                        "name": "insect",
+                        "supercategory": " "
+                    }
+                    # {
+                    #     "id": 1,
+                    #     "name": "refined mask",
+                    #     "supercategory": " "
+                    # },
+                    #                     {
+                    #     "id": 2,
+                    #     "name": "new detection",
+                    #     "supercategory": " "
+                    # }
+                ]
+            }
+        occupied_image_ids = [im["id"] for im in coco["images"]]
+        image_id = max(occupied_image_ids) + 1 if occupied_image_ids else 1
+        image_width, image_height = tio.read_image(image, tio.ImageReadMode.RGB).shape[-2:]
+        image = {
+                "id": image_id,
+                "width": image_width,
+                "height": image_height,
+                "file_name": os.path.basename(image), 
+                "license": -1,
+                "flickr_url": " ",
+                "coco_url": " ",
+                "date_captured": " ",
+            }
+        coco["images"].append(image)
+
+        occupied_annotation_ids = [ann["id"] for ann in coco["annotations"]]
+        annotation_id_offset = max(occupied_annotation_ids) + 1 if occupied_annotation_ids else 1
+        for i, (box, contour, orig) in enumerate(zip(boxes, contours, origin)):
+            # cat_id = int(orig.item())
+            annotation = {
+                "id": annotation_id_offset + i,
+                "image_id": image_id,
+                "category_id": 1, # cat_id + 1,
+                "segmentation": [contour.round().flatten().tolist()],
+                "area": 0.0,
+                "bbox": box.tolist(),
+                "iscrowd": 0,
+                "conf": 1.0
+            }
+            coco["annotations"].append(annotation)
+
+        return coco
 
 class BaseMaskRefiner(object):
     _min_bbox_size = 40  # below this size, we keep original values
