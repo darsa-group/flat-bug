@@ -291,6 +291,8 @@ def scale_contour(contour, scale, expand_by_one=False):
         return contour
     if len(contour) == 1:
         return np.round(contour * scale).astype(np.int32)
+    if np.all(scale == 1):
+        return contour
     contour = contour * scale
     centroid = contour.mean(axis=0)
     n_interp = max(1, int(np.ceil(scale.max())) * 2)
