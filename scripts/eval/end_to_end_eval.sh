@@ -51,7 +51,7 @@ echo "commit: ${COMMIT_HASH}" >> ${METADATA_FILE}
  #todo, copy inference time to results?
 
 # Run the model on the validation set
-fb_predict.py -i "${DIR}/reference" -w "${WEIGHTS}" -o "$DIR/${ID}/preds" -p '**.jpg' -f --no-crops --gpu cuda:0 --no-crops --verbose &&
+fb_predict.py -i "${DIR}/reference" -w "${WEIGHTS}" -o "$DIR/${ID}/preds" -p '**.jpg' --no-crops --gpu cuda:0 --no-crops --verbose &&
 # Compare the predictions with the ground truth
 fb_eval.py -p "${DIR}/${ID}/preds/coco_instances.json" -g "${DIR}/reference/instances_default.json" -I "${DIR}/reference" -P  -c -o "${DIR}/${ID}/eval" &&
 # Produce the evaluation metrics and figures

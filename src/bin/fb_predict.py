@@ -40,7 +40,6 @@ if __name__ == '__main__':
     args_parse.add_argument("--single-scale", action="store_true", help="Use single scale.")
     args_parse.add_argument("--verbose", action="store_true", help="Verbose mode.")
     
-
     args = args_parse.parse_args()
     option_dict = vars(args)
 

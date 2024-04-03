@@ -24,7 +24,7 @@ cd /home/altair/flat-bug
 
 # Run the code
 # python src/bin/fb_predict.py -i dev/reference/val -w model_snapshots/fb_2024-02-09_best.pt -o dev/output --no-crops -p **.jpg -f --gpu cuda:0 --verbose
-bash scripts/eval/end_to_end_eval.sh -w model_snapshots/fb_2024-02-19_best.pt -d dev
+bash scripts/eval/end_to_end_eval.sh -w model_snapshots/fb_2024-03-18_large_best.pt -d dev
 
 ## End of script ##
 echo "Job finished"
