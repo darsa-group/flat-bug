@@ -4,6 +4,9 @@ import cv2
 import numpy as np
 from pathlib import Path
 import glob
+import re
+
+from typing import List, Dict, Optional
 
 from ultralytics.data import YOLODataset
 from ultralytics.data.augment import RandomFlip, RandomHSV, Compose, Format
@@ -12,11 +15,49 @@ from flat_bug.augmentations import MyCrop, RandomCrop, MyRandomPerspective, Rand
 HELP_URL = 'See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
 IMG_FORMATS = 'bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 'pfm'  # include image suffixes
 
+def get_datasets(files : List[str]) -> Dict[str, int]:
+    file_dataset = [re.match(r"[A-Za-z\-]+", os.path.basename(f)).group(0) for f in files]
+    datasets = list(set(file_dataset))
+    datasets = {d : 0 for d in datasets}
+    for fd in file_dataset:
+        datasets[fd] += 1
+    return datasets
+
 
 class MyYOLODataset(YOLODataset):
-    def __init__(self, max_instances, *args, **kwargs):
+    def __init__(self, max_instances, classes=None, *args, **kwargs):
         self._max_instances = max_instances
-        super().__init__(*args, **kwargs)
+        self._include_classes = classes # Only used so the class list is visible in the subset method
+        super().__init__(classes=classes, *args, **kwargs)
+
+    def subset(self, n : Optional[int]=None, pattern : Optional[str]=None):
+        """
+        Subsets the dataset to the first 'n' elements that match the pattern.
+
+        Args:
+            n (int, optional): The number of elements to keep. Defaults to None; keep all.
+            pattern (str, optional): A regex pattern to match the filenames. Defaults to None; match all.
+        """
+        # Compile the regex pattern
+        pattern = re.compile(pattern) if pattern else None
+        # Create a match function that returns True if the filename matches the pattern or the pattern is None
+        match_fn = (lambda x: pattern.search(x)) if pattern else (lambda x: True)
+        # Get the indices of the elements that match the pattern
+        indices = [i for i, f in enumerate(self.im_files) if match_fn(f)]
+        # If n is not None, keep only the first n elements
+        if n is not None:
+            indices = indices[:n]
+        ## Subset the dataset
+        # First the image paths
+        self.im_files = [f for i, f in enumerate(self.im_files) if i in indices]
+        # Then the cached images
+        self.ims = [im for i, im in enumerate(self.ims) if i in indices]
+        self.npy_files = [f for i, f in enumerate(self.npy_files) if i in indices]
+        # And update the labels
+        self.labels = self.get_labels()
+        # Remove classes not in the included classes
+        self.update_labels(self._include_classes)
+        return self
 
     def _debug_write_loaded_images(self, out, index):
         m = np.ascontiguousarray(out["masks"].detach().numpy().transpose(1, 2, 0)) * 255

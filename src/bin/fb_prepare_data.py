@@ -146,7 +146,7 @@ if __name__ == '__main__':
 
     with open(os.path.join(PREPARED_DATA_TARGET, "data.yaml"), "w") as f:
         yaml.dump(data_yaml, f)
-    datasets = []
+    datasets = [] # [d for d in os.listdir(COCO_DATA_ROOT) if os.path.isdir(os.path.join(COCO_DATA_ROOT, d))]
     for d in os.listdir(COCO_DATA_ROOT):
         source_dir = os.path.join(COCO_DATA_ROOT, d)
         if os.path.isdir(source_dir):
