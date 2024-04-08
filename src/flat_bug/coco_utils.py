@@ -209,14 +209,22 @@ def split_annotations(coco: Dict, strip_directories: bool = True) -> Dict[str, d
         Dict[Dict]: Dict of COCO datasets, split by image ID and keyed by image name.
     """
     img_id = np.array([i["image_id"] for i in coco["annotations"]])
-    ids = np.unique(img_id)
+    ids = np.unique(np.array([i["id"] for i in coco["images"]]))
     groups = [np.where(img_id == i)[0] for i in ids]
 
     if strip_directories:
         for i in range(len(coco["images"])):
             coco["images"][i]["file_name"] = os.path.basename(coco["images"][i]["file_name"])
 
-    return {coco["images"][id - 1]["file_name"]: [coco["annotations"][i] for i in g] for id, g in zip(ids, groups)}
+    result = {coco["images"][id - 1]["file_name"]: [coco["annotations"][i] for i in g] for id, g in zip(ids, groups)}
+    
+    # Ensure that all images are included in the result, even if they have no annotations/predictions
+    for i in range(len(coco["images"])):
+        image_name = coco["images"][i]["file_name"]
+        if image_name not in result:
+            result[image_name] = []
+    
+    return result
 
 
 def annotations_2_contours(annotations: Dict[str, dict]) -> Dict[str, List[np.array]]:
@@ -249,7 +257,6 @@ def contour_area(c: np.array) -> np.array:
     mask = np.zeros(max_xy[::-1], dtype=np.uint8)
     cv2.drawContours(mask, [c], -1, 1, thickness=cv2.FILLED)
     return np.sum(mask, dtype=np.int64)
-
 
 
 def annotations_to_numpy(annotations: List[Dict[str, Union[int, List[int]]]]) -> Tuple[np.array, np.array]:

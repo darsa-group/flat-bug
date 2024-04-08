@@ -38,10 +38,12 @@ class MyYOLODataset(YOLODataset):
             n (int, optional): The number of elements to keep. Defaults to None; keep all.
             pattern (str, optional): A regex pattern to match the filenames. Defaults to None; match all.
         """
+        if pattern is None and (n is None or n == -1):
+            return self
         # Compile the regex pattern
         pattern = re.compile(pattern) if pattern else None
         # Create a match function that returns True if the filename matches the pattern or the pattern is None
-        match_fn = (lambda x: pattern.search(x)) if pattern else (lambda x: True)
+        match_fn = (lambda x: pattern.search(os.path.basename(x))) if pattern else (lambda x: True)
         # Get the indices of the elements that match the pattern
         indices = [i for i, f in enumerate(self.im_files) if match_fn(f)]
         # If n is not None, keep only the first n elements

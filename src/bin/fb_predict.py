@@ -4,11 +4,11 @@ import argparse
 import logging
 import os
 import glob
+import re
 
 from flat_bug.coco_utils import fb_to_coco
 from flat_bug.predictor import Predictor
 import torch
-import uuid
 from tqdm import tqdm
 
 if __name__ == '__main__':
@@ -19,8 +19,8 @@ if __name__ == '__main__':
                                  "Each sub-dataset contains a single json file named 'instances_default.json' "
                                  "and the associated images"
                             )
-    args_parse.add_argument("-p", "--input-pattern", dest="input_pattern", default="**.jpg",
-                            help="The pattern to match the images. Default is '**.jpg'")
+    args_parse.add_argument("-p", "--input-pattern", dest="input_pattern", default=r"[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$",
+                            help=r"The pattern to match the images. Default is '[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$' i.e. jpg/jpeg/png case-insensitive.")
     args_parse.add_argument("-n", "--max-images", type=int, default=None, help="Maximum number of images to process. Default is None. Truncates in alphabetical order.")
     args_parse.add_argument("-o", "--output-dir", dest="results_dir",
                             help="The result directory")
@@ -84,7 +84,7 @@ if __name__ == '__main__':
         "categories": [categories]  # Your category
     }
 
-    files = sorted(glob.glob(os.path.join(option_dict["input_dir"], option_dict["input_pattern"])))
+    files = sorted([f for f in glob.glob(os.path.join(option_dict["input_dir"], "**")) if re.search(option_dict["input_pattern"], f)])
     if option_dict["max_images"] is not None:
         files = files[:option_dict["max_images"]]
     j = 1
