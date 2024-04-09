@@ -583,7 +583,7 @@ class TensorPredictions:
                 if self.PREFER_POLYGONS:
                     contour_offset = torch.tensor([x1, y1], device=self.device, dtype=torch.long)
                     scaled_mask = contours_to_masks(
-                        [contours[i] - contour_offset], 
+                        [contours[i].round().long() - contour_offset], 
                         height = y2 - y1, 
                         width = x2 - x1
                     )
