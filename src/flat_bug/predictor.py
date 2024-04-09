@@ -893,27 +893,31 @@ class Predictor(object):
     SCORE_THRESHOLD = 0.2
     IOU_THRESHOLD = 0.25
     MAX_MASK_SIZE = 2048
+    
     # Debugging/Development features
     TIME = False
     EXPERIMENTAL_NMS_OPTIMIZATION = True
-    PREFER_POLYGONS = False
-    # DEBUG = False
-
+    PREFER_POLYGONS = True
+    DEBUG = False
+    
     TILE_SIZE = 1024 # Fixed by the model architecture - do not change unless you know what you are doing
 
-    def __init__(self, model, cfg=None, device=torch.device("cpu"), dtype=torch.float32):
+    def __init__(self, model : Optional[str], cfg=None, device=torch.device("cpu"), dtype=torch.float32):
         if not cfg is None:
             raise NotImplementedError("cfg is not implemented yet")
 
         self._device = device
         self._dtype = dtype
 
-        self._base_yolo = YOLO(model)
-        self._base_yolo._load(model, "inference")
-        self._base_yolo.load(model)
-        # self._base_yolo.fuse() # Seems to just be slower actually...
-        self._model = self._base_yolo.model.to(device=device, dtype=dtype)
-        self._model.eval()
+        if model is not None:
+            self._base_yolo = YOLO(model)
+            self._base_yolo._load(model, "inference")
+            self._base_yolo.load(model)
+            # self._base_yolo.fuse() # Seems to just be slower actually...
+            self._model = self._base_yolo.model.to(device=device, dtype=dtype)
+            self._model.eval()
+        else:
+            self._model = None
 
         self._yolo_predictor = None
 
@@ -1019,6 +1023,9 @@ class Predictor(object):
                 else:
                     # Forward pass the model on the batch tiles
                     tps = self._model(batch)
+                    if self.DEBUG:
+                        last_num = max([int(f.split("_")[-1].split(".")[0]) for f in os.listdir() if f.startswith("tps_")], default=0)
+                        torch.save(tps, f"tps_{last_num+1}.pt")
                     if self.TIME:
                         # Record end of forward
                         end_forward_event.record()
