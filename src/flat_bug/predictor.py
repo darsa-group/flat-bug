@@ -20,7 +20,7 @@ import torchvision.transforms as transforms
 import base64, tempfile, shutil
 
 
-from typing import Union
+from typing import Union, Optional
 
 
 # Class for containing the results from a single _detect_instances call - This should probably not be its own class, but just a TensorPredictions object with a single element instead, but this would require altering the TensorPredictions._combine_predictions function to handle a single element differently or pass a flag or something
@@ -852,23 +852,26 @@ class Predictor(object):
     MAX_MASK_SIZE = 2048
     TIME = False
     EXPERIMENTAL_NMS_OPTIMIZATION = True
-    PREFER_POLYGONS = False
+    PREFER_POLYGONS = True
 
-    # DEBUG = False
+    DEBUG = False
 
-    def __init__(self, model, cfg=None, device=torch.device("cpu"), dtype=torch.float32):
+    def __init__(self, model : Optional[str], cfg=None, device=torch.device("cpu"), dtype=torch.float32):
         if not cfg is None:
             raise NotImplementedError("cfg is not implemented yet")
 
         self._device = device
         self._dtype = dtype
 
-        self._base_yolo = YOLO(model)
-        self._base_yolo._load(model, "inference")
-        self._base_yolo.load(model)
-        # self._base_yolo.fuse() # Seems to just be slower actually...
-        self._model = self._base_yolo.model.to(device=device, dtype=dtype)
-        self._model.eval()
+        if model is not None:
+            self._base_yolo = YOLO(model)
+            self._base_yolo._load(model, "inference")
+            self._base_yolo.load(model)
+            # self._base_yolo.fuse() # Seems to just be slower actually...
+            self._model = self._base_yolo.model.to(device=device, dtype=dtype)
+            self._model.eval()
+        else:
+            self._model = None
 
         self._yolo_predictor = None
 
@@ -971,6 +974,9 @@ class Predictor(object):
                     raise NotImplementedError("This code has not been tested in a long time, and is probably broken")
                 else:
                     tps = self._model(batch)
+                    if self.DEBUG:
+                        last_num = max([int(f.split("_")[-1].split(".")[0]) for f in os.listdir() if f.startswith("tps_")], default=0)
+                        torch.save(tps, f"tps_{last_num+1}.pt")
                     if self.TIME:
                         # Record end of forward
                         end_forward_event.record()
