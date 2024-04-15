@@ -64,7 +64,7 @@ fwrite(results, paste0(opts$output_directory, "/results.csv"))
 
 # print(as_tibble(dt))
 
-binomial_mean_sdl <- function(x, na.rm = TRUE, conf.int=0.95, ...) {
+binomial_mean_qci <- function(x, na.rm = TRUE, conf.int=0.95, ...) {
 	if (na.rm) x <- x[!is.na(x)]
 	n <- length(x)
 	m <- mean(x, na.rm = na.rm)
@@ -82,7 +82,7 @@ y_hist_limits = c(0, 1200)
 layers = function(y_name){list(
 	stat_summary_bin(fun = mean, geom="point", size=0.3, color="firebrick"),
 	stat_summary_bin(fun = mean, geom="line", linewidth=0.2, color="firebrick"),
-	stat_summary_bin(fun.data = binomial_mean_sdl, geom="ribbon", fill="firebrick", alpha=0.2),
+	stat_summary_bin(fun.data = binomial_mean_qci, geom="ribbon", fill="firebrick", alpha=0.2),
 	geom_smooth(method=mgcv::bam, method.args = list(family = "binomial", discrete=TRUE), formula = y ~ s(x, bs="cs"), linewidth=0.5, color="royalblue"),
 	geom_point(alpha=.1, shape='|'),
 	scale_x_log10(name = 'Insect area (px)',

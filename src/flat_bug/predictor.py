@@ -618,8 +618,10 @@ class TensorPredictions:
 
         # Check for file-extension on the outpath, it should have none - not really necessary anymore due to the check for directory above
         outpath, ext = os.path.splitext(outpath)
-        if ext != "":
+        if ext != "" and len(ext) < 5:
             print(f"WARNING: serializer outpath ({outpath}) should not have a file-extension for 'TensorPredictions.serialize'!")
+        else:
+            outpath = f"{outpath}{ext}"
 
         # Add the basename to the outpath
         pt_path = f'{outpath}.pt'

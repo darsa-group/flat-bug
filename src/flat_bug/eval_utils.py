@@ -20,7 +20,7 @@ def bbox_intersect(b1, b2s):
         np.array: Intersecting rectangles of shape (n, 4).
     """
     if len(b2s.shape) == 1:
-        b2s = b2s.copy().reshape(1, 4)
+        b2s = b2s.copy().reshape(-1, 4)
     ix_max = np.maximum(b1[:2], b2s[:, :2])
     ix_min = np.minimum(b1[2:], b2s[:, 2:])
     ix = np.zeros_like(b2s)
@@ -43,7 +43,7 @@ def bbox_intersect_area(b1, b2s):
         np.array: Area of the intersecting rectangles of shape (n,).
     """
     if len(b2s.shape) == 1:
-        b2s = b2s.copy().reshape(1, 4)
+        b2s = b2s.copy().reshape(-1, 4)
     ix_max = np.maximum(b1[:2], b2s[:, :2])
     ix_min = np.minimum(b1[2:], b2s[:, 2:])
     return np.prod((ix_min - ix_max).clip(0), axis=1)
@@ -180,12 +180,13 @@ def match_geoms(contours1: List[np.array], contours2: List[np.array], threshold:
     matches[:, 0] = np.arange(n, dtype=np.int32)
     matches[:, 1] = -1  # No match
     # Match the geometries in group 1 to the geometries in group 2
-    for i in np.argsort(iou.max(axis=1)):
-        j = np.argmax(iou[i])
-        if iou[i, j] > threshold:
-            matches[i, 1] = j.astype(np.int32)
-            # Set the intersection to 0 so it doesn't get matched again
-            iou[:, j] = 0
+    if n > 0 and m > 0:
+        for i in np.argsort(iou.max(axis=1)):
+            j = np.argmax(iou[i])
+            if iou[i, j] > threshold:
+                matches[i, 1] = j.astype(np.int32)
+                # Set the intersection to 0 so it doesn't get matched again
+                iou[:, j] = 0
     # Find the remaining unmatched geometries in group 2
     unmatched = np.where(iou.sum(axis=0) > 0)[0]
     matches_2 = np.zeros((len(unmatched), 2), dtype=np.int32)
@@ -214,7 +215,7 @@ def plot_heatmap(mat: np.array, axis_labels: Union[List[str], None] = None, brea
     """
     if dimensions is None:
         dimensions = tuple([m * 10 for m in mat.shape[::-1]])
-        min_dim = min(dimensions)
+        min_dim = max(min(dimensions), 1)
         if min_dim < 1000:
             scale_dims = 1000 / min_dim
             dimensions = tuple([int(d * scale_dims) for d in dimensions])
@@ -627,9 +628,12 @@ def compare_groups(group1: list, group2: list, group_labels: Union[str, None] = 
     unmatched_2 = np.where(~matched_2)[0]
 
     # Get the matched IoU
-    matched_iou = iou[*matches[:len_1].T]
-    # Set the IoU of unmatched geometries to 0
-    matched_iou[unmatched_1] = 0
+    if all(iou.shape):
+        matched_iou = iou[*matches[:len_1].T]
+        # Set the IoU of unmatched geometries to 0
+        matched_iou[unmatched_1] = 0
+    else:
+        matched_iou = np.zeros(len(matches))
     matched_iou = np.concatenate([matched_iou, np.zeros(len(unmatched_2))])
 
     # Get the confidences
@@ -642,15 +646,17 @@ def compare_groups(group1: list, group2: list, group_labels: Union[str, None] = 
             conf2[i] = group2[m[1]]["conf"]
 
     # Get the matched bounding boxes
-    boxes1 = b1[matches[:, 0]]
-    boxes2 = b2[matches[:, 1]]
+    boxes1 = b1[matches[:, 0]] if all(b1.shape) else -np.ones((len(matches), 4), dtype=np.int32)
+    boxes2 = b2[matches[:, 1]] if all(b2.shape) else -np.ones((len(matches), 4), dtype=np.int32)
 
     # Get the matched areas
-    careas1 = a1[matches[:, 0]]
-    careas2 = a2[matches[:, 1]]
+    careas1 = a1[matches[:, 0]] if all(a1.shape) else -np.ones(len(matches), dtype=np.int32)
+    careas2 = a2[matches[:, 1]] if all(a2.shape) else -np.ones(len(matches), dtype=np.int32)
     # Set the areas of unmatched geometries to 0
-    careas1[unmatched_2] = 0
-    careas2[unmatched_1] = 0
+    if all(careas1.shape) and len(unmatched_2) > 0:
+        careas1[unmatched_2] = 0
+    if all(careas2.shape) and len(unmatched_1) > 0:
+        careas2[unmatched_1] = 0
 
     # Convert the bounding boxes to lists
     boxes1 = boxes1.tolist()

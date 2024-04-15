@@ -20,12 +20,17 @@ if __name__ == '__main__':
         "device": "cuda",
         "patience": 500,
         "optimizer": 'auto',
-        "save_period": 100,
+        "save_period": 5,
         # "optimizer": 'SGD',
         # "lr0": 0.01,
         # "lrf": 0.005,
         "workers": 4,
         "fb_max_instances": 150,
+        "fb_max_images": -1,
+        "fb_custom_eval": False,
+        "fb_custom_eval_num_images": -1,
+        "fb_exclude_datasets" : [],
+        "cache": "ram"
     }
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
@@ -69,13 +74,13 @@ if __name__ == '__main__':
     todel = []
     for k, v in overrides.items():
         if k.startswith("fb_"):
-            custom_fb_args[k] = v
+            custom_fb_args[k.removeprefix("fb_")] = v
             todel.append(k)
 
     for d in todel:
         del overrides[d]
     print(overrides)
-    t = MySegmentationTrainer(overrides=overrides, max_instances=custom_fb_args["fb_max_instances"])
+    t = MySegmentationTrainer(overrides=overrides, **custom_fb_args)
 
     if not option_dict["resume"]:
         t.start_epoch = 0
