@@ -56,9 +56,12 @@ class AutoMaskRefiner:
     
     def refine_contours(self, inputs : list[torch.Tensor], path : str, progress : bool=False) -> list[torch.Tensor]:
         # Convert contours (or boxes) to boxes
-        bboxes_bottom_left = torch.stack([c.min(dim=0).values for c in inputs]).to(self.device).round().long()
-        bboxes_top_right = torch.stack([c.max(dim=0).values for c in inputs]).to(self.device).round().long()
-        bboxes = torch.cat([bboxes_bottom_left, bboxes_top_right], dim=1)
+        if len(inputs) > 0:
+            bboxes_bottom_left = torch.stack([c.min(dim=0).values for c in inputs]).to(self.device).round().long()
+            bboxes_top_right = torch.stack([c.max(dim=0).values for c in inputs]).to(self.device).round().long()
+            bboxes = torch.cat([bboxes_bottom_left, bboxes_top_right], dim=1)
+        else:
+            bboxes = torch.empty((0, 4), device=self.device, dtype=self.dtype)
         if bboxes.device != self.device:
             bboxes = bboxes.to(self.device)
 
@@ -138,6 +141,8 @@ class AutoMaskRefiner:
         origin = torch.cat([torch.zeros(len(bboxes), device=self.device, dtype=torch.long), torch.ones(len(tile_bboxes), device=self.device, dtype=torch.long)], dim=0)
         bboxes = torch.cat([bboxes, tile_bboxes], dim=0)
         contours = contours + tile_polygons
+        if not contours:
+            return bboxes, contours, origin
 
         keep = nms_polygons(contours, 1 - origin, iou_threshold=0.15, boxes=bboxes, group_first=True, return_indices=True).sort().values
 
