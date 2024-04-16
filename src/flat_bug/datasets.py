@@ -16,7 +16,7 @@ HELP_URL = 'See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
 IMG_FORMATS = 'bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 'pfm'  # include image suffixes
 
 def get_datasets(files : List[str]) -> Dict[str, int]:
-    file_dataset = [re.match(r"[A-Za-z\-]+", os.path.basename(f)).group(0) for f in files]
+    file_dataset = [re.match(r"[^_]+", os.path.basename(f)).group(0) for f in files]
     datasets = list(set(file_dataset))
     datasets = {d : 0 for d in datasets}
     for fd in file_dataset:
@@ -47,7 +47,7 @@ class MyYOLODataset(YOLODataset):
         # Get the indices of the elements that match the pattern
         indices = [i for i, f in enumerate(self.im_files) if match_fn(f)]
         # If n is not None, keep only the first n elements
-        if n is not None:
+        if n is not None and n != -1:
             indices = indices[:n]
         ## Subset the dataset
         # First the image paths

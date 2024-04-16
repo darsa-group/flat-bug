@@ -13,11 +13,11 @@ Usage: $0 -w weights -d directory [-l local_directory] [-o output_directory] [-g
 
     -l local_directory (OPTIONAL): 
         The path to the local directory where the ground truth json is located.
-        If not supplied, it is assumed to be the same as the directory.
+        If not supplied, it is assumed to be a file named 'instances_default.json' in the directory.
 
     -o output_directory (OPTIONAL): 
         The path to the output directory where the results will be saved.
-        If not supplied, it is assumed to be the same as the directory.
+        If not supplied, it is assumed to be created in the parent directory of the directory (i.e. adjacent to the directory).
 
     -g PyTorch_device_string (OPTIONAL): 
         The PyTorch device string to use for inference.
@@ -92,7 +92,7 @@ echo "commit: ${COMMIT_HASH}" >> ${METADATA_FILE}
 
 # Run the model on the validation set
 # PREDICT_CMD="fb_predict.py -i \"${DIR}\" -w \"${WEIGHTS}\" -o \"${ODIR}/preds\"${GPU}${IPAT} --no-crops"
-PREDICT_CMD=(fb_predict.py -i "${DIR}" -w "${WEIGHTS}" -o "${ODIR}/preds" --no-crops --no-overviews --fast)
+PREDICT_CMD=(python src/bin/fb_predict.py -i "${DIR}" -w "${WEIGHTS}" -o "${ODIR}/preds" --no-crops --no-overviews --fast)
 if [[ -n "$GPU" ]]; then
     PREDICT_CMD+=("--gpu" "${GPU}")
 fi
@@ -105,7 +105,7 @@ echo "Executing inference with:${PREDICT_CMD_STR}"
 
 # Compare the predictions with the ground truth
 #EVAL_CMD="fb_eval.py -p \"${ODIR}/preds/coco_instances.json\" -g \"$LDIR\" -I \"${DIR}\" -P  -c -o \"${ODIR}/eval\""
-EVAL_CMD=(fb_eval.py -p "${ODIR}/preds/coco_instances.json" -g "$LDIR" -I "${DIR}" -P -c -o "${ODIR}/eval")
+EVAL_CMD=(python src/bin/fb_eval.py -p "${ODIR}/preds/coco_instances.json" -g "$LDIR" -I "${DIR}" -P -c -o "${ODIR}/eval")
 printf -v EVAL_CMD_STR ' %q' "${EVAL_CMD[@]}"
 echo "Executing evaluation with:${EVAL_CMD_STR}"
 "${EVAL_CMD[@]}" &&

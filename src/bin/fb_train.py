@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import argparse
 import logging
 import os.path
@@ -10,6 +9,7 @@ from ultralytics import settings
 
 # fixme, resume should continue on the same "run folder"
 if __name__ == '__main__':
+
     DEFAULT_CONF = {
         "batch": 8,
         "imgsz": 1024,

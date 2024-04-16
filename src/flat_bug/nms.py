@@ -263,14 +263,18 @@ def _compute_transitive_closure_cpu(adjacency_matrix : torch.Tensor) -> torch.Te
     """
     Computes the transitive closure of a boolean matrix.
     """
-    # Convert the adjacency matrix to float16, this is just done to ensure that the values don't overflow when squaring the matrix before clamping - if there existed a "or-matrix multiplication" for boolean matrices, this would not be necessary
-    closure = adjacency_matrix.to(torch.float16) 
+    csize = adjacency_matrix.shape[0]
+    # Check for possible overflow
+    if csize > 32767:
+        raise ValueError(f"Matrix is too large ({csize}x{csize}) for CPU computation")
+    # We convert to torch.int16 to avoid overflow when squaring the matrix and ensure torch compatibility
+    closure = adjacency_matrix.to(torch.int16) 
     # Expand the adjacency matrix to the transitive closure matrix, by squaring the matrix and clamping the values to 1 - each step essentially corresponds to one step of parallel breadth-first search for all nodes
-    last_max = 1
-    for _ in range(int(torch.log2(torch.tensor(closure.shape[0], dtype=torch.float16)).ceil())):
+    last_max = torch.zeros(csize, dtype=torch.int16)
+    for _ in range(int(torch.log2(torch.tensor(csize, dtype=torch.float32)).ceil())):
         this_square = torch.matmul(closure, closure)
-        this_max = this_square.max().item()
-        if this_max == last_max:
+        this_max = this_square.max(dim=0).values
+        if (this_max == last_max).all():
             break
         closure[:] = this_square.clamp(max=1) # We don't need to worry about overflow, since overflow results in +inf, which is clamped to 1
         last_max = this_max
@@ -292,16 +296,19 @@ def _compute_transitive_closure_cuda(adjacency_matrix : torch.Tensor) -> torch.T
     # Convert the adjacency matrix to float16, this is just done to ensure that the values don't overflow when squaring the matrix before clamping - if there existed a "or-matrix multiplication" for boolean matrices, this would not be necessary
     closure = torch.nn.functional.pad(adjacency_matrix, (0, padding, 0, padding), value=0.).to(torch.int8) 
     # Expand the adjacency matrix to the transitive closure matrix, by squaring the matrix and clamping the values to 1 - each step essentially corresponds to one step of parallel breadth-first search for all nodes
-    last_max = 1
+    last_max = torch.zeros(len(closure), dtype=torch.int32, device=closure.device)
     for _ in range(int(torch.log2(torch.tensor(adjacency_matrix.shape[0], dtype=torch.float16)).ceil())):
         this_square = torch._int_mm(closure, closure)
-        this_max = this_square.max().item()
-        if this_max == last_max:
+        this_max = this_square.max(dim=0).values
+        if (this_max == last_max).all():
             break
         closure[:] = this_square >= 1
         last_max = this_max
-    # Convert the matrix back to boolean and return it
-    return (closure > 0.5)[:adjacency_matrix.shape[0], :adjacency_matrix.shape[1]]
+    # Convert the matrix back to boolean and remove the padding
+    closure = (closure > 0.5)
+    if padding > 0:
+        closure = closure[:-padding, :-padding]
+    return closure
 
 @torch.jit.script
 def compute_transitive_closure(adjacency_matrix : torch.Tensor) -> torch.Tensor:
@@ -311,7 +318,7 @@ def compute_transitive_closure(adjacency_matrix : torch.Tensor) -> torch.Tensor:
     if len(adjacency_matrix) <= 2:
         return adjacency_matrix    
     # There can be a quite significant difference in performance between the CPU and GPU implementation, however this function is not the bottleneck, so it might not be noticeable in practice
-    if adjacency_matrix.is_cuda and len(adjacency_matrix) > 32:
+    if adjacency_matrix.is_cuda:
         return _compute_transitive_closure_cuda(adjacency_matrix)
     else:
         return _compute_transitive_closure_cpu(adjacency_matrix)
@@ -336,13 +343,9 @@ def extract_components(transitive_closure : torch.Tensor) -> Tuple[List[torch.Te
     rounds = 0
     while not_visited.any() and rounds < n:
         rounds += 1
-        pick = not_visited.nonzero().squeeze()
-        if pick.numel() == 1:
-            pick = pick
-        else:
-            pick = pick[0]
+        pick = not_visited.nonzero()[0].squeeze()
         visitors = transitive_closure[pick]
-        not_visited &= ~visitors
+        not_visited[visitors] = False
         cluster_vec[visitors] = cluster_id # Profiling shows that this line is often the bottleneck
         cluster_id += 1
 
@@ -404,7 +407,7 @@ def nms_masks(masks : torch.Tensor, scores : torch.Tensor, iou_threshold : float
         if boxes is None:
             raise ValueError("'boxes' must be specified for nms_masks when 'group_first' is True")
         # We decrease the iou_threshold for the clustering, since there is no straight-forward relationship between the IoU of the boxes and the IoU of the polygons
-        groups, _ = cluster_iou_boxes(boxes=boxes, iou_threshold=iou_threshold / 2, time=False)
+        groups, _ = cluster_iou_boxes(boxes=boxes, iou_threshold=min(1, iou_threshold / 4), time=False)
         _nms_ind = [torch.empty(0) for i in range(len(groups))]
         for i, group in enumerate(groups):
             if len(group) == 1:
@@ -435,7 +438,7 @@ def nms_polygons(polygons, scores, iou_threshold=0.5, return_indices=False, dtyp
         if boxes is None:
             raise ValueError("'boxes' must be specified for nms_masks when 'group_first' is True")
         # We decrease the iou_threshold for the clustering, since there is no straight-forward relationship between the IoU of the boxes and the IoU of the polygons
-        groups, _ = cluster_iou_boxes(boxes=boxes, iou_threshold=iou_threshold / 2, time=False) 
+        groups, _ = cluster_iou_boxes(boxes=boxes, iou_threshold=min(1, iou_threshold / 4), time=False) 
         nms_ind = [None for _ in range(len(groups))]
         for i, group in enumerate(groups):
             if len(group) == 1:

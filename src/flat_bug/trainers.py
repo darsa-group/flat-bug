@@ -37,10 +37,10 @@ def _custom_end_to_end_validation(self):
         train_data, val_data = self.data["train"], self.data["val"]
         train_labels, val_labels = data2labels(train_data), data2labels(val_data)
         train_paths, val_paths = self.training_image_paths, self.val_image_paths
-        if self._custom_num_images > -1:
+        if self._custom_num_images > -1 and self._custom_num_images < len(val_paths):
             # Sample n images
-            train_paths = random.sample(train_paths, self._custom_num_images)
-            val_paths = random.sample(val_paths, self._custom_num_images)
+            # train_paths = random.sample(train_paths, self._custom_num_images)
+            val_paths = random.sample(val_paths, min(len(val_paths), self._custom_num_images))
         escape_dots = lambda f: os.path.basename(f).replace(".", r"\.")
         val_pattern = f'({"|".join([escape_dots(f) for f in val_paths])})'
         # Get latest model path
@@ -61,6 +61,9 @@ class MySegmentationTrainer(SegmentationTrainer):
         self.custom_eval = custom_eval
         self._do_custom_eval = False
         self._custom_num_images = custom_eval_num_images
+        assert self._custom_num_images != 0, 'fb_custom_eval_num_images/custom_eval_num_images cannot be 0. If you mean to disable custom eval set fb_custom_eval/custom_eval=False.'
+        assert self._max_instances != 0, 'fb_max_instances/max_instances cannot be 0.'
+        assert self._max_images != 0, "fb_max_images/max_images cannot be 0."
         super().__init__(cfg, overrides, _callbacks, *args, **kwargs)
         if overrides["resume"]:
             self.args.resume = True

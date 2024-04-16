@@ -298,16 +298,16 @@ class TensorPredictions:
             return self
 
         # Perform non-maximum suppression on the masks, using the scales as weights, that is the highest resolution masks are given the highest priority
-        image_to_mask_scale = torch.tensor(
-            [self.image.shape[1] / self.masks.data.shape[1], self.image.shape[2] / self.masks.data.shape[2]],
-            device=self.device, dtype=self.dtype
-        )
         if self.PREFER_POLYGONS:
             nms_ind = nms_polygons(self.polygons,
                                    torch.tensor(self.scales, dtype=self.dtype, device=self.device) * self.confs,
                                    iou_threshold=iou_threshold, return_indices=True, dtype=self.dtype,
-                                   boxes=self.boxes / image_to_mask_scale.repeat(2).unsqueeze(0), **kwargs)
+                                   boxes=self.boxes, **kwargs)
         else:
+            image_to_mask_scale = torch.tensor(
+                [self.image.shape[1] / self.masks.data.shape[1], self.image.shape[2] / self.masks.data.shape[2]],
+                device=self.device, dtype=self.dtype
+            )
             nms_ind = nms_masks(self.masks.data,
                                 torch.tensor(self.scales, dtype=self.dtype, device=self.device) * self.confs,
                                 iou_threshold=iou_threshold, return_indices=True,

@@ -455,7 +455,7 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
 
     # Create a legend
     legend_margin = 50
-    legend_font_height = image.shape[0] // 40
+    legend_font_height = max(min(40, image.shape[0] // 40), 100)
     legend_font_size = cv2.getFontScaleFromHeight(cv2.FONT_HERSHEY_COMPLEX, legend_font_height, 3)
     legend_label_widths = [cv2.getTextSize(glabel, cv2.FONT_HERSHEY_COMPLEX, legend_font_size, 3)[0][0] for glabel in
                            group_labels]
@@ -476,8 +476,8 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
         label_x = legend_box_width - label_width
         cv2.putText(legend_box, glabel, (label_x, item_label_y), cv2.FONT_HERSHEY_COMPLEX, legend_font_size, (0, 0, 0),
                     legend_font_height // 15, cv2.LINE_AA)
-        # Items
-        item_x = 150
+        # Items - positioned to the left of the labels with a margin of 'legend_margin'
+        item_x = legend_box_width // 2 - label_width // 2
         item_color = GROUP_COLORS[i]
         # Fill the item circle with the color of the group
         cv2.circle(legend_box, (item_x, item_label_y - legend_font_height // 2), legend_font_height // 2, item_color,
