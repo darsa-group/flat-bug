@@ -1,5 +1,7 @@
 import os, sys, glob, argparse, re, queue, threading, subprocess, csv
 
+import pandas as pd
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from scripts.experiments.experiment_helpers import EXEC_DIR, run_command, remove_directory, split_by_sample
@@ -45,6 +47,16 @@ def eval_model(weights, directory, output_directory, local_directory=None, devic
         print(command)
     else:
         run_command(command, "/home/altair/.conda/envs/test/bin/python")
+
+    # Get the result CSV
+    result_csv = os.path.join(output_directory, "results", "results.csv")
+    # Pretty print the result CSV
+    if dry_run:
+        print(f'Summary results would be saved to: {result_csv}')
+    else:
+        df = pd.read_csv(result_csv)
+        print(result_csv, ":\n", df)
+
     if not store_all:
         # Remove the "<OUTPUT_DIR>/preds"
         pred_directory = os.path.join(output_directory, "preds")

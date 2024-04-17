@@ -119,8 +119,9 @@ class MySegmentationTrainer(SegmentationTrainer):
                 pad=0.0 if mode == "train" else 0.5,
                 single_cls=self.args.single_cls or False,
                 max_instances=self._max_instances,
-                task="segment"
-            ).subset(n=self._max_images, pattern=self.exclude_pattern)
+                task="segment",
+                subset_args={"n" : self._max_images, "pattern" : self.exclude_pattern}
+            )
         else:
             dataset = MyYOLOValidationDataset(
                 data=yaml_load(self.args.data),
@@ -135,8 +136,9 @@ class MySegmentationTrainer(SegmentationTrainer):
                 pad=0.0 if mode == "train" else 0.5,  # fixme... does not make sense...
                 single_cls=self.args.single_cls or False,
                 max_instances=np.Inf,
-                task="segment"
-            ).subset(n=self._max_images, pattern=self.exclude_pattern)
+                task="segment",
+                subset_args={"n" : self._max_images, "pattern" : self.exclude_pattern}
+            )
 
         return dataset
 

@@ -56,7 +56,7 @@ if __name__ == '__main__':
     pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype)
     pred.MIN_MAX_OBJ_SIZE = 16, 768 # Size is measured as the square root of the area
     pred.MAX_MASK_SIZE = 1024 # Loss of precision may occur if the mask is larger than this, but all shapes are possible. 
-    pred.SCORE_THRESHOLD = 0.3
+    pred.SCORE_THRESHOLD = 0.05
     pred.IOU_THRESHOLD = 0.15
     pred.MINIMUM_TILE_OVERLAP = 384
     pred.EDGE_CASE_MARGIN = 128 + 64
