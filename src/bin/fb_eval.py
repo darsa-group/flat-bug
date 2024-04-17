@@ -40,7 +40,7 @@ if __name__ == "__main__":
             fb_to_coco(d, pred_coco)
 
     if not os.path.exists(args.ground_truth):
-        raise ValueError(f"Ground truth file not found: {args.ground_truth}")
+        raise ValueError(f'Ground truth file not found: {args.ground_truth}')
     gt_coco = json.load(open(args.ground_truth, "r"))
     gt_annotations, pred_annotations = split_annotations(gt_coco), split_annotations(pred_coco)
 
@@ -53,17 +53,17 @@ if __name__ == "__main__":
     if len(gt_diff_keys) > 0:
         show = min(2, len(gt_diff_keys))
         missing_gt_diff_formatted = ', '.join(['"' + str(i) + '"' for i in gt_diff_keys[:show]])
-        print(f"Ground truth has {len(gt_diff_keys)} images that are not in the predictions: [{missing_gt_diff_formatted}{', ...' if len(gt_diff_keys) > show else ''}] and {len(gt_diff_keys) - show} more")
+        print(f'Ground truth has {len(gt_diff_keys)} images that are not in the predictions: [{missing_gt_diff_formatted}{", ..." if len(gt_diff_keys) > show else ""}] and {len(gt_diff_keys) - show} more')
     if len(pred_diff_keys) > 0:
         show = min(2, len(pred_diff_keys))
         missing_pred_diff_formatted = ', '.join(['"' + str(i) + '"' for i in pred_diff_keys[:show]])
-        print(f"Predictions has {len(pred_diff_keys)} images that are not in the ground truth: [{missing_pred_diff_formatted} {', ...' if len(pred_diff_keys) > show else ''}] and {len(pred_diff_keys) - show} more")
+        print(f'Predictions has {len(pred_diff_keys)} images that are not in the ground truth: [{missing_pred_diff_formatted} {", ..." if len(pred_diff_keys) > show else ""}] and {len(pred_diff_keys) - show} more')
     if len(shared_keys) == 0:
-        raise ValueError(f"No images in common between the ground truth and the predictions")
+        raise ValueError(f'No images in common between the ground truth and the predictions')
 
     shared_keys = sorted(shared_keys)
-    if args.n == -1:
-        print(f"Skipping the evaluation of {len(shared_keys) - args.n} images")
+    if args.n != -1:
+        print(f'Skipping the evaluation of {len(shared_keys) - args.n} images')
         shared_keys = shared_keys[:args.n]
 
     for image in tqdm(shared_keys, desc="Evaluating images", dynamic_ncols=True):
@@ -71,8 +71,8 @@ if __name__ == "__main__":
             group1              = gt_annotations[image], 
             group2              = pred_annotations[image], 
             group_labels        = ["Ground Truth", "Predictions"],
-            image_path          = f"{args.image_directory}{os.sep}{image}", 
-            output_identifier   = image, 
+            image_path          = f'{args.image_directory}{os.sep}{image}', 
+            output_identifier   = os.path.splitext(image)[0], 
             plot                = args.plot,
             plot_scale          = args.scale,
             plot_boxes          = args.no_boxes,

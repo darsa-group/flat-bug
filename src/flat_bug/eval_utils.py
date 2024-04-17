@@ -320,6 +320,22 @@ def plot_heatmap(mat: np.array, axis_labels: Union[List[str], None] = None, brea
     else:
         compatible_display(colormap)
 
+def equal_spaced_cuts(k, start, end):
+    """
+    Generate k equal spaced cuts between start and end. 
+    
+    The edges are not included, and the distance between the left-most and right-most cut to the edges is half the distance between the cuts. 
+
+    Args:
+        k (int): Number of cuts.
+        start (float): Start value.
+        end (float): End value.
+
+    Returns:
+        np.array: Cuts.
+    """
+    return np.linspace(start + (end - start) / (k * 2), end - (end - start) / (k * 2), k)
+
 
 def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[np.array],
                  group_labels: Union[List[str], None] = None, image_path: Union[str, None] = None,
@@ -338,7 +354,7 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
     Returns:
         None
     """
-    GROUP_COLORS = [(0, 255, 0), (255, 0, 0)]
+    GROUP_COLORS = [(184, 126, 55), (74, 175, 77)]
     # Type check the input
     if not isinstance(matches, np.ndarray):
         raise ValueError(f'Expected matches to be a NumPy array, got {type(matches)}')
@@ -374,7 +390,7 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
     # If the is image path is provided
     if isinstance(image_path, str):
         # Load the image
-        image = cv2.imread(image_path)
+        image = cv2.imread(filename = image_path)
     else:
         # Otherwise, create a blank image. The dimensions are dynamically calculated to fit the contours
         xmax, ymax = 0, 0
@@ -403,21 +419,55 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
     for idx, (i, j) in enumerate(matches):
         if i != -1:
             # Draw the first contour mask on the copy
-            cv2.fillPoly(cimg1, [contours1[i]], GROUP_COLORS[0])
+            cv2.fillPoly(
+                img = cimg1, 
+                pts = [contours1[i]], 
+                color = GROUP_COLORS[0]
+            )
             if boxes:
                 # Draw boxes around the contours
-                cv2.rectangle(image, (bboxes1[i][0], bboxes1[i][1]), (bboxes1[i][2], bboxes1[i][3]), (0, 255, 0), 8)
+                cv2.rectangle(
+                    img = image, 
+                    pt1 = (bboxes1[i][0], bboxes1[i][1]), 
+                    pt2 = (bboxes1[i][2], bboxes1[i][3]), 
+                    color = (0, 255, 0), 
+                    thickness = 8
+                )
         if j != -1:
             # Draw the second contour mask on the copy
-            cv2.fillPoly(cimg2, [contours2[j]], GROUP_COLORS[1])
+            cv2.fillPoly(
+                img = cimg2, 
+                pts = [contours2[j]], 
+                color = GROUP_COLORS[1]
+            )
             if boxes:
                 # Draw boxes around the contours
-                cv2.rectangle(image, (bboxes2[j][0], bboxes2[j][1]), (bboxes2[j][2], bboxes2[j][3]), (255, 0, 0), 8)
+                cv2.rectangle(
+                    img = image, 
+                    pt1 = (bboxes2[j][0], bboxes2[j][1]), 
+                    pt2 = (bboxes2[j][2], bboxes2[j][3]), 
+                    color = (255, 0, 0), 
+                    thickness = 8
+                )
 
     # Blend the image copies with the contour masks together (makes the contours semi-transparent - alpha=0.5)
-    cv2.addWeighted(cimg1, 0.5, cimg2, 0.5, 0, dst=cimg1)
+    cv2.addWeighted(
+        src1 = cimg1, 
+        alpha = 0.5, 
+        src2 = cimg2, 
+        beta = 0.5, 
+        gamma = 0, 
+        dst = cimg1
+    )
     # Blend with the blended copies with original image
-    cv2.addWeighted(image, 0.5, cimg1, 0.5, 0, dst=image)
+    cv2.addWeighted(
+        src1 = image, 
+        alpha = 0.5, 
+        src2 = cimg1, 
+        beta = 0.5, 
+        gamma = 0, 
+        dst = image
+    )
 
     # Downscale the image
     image = cv2.resize(image, (image.shape[1] // 2, image.shape[0] // 2))
@@ -426,9 +476,9 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
     bboxes2 = (bboxes2 / 2).astype(np.int32)
 
     # Label the objects
-    label_font_height = image.shape[0] // 200
+    label_font_height = max(8, image.shape[0] // 200)
     label_font_scale = cv2.getFontScaleFromHeight(cv2.FONT_HERSHEY_SIMPLEX, label_font_height, 3)
-    label_font_thickness = label_font_height // 15
+    label_font_thickness = max(1, label_font_height // 15)
     for idx, (i, j) in enumerate(matches):
         no_match = (i == -1) or (j == -1)
         label_coord = []
@@ -436,7 +486,7 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
         if no_match:
             match_color = (0, 0, 255)
         else:
-            match_color = (255, 255, 255)
+            match_color = (0, 0, 0)
         if i != -1:
             # Draw a text label next to the box
             label_width = \
@@ -448,55 +498,123 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
             label_font_color.append(GROUP_COLORS[1])
             label_coord.append((bboxes2[j][0], bboxes2[j][1] - label_font_height // 4))
         for coord, color in zip(label_coord, label_font_color):
-            cv2.putText(image, f"{idx}", coord, cv2.FONT_HERSHEY_SIMPLEX, label_font_scale, color,
-                        label_font_thickness * 3, cv2.LINE_8)
-            cv2.putText(image, f"{idx}", coord, cv2.FONT_HERSHEY_SIMPLEX, label_font_scale, match_color,
-                        label_font_thickness * (2 if no_match else 1), cv2.LINE_AA)
+            cv2.putText(
+                img = image, 
+                text = str(idx), 
+                org = coord, 
+                fontFace = cv2.FONT_HERSHEY_SIMPLEX, 
+                fontScale = label_font_scale, 
+                color = match_color,
+                thickness = label_font_thickness * 3, 
+                lineType = cv2.LINE_8
+            )
+            cv2.putText(
+                img = image, 
+                text = str(idx), 
+                org = coord, 
+                fontFace = cv2.FONT_HERSHEY_SIMPLEX, 
+                fontScale = label_font_scale, 
+                color = color,
+                thickness = label_font_thickness, 
+                lineType = cv2.LINE_AA
+            )
+            
 
     # Create a legend
-    legend_margin = 50
-    legend_font_height = max(min(40, image.shape[0] // 40), 100)
+    LEGEND_TEXT_Y_JUST = 1/2
+    legend_font_height = max(min(6, image.shape[0] // 40), 24)
+    legend_margin = max(1, int(image.shape[0] * 0.01))
     legend_font_size = cv2.getFontScaleFromHeight(cv2.FONT_HERSHEY_COMPLEX, legend_font_height, 3)
-    legend_label_widths = [cv2.getTextSize(glabel, cv2.FONT_HERSHEY_COMPLEX, legend_font_size, 3)[0][0] for glabel in
-                           group_labels]
+    legend_label_widths = \
+        [cv2.getTextSize(glabel, cv2.FONT_HERSHEY_COMPLEX, legend_font_size, 3)[0][0] for glabel in group_labels]
     legend_font_width = max(legend_label_widths)
-    legend_box_height = int((legend_font_height * 1.5) * 2)
+    legend_box_height = int((legend_font_height * 1.6) * len(group_labels))
     legend_box_width = int(legend_font_width * 1.25)
     # Extract the legend box
-    legend_box = image[legend_margin:(legend_box_height + legend_margin),
-                 -(legend_box_width + legend_margin):-legend_margin, :]
+    legend_box = image[
+        legend_margin:(legend_box_height + legend_margin),
+        -(legend_box_width + legend_margin):-legend_margin, 
+        :
+    ]
     # Whiten legend box
     whiten_frac = 0.5
     whiten_amount = ((255 - legend_box) * whiten_frac).astype(np.uint8)
     legend_box += whiten_amount
+    # Add a black border to the legend box
+    cv2.rectangle(
+        img = legend_box, 
+        pt1 = (1, 1), 
+        pt2 = (legend_box_width - legend_font_height // 15 - 1, legend_box_height - legend_font_height // 15 - 1), 
+        color = (0, 0, 0), 
+        thickness = legend_font_height // 15,
+        lineType=cv2.LINE_AA
+    )
     # Add the legend labels and items
-    for i, (glabel, label_width) in enumerate(zip(group_labels, legend_label_widths)):
-        item_label_y = int((i + 0.5) * legend_box_height / len(group_labels) + legend_font_height / 2)
+    legend_attributes = []
+    item_cut_ys = equal_spaced_cuts(len(group_labels), 0, legend_box_height)
+    for i, (glabel, label_width, item_cut_y) in enumerate(zip(group_labels, legend_label_widths, item_cut_ys)):
+        item_label_y = int(item_cut_y + legend_font_height * LEGEND_TEXT_Y_JUST)
         # Labels
-        label_x = legend_box_width - label_width
-        cv2.putText(legend_box, glabel, (label_x, item_label_y), cv2.FONT_HERSHEY_COMPLEX, legend_font_size, (0, 0, 0),
-                    legend_font_height // 15, cv2.LINE_AA)
+        label_x = int(legend_box_width * 0.975) - label_width
+        
         # Items - positioned to the left of the labels with a margin of 'legend_margin'
-        item_x = legend_box_width // 2 - label_width // 2
+        item_x = label_x // 2
         item_color = GROUP_COLORS[i]
+        
+        # Add the attributes to the legend_attributes list
+        legend_attributes.append((glabel, item_x, item_color, label_x, item_label_y))
+
+    # Set all item_x to the minimum of all item_x
+    min_item_x = min([item_x for _, item_x, _, _, _ in legend_attributes])
+
+    for glabel, _, item_color, label_x, item_label_y in legend_attributes:
+        # Draw the legend item label
+        cv2.putText(
+            img = legend_box, 
+            text = glabel, 
+            org = (label_x, item_label_y), 
+            fontFace = cv2.FONT_HERSHEY_COMPLEX, 
+            fontScale = legend_font_size, 
+            color = (0, 0, 0),
+            thickness = legend_font_height // 15, 
+            lineType = cv2.LINE_AA
+        )
         # Fill the item circle with the color of the group
-        cv2.circle(legend_box, (item_x, item_label_y - legend_font_height // 2), legend_font_height // 2, item_color,
-                   -1)
+        cv2.circle(
+            img = legend_box, 
+            center = (min_item_x, item_label_y - legend_font_height // 2), 
+            radius = legend_font_height // 2, 
+            color = item_color,
+            thickness=cv2.FILLED
+        )
         # Add a black border to the item circle
-        cv2.circle(legend_box, (item_x, item_label_y - legend_font_height // 2), legend_font_height // 2, (0, 0, 0),
-                   legend_font_height // 30)
+        cv2.circle(
+            img = legend_box,
+            center = (min_item_x, item_label_y - legend_font_height // 2), 
+            radius = legend_font_height // 2, 
+            color = (0, 0, 0),
+            thickness = legend_font_height // 30,
+            lineType=cv2.LINE_AA
+        )
 
     # Add the legend to the image
-    image[legend_margin:(legend_box_height + legend_margin), -(legend_box_width + legend_margin):-legend_margin,
-    :] = legend_box
+    image[legend_margin:(legend_box_height + legend_margin), -(legend_box_width + legend_margin):-legend_margin, :] = legend_box
 
     if scale != 1:
         # Scale the image
-        image = cv2.resize(image, (int(image.shape[1] * scale), int(image.shape[0] * scale)))
+        cv2.resize(
+            src = image, 
+            dsize = (int(image.shape[1] * scale), int(image.shape[0] * scale)), 
+            dst = image
+        )
 
     if save_plot:
         # Save the image
-        cv2.imwrite(output_path, image, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+        cv2.imwrite(
+            filename = output_path, 
+            img = image, 
+            params = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
+        )
     else:
         compatible_display(image)
 
@@ -615,10 +733,10 @@ def compare_groups(group1: list, group2: list, group_labels: Union[str, None] = 
         elif not os.path.isfile(image_path):
             raise ValueError(f'Expected path to be a valid file, got {image_path}')
         plot_matches(matches, c1, c2, group_labels, image_path,
-                     f'{output_directory}{os.sep}{output_identifier}_matches.jpg' if not output_directory is None else None,
+                     output_path=os.path.join(output_directory, f'{output_identifier}_matches.jpg') if not output_directory is None else None,
                      scale=plot_scale, boxes=plot_boxes)
         plot_heatmap(iou, group_labels,
-                     output_path=f'{output_directory}{os.sep}{output_identifier}_heatmap.jpg' if not output_directory is None else None,
+                     output_path=os.path.join(output_directory, f'{output_identifier}_heatmap.jpg') if not output_directory is None else None,
                      scale=plot_scale)
 
     ## Gather the data for the output

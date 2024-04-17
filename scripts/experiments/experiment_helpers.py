@@ -1,4 +1,5 @@
-import os, sys, subprocess, yaml, re
+import os, sys, subprocess, glob
+import yaml, re
 
 EXEC_DIR = "/home/altair/flat-bug"
 DATASETS = [
@@ -55,3 +56,40 @@ def run_command(command, python_binary=None):
                     custom_print(output_buffer)
                     output_buffer = ""
         process.wait()
+
+def remove_directory(directory, recursive=False):
+    """
+    Safely removes a directory containing files, no nested directories.
+    """
+    if not os.path.exists(directory):
+        return
+    files_and_directories = glob.glob(os.path.join(directory, "*"))
+    files = []
+    # Check that no nested directories are present
+    for file_or_dir in files_and_directories:
+        if os.path.isdir(file_or_dir):
+            if recursive:
+                remove_directory(file_or_dir)
+            else:
+                raise ValueError(f"Directory contains nested directories: {directory}")
+        else:
+            files.append(file_or_dir)
+    for file in files:
+        os.remove(file)
+    os.rmdir(directory)
+
+SAMPLE_SANITIZE_PATTERN = re.compile(r"^[^_]+_(.+)(_heatmap|_matches|\.csv)")
+
+def split_by_sample(files):
+    """
+    Splits the files by sample.
+    """
+    samples = {}
+    for file in files:
+        match = SAMPLE_SANITIZE_PATTERN.match(os.path.basename(file))
+        if match:
+            sample = match.group(1)
+            if sample not in samples:
+                samples[sample] = []
+            samples[sample].append(file)
+    return {k : sorted(v) for k, v in samples.items()}
