@@ -79,8 +79,8 @@ def _custom_end_to_end_validation(self):
 class MySegmentationTrainer(SegmentationTrainer):
     def __init__(self, cfg=DEFAULT_CFG, overrides=None, _callbacks=None, *args, **kwargs):
         """Initialize a SegmentationTrainer object with given arguments."""
+        cfg = DEFAULT_CFG # In DDP mode, a CFG is created for each rank, but we always want the default one
         custom_fb_args = extract_custom_fb_args(overrides)
-        overrides = remove_custom_fb_args(overrides)
         self._max_instances = custom_fb_args["fb_max_instances"]
         self._max_images = custom_fb_args["fb_max_images"]
         self._exclude_datasets = custom_fb_args["fb_exclude_datasets"]
@@ -90,8 +90,9 @@ class MySegmentationTrainer(SegmentationTrainer):
         assert self._custom_num_images != 0, 'fb_custom_eval_num_images/custom_eval_num_images cannot be 0. If you mean to disable custom eval set fb_custom_eval/custom_eval=False.'
         assert self._max_instances != 0, 'fb_max_instances/max_instances cannot be 0.'
         assert self._max_images != 0, "fb_max_images/max_images cannot be 0."
+        overrides = remove_custom_fb_args(overrides) # The custom arguments must be removed before calling super.__init___
         super().__init__(cfg, overrides, _callbacks, *args, **kwargs)
-        self.args.__dict__.update(custom_fb_args)
+        self.args.__dict__.update(custom_fb_args) # But we need to add them back, otherwise they will be missing in DDP mode
         if overrides["resume"]:
             self.args.resume = True
         self.add_callback("on_train_epoch_start", MySegmentationTrainer.log_lr)
@@ -212,8 +213,8 @@ class MySegmentationTrainer(SegmentationTrainer):
         self.add_callback("on_train_start", log_data)
 
     def get_validator(self):
-        """Returns a DetectionValidator for YOLO model validation."""
-        self.loss_names = "box_loss", "cls_loss", "dfl_loss"
-        return yolo.detect.DetectionValidator(
+        """Return an instance of SegmentationValidator for validation of YOLO model."""
+        self.loss_names = "box_loss", "seg_loss", "cls_loss", "dfl_loss"
+        return yolo.segment.SegmentationValidator(
             self.test_loader, save_dir=self.save_dir, args=remove_custom_fb_args(copy(self.args)), _callbacks=self.callbacks
         )

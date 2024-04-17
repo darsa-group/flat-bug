@@ -15,7 +15,7 @@ if __name__ == '__main__':
         "imgsz": 1024,
         "model": "yolov8m-seg.pt",
         "task": "detect",
-        # "task": "segment", #fixme why not segment?!
+        # "task": "segment", #fixme why not segment?! RE: It is overwritten in the __init__ method of ultralytics.models.yolo.segment.train.SegmentationTrainer
         "epochs": 5000,
         "device": "cuda",
         "patience": 500,
@@ -71,8 +71,15 @@ if __name__ == '__main__':
         overrides["resume"] = False
 
     # This is just a hack to fix this: https://github.com/pytorch/pytorch/issues/37377 - only relevant for DDP
+    if isinstance(overrides["device"], (tuple, list)) :
+        num_devices = len(overrides["device"])
+    elif isinstance(overrides["device"], str):
+        num_devices = len(overrides["device"].split(","))
+    else:
+        num_devices = 1 # Fixme: Is this a real case, or just a type error?
     if isinstance(overrides["device"], (tuple, list)) or (isinstance(overrides["device"], str) and len(overrides["device"].split(",") > 1)):
         os.environ['MKL_THREADING_LAYER'] = 'GNU'
+        os.environ['OMP_NUM_THREADS'] = str(overrides["workers"])
 
     t = MySegmentationTrainer(overrides=overrides)
 
