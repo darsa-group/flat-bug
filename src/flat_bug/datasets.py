@@ -45,12 +45,16 @@ def subset(self, n : Optional[int]=None, pattern : Optional[str]=None):
     # Subset the images
     self.im_files = [f for i, f in enumerate(self.im_files) if i in indices]
 
-def hook_get_labels_with_subset(self, args):
+def hook_get_labels_with_subset(obj, args):
+    if not isinstance(args, dict):
+        raise ValueError("args must be a dictionary")
+    if not isinstance(obj, MyYOLODataset):
+        raise ValueError("obj must be an instance of MyYOLODataset")
     def subset_then_get():
-        subset(self, **args)
-        self.get_labels = getattr(super(type(self), self), "get_labels")
-        return self.get_labels()
-    self.get_labels = subset_then_get
+        subset(obj, **args)
+        obj.get_labels = getattr(super(type(obj), obj), "get_labels")
+        return obj.get_labels()
+    obj.get_labels = subset_then_get
 
 class MyYOLODataset(YOLODataset):
     def __init__(self, max_instances, classes=None, subset_args=None, *args, **kwargs):

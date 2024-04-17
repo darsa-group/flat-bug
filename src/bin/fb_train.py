@@ -69,18 +69,12 @@ if __name__ == '__main__':
         overrides["resume"] = overrides["model"]
     else:
         overrides["resume"] = False
-    # print(settings)
-    custom_fb_args = {}
-    todel = []
-    for k, v in overrides.items():
-        if k.startswith("fb_"):
-            custom_fb_args[k.removeprefix("fb_")] = v
-            todel.append(k)
 
-    for d in todel:
-        del overrides[d]
-    print(overrides)
-    t = MySegmentationTrainer(overrides=overrides, **custom_fb_args)
+    # This is just a hack to fix this: https://github.com/pytorch/pytorch/issues/37377 - only relevant for DDP
+    if isinstance(overrides["device"], (tuple, list)) or (isinstance(overrides["device"], str) and len(overrides["device"].split(",") > 1)):
+        os.environ['MKL_THREADING_LAYER'] = 'GNU'
+
+    t = MySegmentationTrainer(overrides=overrides)
 
     if not option_dict["resume"]:
         t.start_epoch = 0
