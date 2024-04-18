@@ -27,6 +27,7 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--coco_predictions', action="store_true", help='Whether the predictions are already in a COCO format (legacy)')
     parser.add_argument('-s', '--scale', type=float, default=1, help='Scale of the output images. Defaults to 1. Lower is faster.')
     parser.add_argument('-n', type=int, default=-1, help='Number of images to process. Defaults to -1 (all images)')
+    parser.add_argument('--workers', type=int, default=32, help='Number of workers to use for the evaluation. Defaults to 1.')
 
     args = parser.parse_args()
 
@@ -66,8 +67,8 @@ if __name__ == "__main__":
         print(f'Skipping the evaluation of {len(shared_keys) - args.n} images')
         shared_keys = shared_keys[:args.n]
 
-    for image in tqdm(shared_keys, desc="Evaluating images", dynamic_ncols=True):
-        matches = compare_groups(
+    def process_image(image):
+        return compare_groups(
             group1              = gt_annotations[image], 
             group2              = pred_annotations[image], 
             group_labels        = ["Ground Truth", "Predictions"],
@@ -79,3 +80,14 @@ if __name__ == "__main__":
             output_directory    = args.output_directory,
             threshold           = args.iou_match_threshold
         )
+    
+    if args.workers <= 1:
+        for image in tqdm(shared_keys, desc="Evaluating images", dynamic_ncols=True):
+            matches = process_image(image)
+    else:
+        from multiprocessing import Pool
+        pool = Pool(args.workers)
+        for matches in tqdm(pool.imap_unordered(process_image, shared_keys), total=len(shared_keys), desc="Evaluating images", dynamic_ncols=True):
+            pass
+        pool.close()
+        pool.join()

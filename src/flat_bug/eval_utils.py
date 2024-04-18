@@ -224,7 +224,7 @@ def plot_heatmap(mat: np.array, axis_labels: Union[List[str], None] = None, brea
         return
 
     # Create a colormap for viridis
-    colormap = cv2.applyColorMap((mat / mat.max() * 255).astype(np.uint8), cv2.COLORMAP_VIRIDIS)
+    colormap = cv2.applyColorMap((mat / (mat.max() or 1) * 255).astype(np.uint8), cv2.COLORMAP_VIRIDIS)
     # Expand colormap to 1000x1000
     colormap = cv2.resize(colormap, dimensions, interpolation=cv2.INTER_NEAREST_EXACT)
     # Get the height of the colormap
@@ -233,18 +233,21 @@ def plot_heatmap(mat: np.array, axis_labels: Union[List[str], None] = None, brea
     ## Prepare data for the colorbar
     # Add numbers to the colorbar
     cmin, cmax = mat.min(), mat.max()
-    cmin, cmax = 10 ** np.floor(np.log10(cmin)) if cmin > 0 else cmin, 10 ** np.ceil(np.log10(cmax))
-    cmin, cmax = int(cmin), int(cmax)
 
-    # Add semi-equally spaced numbers to the colorbar at "nice" values, "nice" values are defined as integer multiples of powers of 10 to the power of the maximum value - the integer rounded 10 logarithm of the number of breaks
-    raw_breaks = np.linspace(cmin, cmax, breaks)
-    nice_multiple = 10 ** (np.log10(cmax) - np.ceil(np.log10(breaks)))
-    nice_breaks = (raw_breaks / nice_multiple).round() * nice_multiple
-    nice_breaks = nice_breaks[nice_breaks <= cmax]
-    # Ensure that the minimum and maximum values are included, and remove the breaks if they are within 1 "nice_multiple" of any other break
-    nice_breaks = nice_breaks[np.abs(nice_breaks - cmin) >= (nice_multiple * 0.9)]
-    nice_breaks = nice_breaks[np.abs(nice_breaks - cmax) >= (nice_multiple * 0.9)]
-    nice_breaks = np.concatenate([[cmin], nice_breaks, [cmax]])
+    cmin, cmax = 10 ** np.floor(np.log10(cmin)) if cmin > 0 else cmin, 10 ** np.ceil(np.log10(cmax)) if cmax > 0 else cmax
+    cmin, cmax = int(cmin), int(cmax)
+    if cmin == cmax:
+        nice_breaks = np.array([cmin])
+    else:
+        # Add semi-equally spaced numbers to the colorbar at "nice" values, "nice" values are defined as integer multiples of powers of 10 to the power of the maximum value - the integer rounded 10 logarithm of the number of breaks
+        raw_breaks = np.linspace(cmin, cmax, breaks)
+        nice_multiple = 10 ** (np.log10(cmax) - np.ceil(np.log10(breaks)))
+        nice_breaks = (raw_breaks / nice_multiple).round() * nice_multiple
+        nice_breaks = nice_breaks[nice_breaks <= cmax]
+        # Ensure that the minimum and maximum values are included, and remove the breaks if they are within 1 "nice_multiple" of any other break
+        nice_breaks = nice_breaks[np.abs(nice_breaks - cmin) >= (nice_multiple * 0.9)]
+        nice_breaks = nice_breaks[np.abs(nice_breaks - cmax) >= (nice_multiple * 0.9)]
+        nice_breaks = np.concatenate([[cmin], nice_breaks, [cmax]])
     # Create the labels
     labels = [f'{(i * 100):.3g}%' for i in nice_breaks]
 
@@ -354,7 +357,7 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
     Returns:
         None
     """
-    GROUP_COLORS = [(184, 126, 55), (74, 175, 77)]
+    GROUP_COLORS = [(184, 126, 55), (28, 26, 228)]
     # Type check the input
     if not isinstance(matches, np.ndarray):
         raise ValueError(f'Expected matches to be a NumPy array, got {type(matches)}')
@@ -424,13 +427,21 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
                 pts = [contours1[i]], 
                 color = GROUP_COLORS[0]
             )
+            cv2.drawContours(
+                image = image, 
+                contours = [contours1[i]], 
+                contourIdx = -1,
+                color = GROUP_COLORS[0],
+                thickness = 4,
+                lineType=cv2.LINE_AA
+            )
             if boxes:
                 # Draw boxes around the contours
                 cv2.rectangle(
                     img = image, 
                     pt1 = (bboxes1[i][0], bboxes1[i][1]), 
                     pt2 = (bboxes1[i][2], bboxes1[i][3]), 
-                    color = (0, 255, 0), 
+                    color = GROUP_COLORS[0], 
                     thickness = 8
                 )
         if j != -1:
@@ -440,13 +451,21 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
                 pts = [contours2[j]], 
                 color = GROUP_COLORS[1]
             )
+            cv2.drawContours(
+                image = image, 
+                contours = [contours2[j]],
+                contourIdx=-1, 
+                color = GROUP_COLORS[1],
+                thickness=4,
+                lineType=cv2.LINE_AA
+            )
             if boxes:
                 # Draw boxes around the contours
                 cv2.rectangle(
                     img = image, 
                     pt1 = (bboxes2[j][0], bboxes2[j][1]), 
                     pt2 = (bboxes2[j][2], bboxes2[j][3]), 
-                    color = (255, 0, 0), 
+                    color = GROUP_COLORS[1], 
                     thickness = 8
                 )
 
@@ -476,7 +495,7 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
     bboxes2 = (bboxes2 / 2).astype(np.int32)
 
     # Label the objects
-    label_font_height = max(8, image.shape[0] // 200)
+    label_font_height = max(8, image.shape[1] // 200)
     label_font_scale = cv2.getFontScaleFromHeight(cv2.FONT_HERSHEY_SIMPLEX, label_font_height, 3)
     label_font_thickness = max(1, label_font_height // 15)
     for idx, (i, j) in enumerate(matches):
@@ -732,12 +751,23 @@ def compare_groups(group1: list, group2: list, group_labels: Union[str, None] = 
             raise ValueError(f'Expected path to be a string, got {type(image_path)}')
         elif not os.path.isfile(image_path):
             raise ValueError(f'Expected path to be a valid file, got {image_path}')
-        plot_matches(matches, c1, c2, group_labels, image_path,
-                     output_path=os.path.join(output_directory, f'{output_identifier}_matches.jpg') if not output_directory is None else None,
-                     scale=plot_scale, boxes=plot_boxes)
-        plot_heatmap(iou, group_labels,
-                     output_path=os.path.join(output_directory, f'{output_identifier}_heatmap.jpg') if not output_directory is None else None,
-                     scale=plot_scale)
+        plot_matches(
+            matches = matches, 
+            contours1 = c1, 
+            contours2 = c2, 
+            group_labels = group_labels, 
+            image_path = image_path,
+            output_path = os.path.join(output_directory, f'{output_identifier}_matches.jpg') if not output_directory is None else None,
+            scale = plot_scale, 
+            boxes = plot_boxes
+        )
+        if not any([l == 0 for l in iou.shape]):
+            plot_heatmap(
+                mat = iou, 
+                axis_labels = group_labels,
+                output_path = os.path.join(output_directory, f'{output_identifier}_heatmap.jpg') if not output_directory is None else None,
+                scale = plot_scale
+            )
 
     ## Gather the data for the output
     matched_1 = matches[:, 1] != -1

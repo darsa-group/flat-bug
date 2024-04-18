@@ -1,7 +1,7 @@
 batch: 8
 model: "./yolov8l-seg.pt"
-epochs: 100
-device: "cuda:0"
+epochs: 1000
+device: [0, 1]
 patience: 9999
 lr0: 0.01
 lrf: 0.0001

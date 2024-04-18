@@ -29,7 +29,7 @@ def get_config():
 
     return config
 
-TQDM_DETECT_PATTERN = re.compile(r"([\d\.]+\s*\w+\/\w+(\]|, ))")
+TQDM_DETECT_PATTERN = re.compile(r"([\d\.]+\s*|\s\?)\w+\/\w+(\]|, )")
 TQDM_FINISHED_PATTERN = re.compile(r"(\| (\d+)\/\2 \[)")
 
 def custom_print(s):

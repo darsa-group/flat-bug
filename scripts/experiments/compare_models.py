@@ -34,13 +34,13 @@ def eval_model(weights, directory, output_directory, local_directory=None, devic
         assert os.path.exists(local_directory), f"Local directory not found: {local_directory}"
 
     # Create the command
-    command = f"bash {os.path.join(EXEC_DIR, 'scripts', 'eval', 'end_to_end_eval.sh')} -w {weights} -d {directory} -o {output_directory}"
+    command = f'bash {os.path.join(EXEC_DIR, "scripts", "eval", "end_to_end_eval.sh")} -w "{weights}" -d "{directory}" -o "{output_directory}"'
     if local_directory is not None:
-        command += f" -l {local_directory}"
+        command += f' -l "{local_directory}"'
     if device is not None:
-        command += f" -g {device}"
+        command += f' -g "{device}"'
     if pattern is not None:
-        command += f" -p {pattern}"
+        command += f' -p "{pattern}"'
     
     # Run the command
     if dry_run:
@@ -191,6 +191,7 @@ if __name__ == "__main__":
     arg_parse.add_argument("--save_all", dest="save_all", help="If set, all results will be saved.", action="store_true")
     arg_parse.add_argument("--ignore_existing", dest="ignore_existing", help="If set, existing result directories will be ignored.", action="store_true")
     arg_parse.add_argument("--no_compile", dest="no_compile", help="If set, the results will not be compiled into a single CSV.", action="store_true")
+    arg_parse.add_argument("--name", dest="name", help="The name of comparison.", type=str, default="")
 
     args = arg_parse.parse_args()
 
@@ -247,7 +248,7 @@ if __name__ == "__main__":
 
         for weight_file, id in zip(all_weight_files, weight_ids):
             # Get the result directory path for the current model and weight file
-            this_result_dir = os.path.join(RESULT_DIR, os.path.basename(model_directory), id)
+            this_result_dir = os.path.join(RESULT_DIR, os.path.basename(model_directory), args.name, id)
             # Remember the result directory for each model
             result_directories[model_directory].append(this_result_dir)
             # Check if the result directory exists
@@ -273,7 +274,7 @@ if __name__ == "__main__":
             }
             if not args.multi_gpu:
                 # For single GPU evaluation, set the device parameter
-                eval_params["device"] = "cuda:0" if args.device is None else args.device,
+                eval_params["device"] = "cuda:0" if args.device is None else args.device
                 # Evaluate synchronously
                 eval_model(**eval_params)
             else:
@@ -293,5 +294,5 @@ if __name__ == "__main__":
             if len(this_result_dirs) == 0:
                 print(f'No results found for model: {model_directory}')
                 continue
-            new_result_csv = combine_result_csvs(this_result_dirs, os.path.join(RESULT_DIR, os.path.basename(model_directory)), dry_run=args.dry_run)
+            new_result_csv = combine_result_csvs(this_result_dirs, os.path.join(RESULT_DIR, os.path.basename(model_directory), args.name), dry_run=args.dry_run)
             print(f'Combined results saved to: {new_result_csv}')

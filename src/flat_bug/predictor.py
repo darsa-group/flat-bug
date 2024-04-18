@@ -930,7 +930,7 @@ class Predictor(object):
         this_EDGE_CASE_MARGIN = self.EDGE_CASE_MARGIN
         # If we are at the top level, we don't want to remove large instances - since there are no layers above to detect them as small instances
         if max_scale:
-            this_MIN_MAX_OBJ_SIZE[1] = 4096
+            this_MIN_MAX_OBJ_SIZE[1] = 1e7
             this_EDGE_CASE_MARGIN = 0
 
         if self.TIME:
