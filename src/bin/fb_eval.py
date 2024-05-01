@@ -3,7 +3,7 @@ import os
 from glob import glob
 import json
 from tqdm import tqdm
-from flat_bug.coco_utils import fb_to_coco, split_annotations
+from flat_bug.coco_utils import fb_to_coco, split_annotations, filter_coco
 from flat_bug.eval_utils import compare_groups
 import argparse
 
@@ -22,14 +22,17 @@ if __name__ == "__main__":
     parser.add_argument('-I', '--image_directory', type=str, help='Path to the image directory')
     parser.add_argument('-o', '--output_directory', type=str, help='Path to the output directory')
     parser.add_argument('-M', '--iou_match_threshold', type=float, default=0.1, help='IoU match threshold. Defaults to 0.1')
+    parser.add_argument('--confidence_threshold', type=float, default=0, help='Confidence threshold. Defaults to 0')
     parser.add_argument('-P', '--plot', action="store_true", help='Plot the matches and the IoU matrix')
     parser.add_argument('-b', '--no_boxes', action="store_false", help='Do not plot the bounding boxes')
     parser.add_argument('-c', '--coco_predictions', action="store_true", help='Whether the predictions are already in a COCO format (legacy)')
     parser.add_argument('-s', '--scale', type=float, default=1, help='Scale of the output images. Defaults to 1. Lower is faster.')
     parser.add_argument('-n', type=int, default=-1, help='Number of images to process. Defaults to -1 (all images)')
     parser.add_argument('--workers', type=int, default=32, help='Number of workers to use for the evaluation. Defaults to 1.')
-
+    parser.add_argument('--combine', action="store_true", help='Combine the results into a single CSV file')
+    
     args = parser.parse_args()
+    min_size = 0
 
     if args.coco_predictions:
         pred_coco = json.load(open(args.predictions, "r"))
@@ -39,10 +42,12 @@ if __name__ == "__main__":
         pred_coco = {}
         for d in flat_bug_predictions:
             fb_to_coco(d, pred_coco)
+    pred_coco = filter_coco(pred_coco, confidence=args.confidence_threshold, area=min_size,verbose=False)
 
     if not os.path.exists(args.ground_truth):
         raise ValueError(f'Ground truth file not found: {args.ground_truth}')
     gt_coco = json.load(open(args.ground_truth, "r"))
+    gt_coco = filter_coco(gt_coco, area=min_size)
     gt_annotations, pred_annotations = split_annotations(gt_coco), split_annotations(pred_coco)
 
     # Find the differences between which images are in the ground truth and which are in the predictions
@@ -66,6 +71,12 @@ if __name__ == "__main__":
     if args.n != -1:
         print(f'Skipping the evaluation of {len(shared_keys) - args.n} images')
         shared_keys = shared_keys[:args.n]
+    if len(shared_keys) == 0:
+        raise ValueError(f'No images to evaluate')
+    if len(shared_keys) < args.workers:
+        args.workers = min(args.workers, len(shared_keys))
+        print(f"Warning: More workers than images, reducing the number of workers to {args.workers}")
+
 
     def process_image(image):
         return compare_groups(
@@ -81,13 +92,25 @@ if __name__ == "__main__":
             threshold           = args.iou_match_threshold
         )
     
+    result_files = []
+    
     if args.workers <= 1:
         for image in tqdm(shared_keys, desc="Evaluating images", dynamic_ncols=True):
-            matches = process_image(image)
+            result_files += [process_image(image)]
     else:
         from multiprocessing import Pool
         pool = Pool(args.workers)
         for matches in tqdm(pool.imap_unordered(process_image, shared_keys), total=len(shared_keys), desc="Evaluating images", dynamic_ncols=True):
-            pass
+            result_files += [matches]
         pool.close()
         pool.join()
+
+    if args.combine:
+        import pandas as pd
+        # Add the basepath (without .csv) as a new column before concatenating
+        def read_and_add_new_column(f):
+            df = pd.read_csv(f, sep=";")
+            df.insert(0, "image", os.path.splitext(os.path.basename(f))[0])
+            return df
+        combined_result = pd.concat([read_and_add_new_column(f) for f in result_files])
+        combined_result.to_csv(f"{args.output_directory}{os.sep}combined_results.csv", index=False,sep=";")
