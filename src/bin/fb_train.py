@@ -77,7 +77,7 @@ if __name__ == '__main__':
         num_devices = len(overrides["device"].split(","))
     else:
         num_devices = 1 # Fixme: Is this a real case, or just a type error?
-    if isinstance(overrides["device"], (tuple, list)) or (isinstance(overrides["device"], str) and len(overrides["device"].split(",") > 1)):
+    if isinstance(overrides["device"], (tuple, list)) or (isinstance(overrides["device"], str) and len(overrides["device"].split(",")) > 1):
         os.environ['MKL_THREADING_LAYER'] = 'GNU'
         os.environ['OMP_NUM_THREADS'] = str(overrides["workers"])
 
