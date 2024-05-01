@@ -305,26 +305,25 @@ class TensorPredictions:
             len_before = len(self)
 
         # Skip if there are no elements to merge
-        if len(self) <= 1:
-            return self
-
-        # Perform non-maximum suppression on the masks, using the scales as weights, that is the highest resolution masks are given the highest priority
-        if self.PREFER_POLYGONS:
-            nms_ind = nms_polygons(self.polygons,
-                                   torch.tensor(self.scales, dtype=self.dtype, device=self.device) * self.confs,
-                                   iou_threshold=iou_threshold, return_indices=True, dtype=self.dtype,
-                                   boxes=self.boxes, **kwargs)
-        else:
-            image_to_mask_scale = torch.tensor(
-                [self.image.shape[1] / self.masks.data.shape[1], self.image.shape[2] / self.masks.data.shape[2]],
-                device=self.device, dtype=self.dtype
-            )
-            nms_ind = nms_masks(self.masks.data,
-                                torch.tensor(self.scales, dtype=self.dtype, device=self.device) * self.confs,
-                                iou_threshold=iou_threshold, return_indices=True,
-                                boxes=self.boxes / image_to_mask_scale.repeat(2).unsqueeze(0), **kwargs)
-        # Remove the elements that were not selected
-        self = self[nms_ind]
+        if len(self) > 1:
+            # Perform non-maximum suppression on the masks, using the scales as weights, that is the highest resolution masks are given the highest priority
+            if self.PREFER_POLYGONS:
+                nms_ind = nms_polygons(self.polygons,
+                                    torch.tensor(self.scales, dtype=self.dtype, device=self.device) * self.confs,
+                                    iou_threshold=iou_threshold, return_indices=True, dtype=self.dtype,
+                                    boxes=self.boxes, **kwargs)
+            else:
+                image_to_mask_scale = torch.tensor(
+                    [self.image.shape[1] / self.masks.data.shape[1], self.image.shape[2] / self.masks.data.shape[2]],
+                    device=self.device, dtype=self.dtype
+                )
+                nms_ind = nms_masks(self.masks.data,
+                                    torch.tensor(self.scales, dtype=self.dtype, device=self.device) * self.confs,
+                                    iou_threshold=iou_threshold, return_indices=True,
+                                    boxes=self.boxes / image_to_mask_scale.repeat(2).unsqueeze(0), **kwargs)
+            # Remove the elements that were not selected
+            self = self[nms_ind]
+        
         if self.time:
             end.record()
             torch.cuda.synchronize()
@@ -996,7 +995,9 @@ class Predictor(object):
                 "half": dtype == torch.float16,
                 "batch": self.BATCH_SIZE,
                 "model": yolo.model,
-                "fp16" : dtype == torch.float16
+                "fp16" : dtype == torch.float16,
+                "dnn" : False,
+                "data" : None # If we want to support multiclass inference, this needs to point to "Path to the additional data.yaml file containing class names. Optional." see: https://github.com/ultralytics/ultralytics/blob/bc9fd45cdf10ebe8009037aaf8def2353761c9ed/ultralytics/nn/autobackend.py#L53
             })
             pred.args = args
             pred.setup_model(self=pred, model=yolo.model, verbose=True)
