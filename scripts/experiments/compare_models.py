@@ -71,12 +71,16 @@ def eval_model(weights, directory, output_directory, local_directory=None, devic
             files = split_by_sample(files)
             for i, (sample, sample_files) in enumerate(files.items()):
                 if i == 0:
+                    # Keep the plots and CSV for the first sample of each dataset
                     if dry_run:
                         print(f"Keeping <{sample}>: ", sample_files)
                     continue
                 if dry_run:
                     break
                 for file in sample_files:
+                    # Keep the combined results CSV
+                    if os.path.basename(file) == "combined_results.csv":
+                        continue
                     os.remove(file)
 
 def get_weights_in_directory(directory):
