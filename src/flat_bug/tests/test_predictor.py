@@ -1,7 +1,6 @@
 import unittest
 
-import os, shutil
-import tempfile
+import os, shutil, re, tempfile
 from glob import glob
 
 import numpy as np
