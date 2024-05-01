@@ -93,9 +93,12 @@ def get_weights_in_directory(directory):
     assert os.path.exists(directory) and os.path.isdir(directory), f"Directory not found: {directory}"
 
     # Get all the weight files in the directory
-    weight_files = glob.glob(os.path.join(directory, "**", "*.pt"), recursive=True)
+    weight_dir = os.path.join(directory, "weights")
+    if not os.path.exists(weight_dir):
+        weight_dir = directory
+    weight_files = glob.glob(os.path.join(weight_dir, "*.pt"), recursive=True)
     # Check if there are any weight files
-    assert len(weight_files) > 0, f"No weight files found in the directory: {directory}"
+    assert len(weight_files) > 0, f"No weight files found in the directory: {weight_dir}"
     
     return sorted(weight_files, key=os.path.getmtime)
 
@@ -156,7 +159,7 @@ def combine_result_csvs(result_directories, new_directory, dry_run=False):
                     csv_writer = csv.writer(new_file)
                     csv_writer.writerow(['model'] + headers)
                 
-                model = os.path.basename(result_directory)
+                model = result_directory.removesuffix(os.sep).split(os.sep)[-1] if os.sep in result_directory else result_directory
                 for row in csv_reader:
                     csv_writer.writerow([model] + row)
     # Return the path to the new result CSV
@@ -229,7 +232,6 @@ if __name__ == "__main__":
         # Get the best weight file
         all_weight_files = get_weights_in_directory(model_directory)
         if args.all_weights:
-            all_weight_files = [file for file in all_weight_files if not ("best" in file or "last" in file)]
             num_before_pattern = len(all_weight_files)
             if args.weight_pattern is not None:
                 all_weight_files = [file for file in all_weight_files if re.search(args.weight_pattern, file)]
