@@ -175,25 +175,39 @@ def match_geoms(contours1: List[np.array], contours2: List[np.array], threshold:
     # Check the shape of the IoU matrix
     if iou.shape != (n, m):
         raise ValueError(f'Expected IoU matrix of shape {(n, m)}, got {iou.shape}')
-    # Initialize the matche array
+    # Initialize the match array
     matches = np.zeros((n, 2), dtype=np.int32)
     matches[:, 0] = np.arange(n, dtype=np.int32)
     matches[:, 1] = -1  # No match
+    # Initialize the unmatched array
+    unmatched = np.ones(m, dtype=bool)
     # Match the geometries in group 1 to the geometries in group 2
     if n > 0 and m > 0:
-        for i in np.argsort(iou.max(axis=1)):
-            j = np.argmax(iou[i])
-            if iou[i, j] > threshold:
-                matches[i, 1] = j.astype(np.int32)
+        for focus in np.argsort(iou.max(axis=1)):
+            best_match = np.argsort(iou[focus])[::-1][:np.sum(iou[focus] > threshold)]
+            if len(best_match) == 0:
+                continue
+            # Check if the potential matches have a better focus
+            best_match = best_match[iou[:, best_match].argmax(axis=0) == focus]
+            if len(best_match) == 0:
+                continue
+            best_match = best_match[0] 
+            if iou[focus, best_match] > threshold:
+                matches[focus, 1] = best_match.astype(np.int32)
                 # Set the intersection to 0 so it doesn't get matched again
-                iou[:, j] = 0
+                iou[:, best_match] = 0
+                # Set the geometry in group 2 to matched
+                unmatched[best_match] = False
     # Find the remaining unmatched geometries in group 2
-    unmatched = np.where(iou.sum(axis=0) > 0)[0]
+    unmatched = np.where(unmatched)[0]
     matches_2 = np.zeros((len(unmatched), 2), dtype=np.int32)
     matches_2[:, 0] = -1
     matches_2[:, 1] = unmatched
     # Add the unmatched geometries to the matches array
     matches = np.concatenate([matches, matches_2], axis=0)
+    # Check the shape of the matches array
+    if matches.shape != (n + len(unmatched), 2):
+        raise ValueError(f'Expected matches of shape {(n + len(unmatched), 2)}, got {matches.shape}')
     return matches, len(unmatched)
 
 
@@ -224,11 +238,19 @@ def plot_heatmap(mat: np.array, axis_labels: Union[List[str], None] = None, brea
         return
 
     # Create a colormap for viridis
-    colormap = cv2.applyColorMap((mat / (mat.max() or 1) * 255).astype(np.uint8), cv2.COLORMAP_VIRIDIS)
+    colormap = cv2.applyColorMap(
+        src = (mat / (mat.max() or 1) * 255).astype(np.uint8), 
+        colormap = cv2.COLORMAP_VIRIDIS
+    )
     # Expand colormap to 1000x1000
-    colormap = cv2.resize(colormap, dimensions, interpolation=cv2.INTER_NEAREST_EXACT)
+    colormap = cv2.resize(
+        src = colormap, 
+        dsize = dimensions, 
+        dst = colormap,
+        interpolation = cv2.INTER_NEAREST_EXACT
+    )
     # Get the height of the colormap
-    cheight = colormap.shape[0]
+    cheight, cwidth = colormap.shape[:2]
 
     ## Prepare data for the colorbar
     # Add numbers to the colorbar
@@ -252,7 +274,7 @@ def plot_heatmap(mat: np.array, axis_labels: Union[List[str], None] = None, brea
     labels = [f'{(i * 100):.3g}%' for i in nice_breaks]
 
     # Define a target font height
-    font_height_target = int(min(cheight / 50, max(1, ((cheight * 0.5) / breaks))))
+    font_height_target = int(min(min(cheight, cwidth) / 50, max(1, ((cheight * 0.5) / breaks))))
     # Dynamically calculate the font size
     font_size = cv2.getFontScaleFromHeight(cv2.FONT_HERSHEY_SIMPLEX, font_height_target, 3)
     # Get the size of the labels
@@ -263,21 +285,48 @@ def plot_heatmap(mat: np.array, axis_labels: Union[List[str], None] = None, brea
     colorbar_width = int(max_width * 1.25)
 
     # Create a colorbar
-    colorbar = cv2.applyColorMap(np.arange(256, dtype=np.uint8).reshape(256, 1).repeat(colorbar_width, 1),
-                                 cv2.COLORMAP_VIRIDIS)
+    colorbar = cv2.applyColorMap(
+        src = np.arange(256, dtype=np.uint8).reshape(256, 1).repeat(colorbar_width, 1),
+        colormap = cv2.COLORMAP_VIRIDIS
+    )
     # Stretch the colorbar to the height of the colormap
-    colorbar = cv2.resize(colorbar, (colorbar.shape[1], cheight), interpolation=cv2.INTER_LINEAR_EXACT)
+    colorbar = cv2.resize(
+        src = colorbar, 
+        dsize = (colorbar.shape[1], cheight), 
+        dst = colorbar,
+        interpolation = cv2.INTER_LINEAR_EXACT
+    )
     cbheight = colorbar.shape[0]
     # Add the breaks to the colorbar
     for i, b in enumerate(nice_breaks):
         label = labels[i]
         text_width, font_height = label_sizes[i]
-        cv2.putText(colorbar, label, (
-            (colorbar_width - text_width) // 2, int((i + 0.5) * cbheight / len(nice_breaks) + font_height / 2)),
-                    cv2.FONT_HERSHEY_SIMPLEX, font_size, (0, 0, 0), (3 * font_height_target) // 15, cv2.LINE_AA)
-        cv2.putText(colorbar, label, (
-            (colorbar_width - text_width) // 2, int((i + 0.5) * cbheight / len(nice_breaks) + font_height / 2)),
-                    cv2.FONT_HERSHEY_SIMPLEX, font_size, (255, 255, 255), font_height_target // 15, cv2.LINE_AA)
+        cv2.putText(
+            img = colorbar, 
+            text = label, 
+            org = (
+                (colorbar_width - text_width) // 2, 
+                int((i + 0.5) * cbheight / len(nice_breaks) + font_height / 2)
+            ),
+            fontFace = cv2.FONT_HERSHEY_SIMPLEX, 
+            fontScale = font_size, 
+            color = (0, 0, 0), 
+            thickness = (3 * font_height_target) // 15, 
+            lineType = cv2.LINE_AA
+        )
+        cv2.putText(
+            img = colorbar, 
+            text = label, 
+            org = (
+                (colorbar_width - text_width) // 2, 
+                int((i + 0.5) * cbheight / len(nice_breaks) + font_height / 2)
+            ),
+            fontFace = cv2.FONT_HERSHEY_SIMPLEX, 
+            fontScale = font_size, 
+            color = (255, 255, 255), 
+            thickness = font_height_target // 15, 
+            lineType = cv2.LINE_AA
+        )
 
     # Concatenate the colormap and the colorbar
     colormap = cv2.hconcat([colormap, colorbar])
@@ -301,11 +350,27 @@ def plot_heatmap(mat: np.array, axis_labels: Union[List[str], None] = None, brea
         y_midpoint = dimensions[1] // 2 + axis_box_size - y_label_width // 2
         center_offset = axis_box_size // 2 + axis_box_size // 4
         # Add the x-axis label
-        cv2.putText(x_axis_box, x_label, (x_midpoint, center_offset), cv2.FONT_HERSHEY_COMPLEX, axis_label_font_size,
-                    (0, 0, 0), axis_box_size // 15, cv2.LINE_AA)
+        cv2.putText(
+            img = x_axis_box, 
+            text = x_label, 
+            org = (x_midpoint, center_offset), 
+            fontFace = cv2.FONT_HERSHEY_COMPLEX, 
+            fontScale = axis_label_font_size,
+            color = (0, 0, 0), 
+            thickness = axis_box_size // 15, 
+            lineType = cv2.LINE_AA
+        )
         # Add the y-axis label
-        cv2.putText(y_axis_box, y_label, (y_midpoint, center_offset), cv2.FONT_HERSHEY_COMPLEX, axis_label_font_size,
-                    (0, 0, 0), axis_box_size // 15, cv2.LINE_AA)
+        cv2.putText(
+            img = y_axis_box, 
+            text = y_label, 
+            org = (y_midpoint, center_offset), 
+            fontFace = cv2.FONT_HERSHEY_COMPLEX, 
+            fontScale = axis_label_font_size,
+            color = (0, 0, 0), 
+            thickness = axis_box_size // 15, 
+            lineType = cv2.LINE_AA
+        )
         # Flip the y-axis box
         y_axis_box = cv2.rotate(y_axis_box, cv2.ROTATE_90_CLOCKWISE)
         # Concatenate the boxes
@@ -314,12 +379,20 @@ def plot_heatmap(mat: np.array, axis_labels: Union[List[str], None] = None, brea
 
     if scale != 1:
         # Rescale the colormap to 2x lower resolution
-        colormap = cv2.resize(colormap, (int(colormap.shape[1] * scale), int(colormap.shape[0] * scale)),
-                              interpolation=cv2.INTER_LINEAR)
+        colormap = cv2.resize(
+            src = colormap, 
+            dsize = (int(colormap.shape[1] * scale), int(colormap.shape[0] * scale)),
+            dst = colormap,
+            interpolation = cv2.INTER_LINEAR
+        )
 
     if output_path is not None:
         # Save the image
-        cv2.imwrite(output_path, colormap, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+        cv2.imwrite(
+            filename = output_path, 
+            img = colormap, 
+            params = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
+        )
     else:
         compatible_display(colormap)
 
@@ -421,7 +494,7 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
     # Draw the contours on the copies of the image, and the boxes with indices on the original image
     for idx, (i, j) in enumerate(matches):
         if i != -1:
-            # Draw the first contour mask on the copy
+            # Draw the first contour mask on the first copy
             cv2.fillPoly(
                 img = cimg1, 
                 pts = [contours1[i]], 
@@ -436,7 +509,7 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
                 lineType=cv2.LINE_AA
             )
             if boxes:
-                # Draw boxes around the contours
+                # Draw boxes around the contours on the original image
                 cv2.rectangle(
                     img = image, 
                     pt1 = (bboxes1[i][0], bboxes1[i][1]), 
@@ -445,7 +518,7 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
                     thickness = 8
                 )
         if j != -1:
-            # Draw the second contour mask on the copy
+            # Draw the second contour mask on the second copy
             cv2.fillPoly(
                 img = cimg2, 
                 pts = [contours2[j]], 
@@ -460,7 +533,7 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
                 lineType=cv2.LINE_AA
             )
             if boxes:
-                # Draw boxes around the contours
+                # Draw boxes around the contours on the original image
                 cv2.rectangle(
                     img = image, 
                     pt1 = (bboxes2[j][0], bboxes2[j][1]), 
@@ -502,10 +575,6 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
         no_match = (i == -1) or (j == -1)
         label_coord = []
         label_font_color = []
-        if no_match:
-            match_color = (0, 0, 255)
-        else:
-            match_color = (0, 0, 0)
         if i != -1:
             # Draw a text label next to the box
             label_width = \
@@ -523,7 +592,7 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
                 org = coord, 
                 fontFace = cv2.FONT_HERSHEY_SIMPLEX, 
                 fontScale = label_font_scale, 
-                color = match_color,
+                color = (2, 210, 238) if no_match else (0, 0, 0),
                 thickness = label_font_thickness * 3, 
                 lineType = cv2.LINE_8
             )
@@ -533,7 +602,7 @@ def plot_matches(matches: np.array, contours1: list[np.array], contours2: List[n
                 org = coord, 
                 fontFace = cv2.FONT_HERSHEY_SIMPLEX, 
                 fontScale = label_font_scale, 
-                color = color,
+                color = (147, 20, 255) if no_match else color,
                 thickness = label_font_thickness, 
                 lineType = cv2.LINE_AA
             )
@@ -736,6 +805,21 @@ def compare_groups(group1: list, group2: list, group_labels: Union[str, None] = 
     # Convert the annotations to NumPy arrays, and calculate bounding boxes and areas
     b1, c1 = annotations_to_numpy(group1)
     b2, c2 = annotations_to_numpy(group2)
+    # # Filter annotations/predictions for boxes with an area less than 64^2
+    # size_threshold = 128 **2
+    # if image_path is not None and "AMI-traps" in image_path:
+    #     size_threshold = 64 ** 2
+    # if all(b1.shape):
+    #     g1_filter = np.prod(b1[:, 2:] - b1[:, :2], axis=1) >= size_threshold
+    #     b1 = b1[g1_filter]
+    #     c1 = [c for i, c in enumerate(c1) if g1_filter[i]]
+    #     group1 = [g for i, g in enumerate(group1) if g1_filter[i]]
+    # if all(b2.shape):
+    #     g2_filter = np.prod(b2[:, 2:] - b2[:, :2], axis=1) >= size_threshold
+    #     b2 = b2[g2_filter]
+    #     c2 = [c for i, c in enumerate(c2) if g2_filter[i]]
+    #     group2 = [g for i, g in enumerate(group2) if g2_filter[i]]
+
     a1, a2 = np.array([contour_area(c) for c in c1]), np.array([contour_area(c) for c in c2])
     len_1, len_2 = len(c1), len(c2)
 
@@ -764,7 +848,7 @@ def compare_groups(group1: list, group2: list, group_labels: Union[str, None] = 
         if not any([l == 0 for l in iou.shape]):
             plot_heatmap(
                 mat = iou, 
-                axis_labels = group_labels,
+                axis_labels = group_labels[::-1],
                 output_path = os.path.join(output_directory, f'{output_identifier}_heatmap.jpg') if not output_directory is None else None,
                 scale = plot_scale
             )
@@ -780,9 +864,9 @@ def compare_groups(group1: list, group2: list, group_labels: Union[str, None] = 
         matched_iou = iou[*matches[:len_1].T]
         # Set the IoU of unmatched geometries to 0
         matched_iou[unmatched_1] = 0
+        matched_iou = np.concatenate([matched_iou, np.zeros(len(unmatched_2))])
     else:
         matched_iou = np.zeros(len(matches))
-    matched_iou = np.concatenate([matched_iou, np.zeros(len(unmatched_2))])
 
     # Get the confidences
     conf1 = ["NA" for _ in range(len(matches))]
