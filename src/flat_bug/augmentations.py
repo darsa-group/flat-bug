@@ -193,11 +193,11 @@ class RandomCrop:
 
         # assert w >=  self._imsize and  h >= self._imsize, f"{labels['im_file']} too small: {w}x{h}"
 
-        if w < self._imsize:
+        if w <= self._imsize:
             start_x = 0
         else:
             start_x = np.random.randint(w - self._imsize, size=1)[0]
-        if h < self._imsize:
+        if h <= self._imsize:
             start_y = 0
         else:
             start_y = np.random.randint(h - self._imsize, size=1)[0]

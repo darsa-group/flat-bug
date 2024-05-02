@@ -32,7 +32,7 @@ for (i in c("input_directory", "output_directory")) {
 OUR_THEME <- theme_bw()
 
 scientific_10 <- function(x) {
-  parse(text=gsub("e", " %*% 10^", scales::scientific_format()(x)))
+  parse(text=gsub("10\\^\\+0*", "10^", gsub("1 %\\*% ", "", gsub("e", " %*% 10^", scales::scientific_format()(x)))))
 }
 
 

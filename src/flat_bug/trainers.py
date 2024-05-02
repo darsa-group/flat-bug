@@ -8,10 +8,34 @@ from ultralytics.utils import yaml_load, DEFAULT_CFG, RANK, LOGGER
 import torch
 from ultralytics.nn.tasks import attempt_load_one_weight, attempt_load_weights
 from ultralytics.utils import (DEFAULT_CFG, LOGGER, RANK, SETTINGS, TQDM_BAR_FORMAT, __version__, callbacks, clean_url,
-                               colorstr, emojis, yaml_save)
+                               colorstr, emojis, yaml_save, IterableSimpleNamespace)
 
 from ultralytics.utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, init_seeds, one_cycle, select_device,
                                            strip_optimizer, smart_inference_mode)
+
+from copy import copy
+
+from ultralytics.models import yolo
+
+def remove_custom_fb_args(args):
+    if isinstance(args, dict):
+        for k in list(args.keys()):
+            if k.startswith("fb_"):
+                del args[k]
+    elif isinstance(args, IterableSimpleNamespace):
+        for k in list(args.__dict__.keys()):
+            if k.startswith("fb_"):
+                del args.__dict__[k]
+
+    return args
+
+def extract_custom_fb_args(args):
+    custom_fb_args = {}
+    for k, v in args.items():
+        if k.startswith("fb_"):
+            custom_fb_args[k] = v
+
+    return custom_fb_args
 
 def data2labels(data):
     if hasattr(data, "__iter__") and not isinstance(data, str):
@@ -37,10 +61,10 @@ def _custom_end_to_end_validation(self):
         train_data, val_data = self.data["train"], self.data["val"]
         train_labels, val_labels = data2labels(train_data), data2labels(val_data)
         train_paths, val_paths = self.training_image_paths, self.val_image_paths
-        if self._custom_num_images > -1:
+        if self._custom_num_images > -1 and self._custom_num_images < len(val_paths):
             # Sample n images
-            train_paths = random.sample(train_paths, self._custom_num_images)
-            val_paths = random.sample(val_paths, self._custom_num_images)
+            # train_paths = random.sample(train_paths, self._custom_num_images)
+            val_paths = random.sample(val_paths, min(len(val_paths), self._custom_num_images))
         escape_dots = lambda f: os.path.basename(f).replace(".", r"\.")
         val_pattern = f'({"|".join([escape_dots(f) for f in val_paths])})'
         # Get latest model path
@@ -53,15 +77,22 @@ def _custom_end_to_end_validation(self):
         os.system(command)
 
 class MySegmentationTrainer(SegmentationTrainer):
-    def __init__(self, max_instances, max_images, custom_eval, custom_eval_num_images, exclude_datasets, cfg=DEFAULT_CFG, overrides=None, _callbacks=None, *args, **kwargs):
+    def __init__(self, cfg=DEFAULT_CFG, overrides=None, _callbacks=None, *args, **kwargs):
         """Initialize a SegmentationTrainer object with given arguments."""
-        self._max_instances = max_instances
-        self._max_images = max_images
-        self._exclude_datasets = exclude_datasets
-        self.custom_eval = custom_eval
-        self._do_custom_eval = False
-        self._custom_num_images = custom_eval_num_images
+        cfg = DEFAULT_CFG # In DDP mode, a CFG is created for each rank, but we always want the default one
+        custom_fb_args = extract_custom_fb_args(overrides)
+        self._max_instances = custom_fb_args["fb_max_instances"]
+        self._max_images = custom_fb_args["fb_max_images"]
+        self._exclude_datasets = custom_fb_args["fb_exclude_datasets"]
+        self.custom_eval = custom_fb_args["fb_custom_eval"]
+        self._do_custom_eval = False # This is a dynamic signalling flag, not a hyperparameter
+        self._custom_num_images = custom_fb_args["fb_custom_eval_num_images"]
+        assert self._custom_num_images != 0, 'fb_custom_eval_num_images/custom_eval_num_images cannot be 0. If you mean to disable custom eval set fb_custom_eval/custom_eval=False.'
+        assert self._max_instances != 0, 'fb_max_instances/max_instances cannot be 0.'
+        assert self._max_images != 0, "fb_max_images/max_images cannot be 0."
+        overrides = remove_custom_fb_args(overrides) # The custom arguments must be removed before calling super.__init___
         super().__init__(cfg, overrides, _callbacks, *args, **kwargs)
+        self.args.__dict__.update(custom_fb_args) # But we need to add them back, otherwise they will be missing in DDP mode
         if overrides["resume"]:
             self.args.resume = True
         self.add_callback("on_train_epoch_start", MySegmentationTrainer.log_lr)
@@ -116,8 +147,9 @@ class MySegmentationTrainer(SegmentationTrainer):
                 pad=0.0 if mode == "train" else 0.5,
                 single_cls=self.args.single_cls or False,
                 max_instances=self._max_instances,
-                task="segment"
-            ).subset(n=self._max_images, pattern=self.exclude_pattern)
+                task="segment",
+                subset_args={"n" : self._max_images, "pattern" : self.exclude_pattern}
+            )
         else:
             dataset = MyYOLOValidationDataset(
                 data=yaml_load(self.args.data),
@@ -132,8 +164,9 @@ class MySegmentationTrainer(SegmentationTrainer):
                 pad=0.0 if mode == "train" else 0.5,  # fixme... does not make sense...
                 single_cls=self.args.single_cls or False,
                 max_instances=np.Inf,
-                task="segment"
-            ).subset(n=self._max_images, pattern=self.exclude_pattern)
+                task="segment",
+                subset_args={"n" : self._max_images, "pattern" : self.exclude_pattern}
+            )
 
         return dataset
 
@@ -171,7 +204,17 @@ class MySegmentationTrainer(SegmentationTrainer):
             raise e
 
     def _reproducibility_setup(self):
+        if not RANK in {-1, 0}:
+            print("Reproducibility setup skipped for non-master rank.")
+            return
         def log_data(self):
             with open(self.save_dir / "data_log.json", "w") as f:
                 json.dump({**{k : str(v) for k, v in self.data.items()}, **{"train_images" : self.training_image_paths, "val_images" : self.val_image_paths}}, f)
         self.add_callback("on_train_start", log_data)
+
+    def get_validator(self):
+        """Return an instance of SegmentationValidator for validation of YOLO model."""
+        self.loss_names = "box_loss", "seg_loss", "cls_loss", "dfl_loss"
+        return yolo.segment.SegmentationValidator(
+            self.test_loader, save_dir=self.save_dir, args=remove_custom_fb_args(copy(self.args)), _callbacks=self.callbacks
+        )

@@ -3,7 +3,7 @@ Evaluation functions for FlatBug datasets.
 """
 
 import os
-from typing import Union, List, Tuple, Dict
+from typing import Union, List, Tuple, Dict, Optional
 import cv2
 import numpy as np
 
@@ -149,6 +149,9 @@ def fb_to_coco(d: dict, coco: dict) -> dict:
     # Boxes, contours, confs, classes, scales
     for i in range(len(boxes)):
         box, contour, conf, class_, scale = boxes[i], contours[i], confs[i], classes[i], scales[i]
+        x1, y1, x2, y2 = box
+        x,y,w,h = x1, y1, x2 - x1, y2 - y1
+        box=[x,y,w,h]
 
         # Scale and restructure the contour
         m2i = [(mask_width - 1) / (image_width - 1), (mask_height - 1) / (image_height - 1)]  # Mask to image ratio
@@ -273,3 +276,35 @@ def annotations_to_numpy(annotations: List[Dict[str, Union[int, List[int]]]]) ->
     bboxes = np.array([contour_bbox(c) for c in contours])
     return bboxes, contours
 
+def filter_coco(coco : Dict, confidence : Optional[float] = None, area : Optional[int] = None, verbose=False) -> Dict:
+    """
+    Filters COCO annotations by confidence.
+
+    Args:
+        coco (Dict): COCO dataset.
+        confidence (float): Confidence threshold.
+        area (int): Area threshold.
+
+    Returns:
+        Dict: Filtered COCO dataset.
+    """
+    filtered_annotations = []
+    for a in coco["annotations"]:
+        if confidence is not None and "conf" in a:
+            if a["conf"] < confidence:
+                continue
+        if area is not None and "bbox" in a:
+            _, _, w, h = a["bbox"]
+            if (w * h) < area:
+                if verbose:
+                    print("SKIPPED")
+                continue
+        filtered_annotations += [a]
+
+    return {
+        "info": coco["info"],
+        "licenses": coco["licenses"],
+        "images": coco["images"],
+        "annotations": filtered_annotations,
+        "categories": coco["categories"]
+    }

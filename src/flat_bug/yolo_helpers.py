@@ -5,7 +5,6 @@ import math
 import torch
 import torch.nn.functional as F
 
-from ultralytics.utils import ops
 from ultralytics.engine.results import Results, Masks
 
 from .geometric import find_contours, resize_mask
@@ -225,10 +224,9 @@ def process_mask(
         (torch.Tensor): A binary mask tensor of shape [n, h, w], where n is the number of masks after NMS, and h and w
             are the height and width of the input image. The mask is applied to the bounding boxes.
     """
-
     c, mh, mw = protos.shape  # CHW
     ih, iw = shape
-    masks = (masks_in @ protos.view(c, -1)).sigmoid().view(-1, mh, mw)  # CHW <- This line has been changed from the original implementation, which had a superfluous type conversion which caused YOLOv8 to cast the masks to float32, this change simply removes the type conversion enabling support for other data types
+    masks = (masks_in.to(protos.dtype) @ protos.view(c, -1)).sigmoid().view(-1, mh, mw)  # CHW <- This line has been changed from the original implementation, which had a superfluous type conversion which caused YOLOv8 to cast the masks to float32, this change simply removes the type conversion enabling support for other data types
 
     downsampled_bboxes = bboxes.clone()
     downsampled_bboxes[:, 0] *= mw / iw
@@ -277,7 +275,70 @@ def cumsum(nums : list) -> list:
         running_sum += nums[i]
         sums[i] = running_sum
     return sums
-    
+
+## These are taken from ultralytics to avoid unnecessary dependencies
+def clip_boxes(boxes, shape):
+    """
+    Takes a list of bounding boxes and a shape (height, width) and clips the bounding boxes to the shape.
+
+    Args:
+        boxes (torch.Tensor): the bounding boxes to clip
+        shape (tuple): the shape of the image
+
+    Returns:
+        (torch.Tensor | numpy.ndarray): Clipped boxes
+    """
+    if isinstance(boxes, torch.Tensor):  # faster individually (WARNING: inplace .clamp_() Apple MPS bug)
+        boxes[..., 0] = boxes[..., 0].clamp(0, shape[1])  # x1
+        boxes[..., 1] = boxes[..., 1].clamp(0, shape[0])  # y1
+        boxes[..., 2] = boxes[..., 2].clamp(0, shape[1])  # x2
+        boxes[..., 3] = boxes[..., 3].clamp(0, shape[0])  # y2
+    else:  # np.array (faster grouped)
+        boxes[..., [0, 2]] = boxes[..., [0, 2]].clip(0, shape[1])  # x1, x2
+        boxes[..., [1, 3]] = boxes[..., [1, 3]].clip(0, shape[0])  # y1, y2
+    return boxes
+
+def scale_boxes(img1_shape, boxes, img0_shape, ratio_pad=None, padding=True, xywh=False):
+    """
+    Rescales bounding boxes (in the format of xyxy by default) from the shape of the image they were originally
+    specified in (img1_shape) to the shape of a different image (img0_shape).
+
+    Args:
+        img1_shape (tuple): The shape of the image that the bounding boxes are for, in the format of (height, width).
+        boxes (torch.Tensor): the bounding boxes of the objects in the image, in the format of (x1, y1, x2, y2)
+        img0_shape (tuple): the shape of the target image, in the format of (height, width).
+        ratio_pad (tuple): a tuple of (ratio, pad) for scaling the boxes. If not provided, the ratio and pad will be
+            calculated based on the size difference between the two images.
+        padding (bool): If True, assuming the boxes is based on image augmented by yolo style. If False then do regular
+            rescaling.
+        xywh (bool): The box format is xywh or not, default=False.
+
+    Returns:
+        boxes (torch.Tensor): The scaled bounding boxes, in the format of (x1, y1, x2, y2)
+    """
+    if ratio_pad is None:  # calculate from img0_shape
+        gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])  # gain  = old / new
+        pad = (
+            round((img1_shape[1] - img0_shape[1] * gain) / 2 - 0.1),
+            round((img1_shape[0] - img0_shape[0] * gain) / 2 - 0.1),
+        )  # wh padding
+    else:
+        gain = ratio_pad[0][0]
+        pad = ratio_pad[1]
+
+    if padding:
+        boxes[..., 0] -= pad[0]  # x padding
+        boxes[..., 1] -= pad[1]  # y padding
+        if not xywh:
+            boxes[..., 2] -= pad[0]  # x padding
+            boxes[..., 3] -= pad[1]  # y padding
+    boxes[..., :4] /= gain
+    return clip_boxes(boxes, img0_shape)
+
+## 
+
+
+# Revised from ultralytics
 def postprocess(
         preds, 
         imgs : List["torch.Tensor"], 
@@ -286,7 +347,8 @@ def postprocess(
         iou_threshold : float=0.1, 
         nms : int=0, 
         valid_size_range : Optional[Union[Tuple[int, int], List[int]]]=None, 
-        edge_margin : Optional[int]=None):
+        edge_margin : Optional[int]=None
+    ) -> List[Results]:
     """Postprocesses the predictions of the model.
 
     Args:
@@ -302,7 +364,8 @@ def postprocess(
     Returns:
         list: A list of postprocessed predictions.
     """
-    p = preds[0]
+    tile_size = imgs[0].shape[-1]
+    p : torch.Tensor = preds[0]
     # Convert from xywh to xyxy
     p[:, :4, :] = torch.cat((
             p[:, 0:2, :] - p[:, 2:4, :] / 2,  # x_min, y_min
@@ -323,11 +386,13 @@ def postprocess(
     
     results = []
     protos = preds[1][-1]
-    for i, pred in enumerate(p):
+    if len(protos.shape) == 3:
+        protos = protos.unsqueeze(0)
+    for i, (pred, _) in enumerate(zip(p, range(len(imgs)))):
         # Remove the predictions with a confidence less than min_confidence
         if min_confidence != 0:
             pred = pred[pred[:, 4] > min_confidence]
-        boxes = ops.scale_boxes((1024, 1024), pred[:, :4], imgs[i].shape[-2:], padding=False)
+        boxes = scale_boxes((tile_size, tile_size), pred[:, :4], imgs[i].shape[-2:], padding=False)
         if valid_size_range is not None:
             valid_size = ((boxes[:, 2:] - boxes[:, :2]).log()/2).sum(dim=1).exp()
             valid = (valid_size >= valid_size_range[0]) & (valid_size <= valid_size_range[1])
@@ -343,7 +408,7 @@ def postprocess(
             elif nms == 2:
                 nms_ind = fancy_nms(boxes, iou_boxes, pred[:, 4], iou_threshold=iou_threshold, return_indices=True)
             elif nms == 3:
-                masks = process_mask(protos[i], pred[:, -32:], boxes, imgs[i].shape[-2:], False) # pred[:, -32:] - not sure this is correct for more than one class
+                masks = process_mask(protos[min(i, len(protos)-1)], pred[:, -32:], boxes, imgs[i].shape[-2:], False) # pred[:, -32:] - not sure this is correct for more than one class
                 nms_ind = nms_masks(masks, pred[:, 4], iou_threshold=iou_threshold, return_indices=True, boxes=boxes / 4, group_first=False)
                 masks = masks[nms_ind]
             else:
@@ -352,6 +417,10 @@ def postprocess(
             boxes = boxes[nms_ind]
         if nms != 3:
             masks = process_mask(protos[i], pred[:, -32:], boxes, imgs[i].shape[-2:], False) # pred[:, -32:] - not sure this is correct for more than one class
+        too_small = masks.sum(dim=[1, 2]) < 3
+        pred = pred[~too_small]
+        boxes = boxes[~too_small]
+        masks = masks[~too_small]
         pred[:, :4] = boxes
-        results.append(Results(imgs[i].permute(1,2,0), path="", names=["insect"], boxes=pred[:, :6], masks=masks))
+        results.append({"orig_img" : imgs[i].clone().permute(1,2,0), "path" : "", "names" : ["insect"], "boxes" : pred[:, :6], "masks" : masks})
     return results

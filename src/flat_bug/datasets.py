@@ -15,51 +15,54 @@ from flat_bug.augmentations import MyCrop, RandomCrop, MyRandomPerspective, Rand
 HELP_URL = 'See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
 IMG_FORMATS = 'bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 'pfm'  # include image suffixes
 
-def get_datasets(files : List[str]) -> Dict[str, int]:
-    file_dataset = [re.match(r"[A-Za-z\-]+", os.path.basename(f)).group(0) for f in files]
+def get_datasets(files : List[str]) -> Dict[str, List[str]]:
+    file_dataset = [re.match(r"[^_]+", os.path.basename(f)).group(0) for f in files]
     datasets = list(set(file_dataset))
-    datasets = {d : 0 for d in datasets}
-    for fd in file_dataset:
-        datasets[fd] += 1
+    datasets = {d : [] for d in datasets}
+    for file, fd in zip(files, file_dataset):
+        datasets[fd].append(file)
     return datasets
 
+def subset(self, n : Optional[int]=None, pattern : Optional[str]=None):
+    """
+    Subsets the dataset to the first 'n' elements that match the pattern.
+
+    Args:
+        n (int, optional): The number of elements to keep. Defaults to None; keep all.
+        pattern (str, optional): A regex pattern to match the filenames. Defaults to None; match all.
+    """
+    if pattern is None and (n is None or n == -1):
+        return self
+    # Compile the regex pattern
+    pattern = re.compile(pattern) if pattern else None
+    # Create a match function that returns True if the filename matches the pattern or the pattern is None
+    match_fn = (lambda x: pattern.search(os.path.basename(x))) if pattern else (lambda x: True)
+    # Get the indices of the elements that match the pattern
+    indices = [i for i, f in enumerate(self.im_files) if match_fn(f)]
+    # If n is not None, keep only the first n elements
+    if n is not None and n != -1:
+        indices = indices[:n]
+    # Subset the images
+    self.im_files = [f for i, f in enumerate(self.im_files) if i in indices]
+
+def hook_get_labels_with_subset(obj, args):
+    if not isinstance(args, dict):
+        raise ValueError("args must be a dictionary")
+    if not isinstance(obj, MyYOLODataset):
+        raise ValueError("obj must be an instance of MyYOLODataset")
+    def subset_then_get():
+        subset(obj, **args)
+        obj.get_labels = getattr(super(type(obj), obj), "get_labels")
+        return obj.get_labels()
+    obj.get_labels = subset_then_get
 
 class MyYOLODataset(YOLODataset):
-    def __init__(self, max_instances, classes=None, *args, **kwargs):
+    def __init__(self, max_instances, classes=None, subset_args=None, *args, **kwargs):
         self._max_instances = max_instances
         self._include_classes = classes # Only used so the class list is visible in the subset method
+        if subset_args is not None:
+            hook_get_labels_with_subset(self, subset_args)
         super().__init__(classes=classes, *args, **kwargs)
-
-    def subset(self, n : Optional[int]=None, pattern : Optional[str]=None):
-        """
-        Subsets the dataset to the first 'n' elements that match the pattern.
-
-        Args:
-            n (int, optional): The number of elements to keep. Defaults to None; keep all.
-            pattern (str, optional): A regex pattern to match the filenames. Defaults to None; match all.
-        """
-        if pattern is None and (n is None or n == -1):
-            return self
-        # Compile the regex pattern
-        pattern = re.compile(pattern) if pattern else None
-        # Create a match function that returns True if the filename matches the pattern or the pattern is None
-        match_fn = (lambda x: pattern.search(os.path.basename(x))) if pattern else (lambda x: True)
-        # Get the indices of the elements that match the pattern
-        indices = [i for i, f in enumerate(self.im_files) if match_fn(f)]
-        # If n is not None, keep only the first n elements
-        if n is not None:
-            indices = indices[:n]
-        ## Subset the dataset
-        # First the image paths
-        self.im_files = [f for i, f in enumerate(self.im_files) if i in indices]
-        # Then the cached images
-        self.ims = [im for i, im in enumerate(self.ims) if i in indices]
-        self.npy_files = [f for i, f in enumerate(self.npy_files) if i in indices]
-        # And update the labels
-        self.labels = self.get_labels()
-        # Remove classes not in the included classes
-        self.update_labels(self._include_classes)
-        return self
 
     def _debug_write_loaded_images(self, out, index):
         m = np.ascontiguousarray(out["masks"].detach().numpy().transpose(1, 2, 0)) * 255
