@@ -1,0 +1,18 @@
+batch: 16
+model: "./yolov8s-seg.pt"
+epochs: 1000
+device: [0, 1]
+patience: 9999
+lr0: 0.01
+lrf: 0.0001
+optimizer: 'SGD'
+workers: 80
+cache: "ram"
+fb_max_instances: 9999
+fb_max_images: -1
+fb_custom_eval: false
+fb_custom_eval_num_images: 100
+fb_exclude_datasets: ["00-prospective-ALUS-mixed", "00-prospective-crall2023", "00-prospective-chavez2024", "00-prospective-InsectCV"] # "01-partial-NHM-beetles-crops", "01-partial-Diopsis", "01-partial-abram2023", "01-partial-AMI-traps", "01-partial-gernat2018"
+plots: true
+name: "small_multi_gpu"
+

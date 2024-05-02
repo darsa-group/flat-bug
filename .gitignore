@@ -167,6 +167,7 @@ runs/
 *.pth
 *.jpg
 *.yaml
+!scripts/**/*.yaml
 *.out
 datasets/
 
