@@ -964,12 +964,13 @@ class Predictor(object):
     SCORE_THRESHOLD = 0.2
     IOU_THRESHOLD = 0.25
     MAX_MASK_SIZE = 2048
+    
     # Debugging/Development features
     TIME = False
     EXPERIMENTAL_NMS_OPTIMIZATION = True
-    PREFER_POLYGONS = False
-    # DEBUG = False
-
+    PREFER_POLYGONS = True
+    DEBUG = False
+    
     TILE_SIZE = 1024 # Fixed by the model architecture - do not change unless you know what you are doing
     BATCH_SIZE = 16 # Used for model initialization and batched tile processing
 
@@ -1010,7 +1011,6 @@ class Predictor(object):
             raise RuntimeError(f"Unknown model type: {type(model)}")
         self._model = self._model.to(self._device, dtype=self._dtype)
         self._model.eval()
-
 
         self._yolo_predictor = None
     

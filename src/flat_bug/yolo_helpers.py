@@ -394,7 +394,7 @@ def postprocess(
             pred = pred[pred[:, 4] > min_confidence]
         boxes = scale_boxes((tile_size, tile_size), pred[:, :4], imgs[i].shape[-2:], padding=False)
         if valid_size_range is not None:
-            valid_size = ((boxes[:, 2:] - boxes[:, :2]).log() - math.log(2)).sum(dim=1).exp()
+            valid_size = ((boxes[:, 2:] - boxes[:, :2]).log()/2).sum(dim=1).exp()
             valid = (valid_size >= valid_size_range[0]) & (valid_size <= valid_size_range[1])
             pred = pred[valid]
             boxes = boxes[valid]

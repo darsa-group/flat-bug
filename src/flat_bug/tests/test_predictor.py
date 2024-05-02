@@ -3,6 +3,7 @@ import unittest
 import os, shutil, re, tempfile
 from glob import glob
 
+import torch
 import numpy as np
 from torchvision.io import read_image
 import torch
@@ -11,8 +12,9 @@ from flat_bug.predictor import TensorPredictions, Predictor
 
 ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")
 ASSET_NAME = "ALUS_Non-miteArachnids_Unknown_2020_11_03_4545"
+ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")
 UUID = "XXXX"
-SERIALISED_TENSOR_PREDS = os.path.join(os.path.dirname(__file__), f"assets/metadata_{ASSET_NAME}_UUID_{UUID}.json")
+SERIALISED_TENSOR_PREDS = os.path.join(ASSET_DIR, f"metadata_{ASSET_NAME}_UUID_{UUID}.json")
 N_PREDICTIONS = {
     "XXXX" : 11,
     "ChangeThisTEMPORARY" : 10
@@ -55,7 +57,6 @@ def cast_nested(obj, new_dtype):
             return [cast_nested(o, new_dtype) for o in obj]
         return obj
     return obj.to(new_dtype)
-    
 
 class DummyModel:
     def __init__(self, type : str, asset_dir : str):

@@ -163,6 +163,7 @@ cython_debug/
 
 runs/
 *.pt
+!src/flat_bug/tests/assets/**.pt
 *.pth
 *.jpg
 *.yaml
