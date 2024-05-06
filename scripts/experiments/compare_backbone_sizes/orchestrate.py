@@ -49,7 +49,7 @@ if __name__ == "__main__":
         "N" : "./yolov8n-seg.pt"
     }
 
-    gpu = 1
+    gpu = [0, 1]
 
     experiment_configs = dict()
     for size in backbone_sizes:

@@ -102,7 +102,7 @@ if __name__ == '__main__':
             metadata = os.path.join(option_dict["results_dir"], "metadata")
 
     pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype)
-    pred.MIN_MAX_OBJ_SIZE = 16 ** 2, 1024 ** 2 / 10 # Size is measured as the square root of the area
+    pred.MIN_MAX_OBJ_SIZE = 16, 10**8 # Size is measured as the square root of the area
     pred.MAX_MASK_SIZE = 1024 # Loss of precision may occur if the mask is larger than this, but all shapes are possible. 
     pred.SCORE_THRESHOLD = 0.2
     pred.IOU_THRESHOLD = 0.2

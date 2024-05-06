@@ -309,7 +309,7 @@ class TensorPredictions:
             # Perform non-maximum suppression on the masks, using the scales as weights, that is the highest resolution masks are given the highest priority
             if self.PREFER_POLYGONS:
                 nms_ind = nms_polygons(self.polygons,
-                                    torch.tensor(self.scales, dtype=self.dtype, device=self.device) * self.confs,
+                                    self.confs * torch.tensor(self.scales, dtype=self.dtype, device=self.device),
                                     iou_threshold=iou_threshold, return_indices=True, dtype=self.dtype,
                                     boxes=self.boxes, **kwargs)
             else:
@@ -318,11 +318,13 @@ class TensorPredictions:
                     device=self.device, dtype=self.dtype
                 )
                 nms_ind = nms_masks(self.masks.data,
-                                    torch.tensor(self.scales, dtype=self.dtype, device=self.device) * self.confs,
+                                    self.confs * torch.tensor(self.scales, dtype=self.dtype, device=self.device),
                                     iou_threshold=iou_threshold, return_indices=True,
                                     boxes=self.boxes / image_to_mask_scale.repeat(2).unsqueeze(0), **kwargs)
             # Remove the elements that were not selected
             self = self[nms_ind]
+        else:
+            nms_ind = []
         
         if self.time:
             end.record()
@@ -1140,9 +1142,9 @@ class Predictor(object):
             fetch_time, forward_time, postprocess_time = sum(fetch_times), sum(forward_times), sum(postprocess_times)
             fetch_prop, forward_prop, postprocess_prop = fetch_time / total_batch_time, forward_time / total_batch_time, postprocess_time / total_batch_time
 
-        ### DEBUG #####
+        ## DEBUG #####
         # if self.DEBUG:
-        # print(f'Number of tiles processed before merging and plotting: {len(ps)}')
+        #     print(f'Number of tiles processed before merging and plotting: {len(postprocessed_results)}')
         # for i in range(len(postprocessed_results)):
         #     postprocessed_results[i].orig_img = (postprocessed_results[i].orig_img.detach().contiguous() * 255).to(torch.uint8).cpu().numpy() # Needed for compatibility with the Results.plot function
         #     postprocessed_results[i].names = ["?" for _ in range(10)]
@@ -1151,11 +1153,10 @@ class Predictor(object):
         # postprocessed_results : List[Results] = postprocessed_results
         # [axs[i].imshow(p.plot(pil=False, masks=True, probs=False, labels=False, kpt_line=False)) for i, p in enumerate(postprocessed_results)]
         # image_base_name = os.path.splitext(os.path.basename(self.im_path))[0]
-        # image_dir = os.path.dirname(self.im_path)
-        # plt.savefig(os.path.join(image_dir, f"{image_base_name}_debug_{scale:.3f}_fraw.png"), dpi=300)
+        # plt.savefig(os.path.join(f"{image_base_name}_debug_{scale:.3f}_fraw.png"), dpi=300)
         # for i in range(len(postprocessed_results)):
         #     postprocessed_results[i].orig_img = torch.tensor(postprocessed_results[i].orig_img).squeeze(0).to(dtype=self._dtype, device=self._device) / 255.0 # Backtransform
-        #################
+        ################
 
         ## Combine the results from the tiles
         MASK_SIZE = 256  # Defined by the YOLOv8 model segmentation architecture
