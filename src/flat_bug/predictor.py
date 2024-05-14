@@ -98,10 +98,6 @@ class TensorPredictions:
                  "BOX_IS_EQUAL_MARGIN",
                  "PREFER_POLYGONS"]  # Attributes that should not be changed after initialization - should 'contours' be here?
 
-<<<<<<< HEAD
-    def __init__(self, predictions : Union[list[Prepared_Results], None]=None, image : Union[torch.Tensor, None]=None,
-                 image_path = Union[str, None], time=False, **kwargs):
-=======
     def __init__(
             self, 
             predictions : Optional[list[Prepared_Results]]=None,
@@ -110,7 +106,6 @@ class TensorPredictions:
             time : bool=False, 
             **kwargs
         ):
->>>>>>> a43fd43ba744866eeb0acc033a91f3eed12b91e9
         # Set option flags
         self.time = time
 

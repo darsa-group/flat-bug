@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the root directory
-root_dir="/home/altair/flat-bug/test/ias_output"
+root_dir="/home/altair/flat-bug/test/ias_output_portugal_bulgaria"
 
 # Signal that the zipping process has started
 echo "Zipping process started for $root_dir"
