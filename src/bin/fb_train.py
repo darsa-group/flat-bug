@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import argparse
 import logging
 import os.path
@@ -10,22 +9,28 @@ from ultralytics import settings
 
 # fixme, resume should continue on the same "run folder"
 if __name__ == '__main__':
+
     DEFAULT_CONF = {
         "batch": 8,
         "imgsz": 1024,
-
         "model": "yolov8m-seg.pt",
         "task": "detect",
-        # "task": "segment", #fixme why not segment?!
+        # "task": "segment", #fixme why not segment?! RE: It is overwritten in the __init__ method of ultralytics.models.yolo.segment.train.SegmentationTrainer
         "epochs": 5000,
         "device": "cuda",
         "patience": 500,
         "optimizer": 'auto',
-        "save_period": 100,
+        "save_period": 5,
         # "optimizer": 'SGD',
         # "lr0": 0.01,
         # "lrf": 0.005,
-        "workers": 4  # fixme
+        "workers": 4,
+        "fb_max_instances": 150,
+        "fb_max_images": -1,
+        "fb_custom_eval": False,
+        "fb_custom_eval_num_images": -1,
+        "fb_exclude_datasets" : [],
+        "cache": "ram"
     }
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
@@ -64,7 +69,18 @@ if __name__ == '__main__':
         overrides["resume"] = overrides["model"]
     else:
         overrides["resume"] = False
-    # print(settings)
+
+    # This is just a hack to fix this: https://github.com/pytorch/pytorch/issues/37377 - only relevant for DDP
+    if isinstance(overrides["device"], (tuple, list)) :
+        num_devices = len(overrides["device"])
+    elif isinstance(overrides["device"], str):
+        num_devices = len(overrides["device"].split(","))
+    else:
+        num_devices = 1 # Fixme: Is this a real case, or just a type error?
+    if isinstance(overrides["device"], (tuple, list)) or (isinstance(overrides["device"], str) and len(overrides["device"].split(",")) > 1):
+        os.environ['MKL_THREADING_LAYER'] = 'GNU'
+        os.environ['OMP_NUM_THREADS'] = str(overrides["workers"])
+
     t = MySegmentationTrainer(overrides=overrides)
 
     if not option_dict["resume"]:

@@ -74,6 +74,7 @@ def merge_cocos(files, out_file, delete=False):
     if delete:
         for c in files:
             os.remove(c)
+
 def prepare_coco_file(source_file, image_list, out):
     with open(source_file) as f:
         coco = json.load(f)
@@ -81,7 +82,6 @@ def prepare_coco_file(source_file, image_list, out):
     image_ids_to_keep = []
 
     new_image = []
-
     for i in coco["images"]:
         if i["file_name"] in image_list:
             images_to_keep.append(i)
@@ -146,7 +146,7 @@ if __name__ == '__main__':
 
     with open(os.path.join(PREPARED_DATA_TARGET, "data.yaml"), "w") as f:
         yaml.dump(data_yaml, f)
-    datasets = []
+    datasets = [] # [d for d in os.listdir(COCO_DATA_ROOT) if os.path.isdir(os.path.join(COCO_DATA_ROOT, d))]
     for d in os.listdir(COCO_DATA_ROOT):
         source_dir = os.path.join(COCO_DATA_ROOT, d)
         if os.path.isdir(source_dir):
