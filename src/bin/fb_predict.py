@@ -33,6 +33,7 @@ if __name__ == '__main__':
     args_parse.add_argument("-g", "--gpu", type=str, default="cuda:0", help="Which device to use for inference. Default is 'cuda:0', i.e. the first GPU.")
     args_parse.add_argument("-d", "--dtype", type=str, default="float16", help="Which dtype to use for inference. Default is 'float16'.")
     args_parse.add_argument("-f", "--fast", action="store_true", help="Use fast mode.")
+    args_parse.add_argument("--config", type=str, default=None, help="The config file.")
     args_parse.add_argument("--no-crops", action="store_true", help="Do not save the crops.")
     args_parse.add_argument("--no-overviews", action="store_true", help="Do not save the overviews.")
     args_parse.add_argument("--no-metadata", action="store_true", help="Do not save the metadata.")
@@ -78,6 +79,8 @@ if __name__ == '__main__':
     if dtype not in [torch.float16, torch.float32, torch.bfloat16]:
         raise ValueError(f"Dtype '{option_dict['dtype']}' is not supported.")
     
+    config = option_dict["config"]
+    
     crops = not option_dict["no_crops"]
     metadata = not option_dict["no_metadata"]
     if option_dict["no_overviews"]:
@@ -101,24 +104,11 @@ if __name__ == '__main__':
         if metadata:
             metadata = os.path.join(option_dict["results_dir"], "metadata")
 
-    pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype)
-    pred.MIN_MAX_OBJ_SIZE = 16, 10**8 # Size is measured as the square root of the area
-    pred.MAX_MASK_SIZE = 1024 # Loss of precision may occur if the mask is larger than this, but all shapes are possible. 
-    pred.SCORE_THRESHOLD = 0.2
-    pred.IOU_THRESHOLD = 0.2
-    pred.MINIMUM_TILE_OVERLAP = 256
-    pred.EDGE_CASE_MARGIN = 32
-    pred.PREFER_POLYGONS = True # Convert masks to polygons as soon as possible, and only use the polygons for further processing - no loss of precision, but only single polygons without holes can be represented, performance impact may depend on hardware and use-case
-    pred.EXPERIMENTAL_NMS_OPTIMIZATION = True
-    pred.TIME = option_dict["verbose"] # Should be enabled with a verbose parameter, and maybe logged? Also not sure if it incurrs a performance penalty
+    verbose = option_dict["verbose"]
+    if verbose:
+        config["TIME"] = True
 
-    # # Legacy hyperparameters
-    # pred.MIN_MAX_OBJ_SIZE = 16, 1024
-    # pred.MINIMUM_TILE_OVERLAP = 256
-    # pred.EDGE_CASE_MARGIN = 128
-    # pred.SCORE_THRESHOLD = 0.5
-    # # pred.IOU_THRESHOLD = 0.5
-    # pred.PREFER_POLYGONS = True # This wasn't a hyperparameter before, but it reproduces the old behavior
+    pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype, cfg=config)
 
     # fixme, build from pred._model!
     categories = {"id": 1, "name": "insect"}

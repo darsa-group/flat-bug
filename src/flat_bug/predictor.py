@@ -7,33 +7,31 @@ import json
 import math
 import logging
 
-import multiprocessing
-
-from copy import deepcopy
-
 from typing import Union, List, Tuple, Optional, Any
+
 try:
     import exiftool
     EXIFTOOL_AVAILABLE = True
 except ImportError:
     EXIFTOOL_AVAILABLE = False
 
-import torch
-import torchvision
 import numpy as np
-# import shapely
 import cv2
 from matplotlib import pyplot as plt
 
+import torch
+import torchvision
 from torchvision.io import read_image, ImageReadMode
 import torchvision.transforms as transforms
+
+from ultralytics import YOLO
+from ultralytics.engine.results import Results
 
 # from flat_bug.yolo_helpers import *
 from flat_bug.yolo_helpers import ResultsWithTiles, stack_masks, offset_box, resize_mask, postprocess, merge_tile_results
 from flat_bug.geometric import find_contours, contours_to_masks, simplify_contour, create_contour_mask, scale_contour
 from flat_bug.nms import nms_masks, nms_polygons, detect_duplicate_boxes
-from ultralytics import YOLO
-from ultralytics.engine.results import Results
+from flat_bug.config import read_cfg, DEFAULT_CFG, CFG_PARAMS
 
 
 # Class for containing the results from a single _detect_instances call - This should probably not be its own class, but just a TensorPredictions object with a single element instead, but this would require altering the TensorPredictions._combine_predictions function to handle a single element differently or pass a flag or something
@@ -56,12 +54,12 @@ class Prepared_Results:
 
     # Properties for accessing the data
     @property
-    def contours(self) -> List[Union["torch.Tensor", Any]]:
-        return self._predictions.masks.xy
+    def contours(self) -> List["torch.Tensor"]:
+        return [c if c is not None else torch.tensor([], dtype=torch.long, device=self.device) for c in self._predictions.masks.xy]
 
     @property
-    def masks(self) -> Optional["torch.Tensor"]:
-        return self._predictions.masks
+    def masks(self) -> Union["torch.Tensor", "np.ndarray"]:
+        return self._predictions.masks.data
 
     @property
     def boxes(self) -> Union["torch.Tensor", "np.ndarray"]:
@@ -72,7 +70,7 @@ class Prepared_Results:
         return self._predictions.boxes.conf
 
     @property
-    def classes(self):
+    def classes(self) -> "torch.Tensor":
         ### OBS: This is not really implemented, but exists just so that the the rest of the code already handles the multiclass case, but this function will need to be changed for it to work properly ### 
         # Currently this function is pretty redundant, since the localizer only has a single class. 
         # If there were more classes, the function should do some kind of argmax on self._predictions.boxes.cls (I assume these are class probabilities).
@@ -146,8 +144,8 @@ class TensorPredictions:
         if not no_predictions:
             self._combine_predictions(predictions)
         else:
-            # If there are no predictions, set other attributes to None
-            self.masks, self.polygons, self.boxes, self.confs, self.classes, self.scales = None, None, None, None, None, None
+            # If there are no predictions, set other attributes to empty tensors or lists - ensures correct type and device for the attributes when there are no predictions
+            self.masks, self.polygons, self.boxes, self.confs, self.classes, self.scales = torch.empty((0, 0), device=self.device, dtype=self.dtype), [], torch.empty((0, 4), device=self.device, dtype=self.dtype), torch.empty(0, device=self.device, dtype=self.dtype), torch.empty(0, device=self.device, dtype=self.dtype), []
 
         if self.time and len(predictions) > 0:
             end.record()
@@ -178,9 +176,11 @@ class TensorPredictions:
 
         ## Duplicate removal ##
         # Calculate indices of non-duplicate boxes - prioritzed by resolution
-        valid_indices = detect_duplicate_boxes(self.boxes,
-                                               torch.tensor(self.scales, dtype=self.dtype, device=self.device),
-                                               margin=self.BOX_IS_EQUAL_MARGIN, return_indices=True)
+        valid_indices = detect_duplicate_boxes(
+            self.boxes,
+            torch.tensor(self.scales, dtype=self.dtype, device=self.device),
+            margin=self.BOX_IS_EQUAL_MARGIN, return_indices=True
+        )
         # Subset the boxes and confidences to the valid indices
         self.boxes = self.boxes[valid_indices]
         self.confs = self.confs[valid_indices]
@@ -194,7 +194,7 @@ class TensorPredictions:
             end_duplication_removal.record()
 
         # For the remaining attributes we remove the duplicates before combining them
-        self.masks = stack_masks([p.masks.data[nd] for p, nd in zip(predictions, valid_chunked)])  # NxMHxMW - MH and MW are proportional to the original image size
+        self.masks = stack_masks([p.masks[nd] for p, nd in zip(predictions, valid_chunked)])  # NxMHxMW - MH and MW are proportional to the original image size
         self.mask_height, self.mask_width = self.masks.shape[1:]
 
         if self.time:
@@ -205,6 +205,7 @@ class TensorPredictions:
         self.polygons = [p._predictions.polygons[nd_i] for p, nd in zip(predictions, valid_chunked) for nd_i in nd]
         self.classes = torch.cat([p.classes[nd] for p, nd in zip(predictions, valid_chunked)])  # N
         self.scales = [predictions[i].scale for i, p in enumerate(valid_chunked) for _ in range(len(p))]  # N
+
         # # Check that everything is the correct size
         assert len(self) == len(self.boxes), RuntimeError(f"len(self) {len(self)} != len(self.boxes) {len(self.boxes)}")
         assert len(self) == len(self.confs), RuntimeError(f"len(self) {len(self)} != len(self.confs) {len(self.confs)}")
@@ -235,31 +236,33 @@ class TensorPredictions:
 
         if any(offset > 0):
             raise NotImplementedError("Positive offsets are not implemented yet")
-        # Boxes is easy
-        self.boxes = offset_box(self.boxes, offset)  # Add the offsets to the box-coordinates
-        self.boxes[:, :4] = (self.boxes[:,
-                             :4] * scale).round()  # Multiply the box-coordinates by the scale factor (round so it doesn't implicitly gets floored when cast to an integer later)
-        # Pad the boxes a bit to be safe
-        self.boxes[:, :2] -= pad
-        self.boxes[:, 2:] += pad
-        self.boxes = self.boxes.long()
-        # Clamp the boxes to the image size
-        self.boxes[:, 0:4:2] = self.boxes[:, 0:4:2].clamp(0, self.image.shape[2] - 1)
-        self.boxes[:, 1:4:2] = self.boxes[:, 1:4:2].clamp(0, self.image.shape[1] - 1)
 
-        self.polygons = [(poly + offset.unsqueeze(0)) * scale for poly in self.polygons]
+        if len(self) > 0:
+            # Boxes is easy
+            self.boxes = offset_box(self.boxes, offset)  # Add the offsets to the box-coordinates
+            self.boxes[:, :4] = (self.boxes[:,
+                                :4] * scale).round()  # Multiply the box-coordinates by the scale factor (round so it doesn't implicitly gets floored when cast to an integer later)
+            # Pad the boxes a bit to be safe
+            self.boxes[:, :2] -= pad
+            self.boxes[:, 2:] += pad
+            self.boxes = self.boxes.long()
+            # Clamp the boxes to the image size
+            self.boxes[:, 0:4:2] = self.boxes[:, 0:4:2].clamp(0, self.image.shape[2] - 1)
+            self.boxes[:, 1:4:2] = self.boxes[:, 1:4:2].clamp(0, self.image.shape[1] - 1)
 
-        # However masks are more complicated since they don't have the same size as the image
-        image_shape = torch.tensor([self.image.shape[1], self.image.shape[2]], device=self.device,
-                                   dtype=self.dtype)  # Get the shape of the original image
-        # Calculate the normalized offset (i.e. the offset as a fraction of the scaled and padded image size, here the scaled and padded image size is calculated from the original image shape, but it would probably be easier just to pass it...)
-        offset_norm = -offset / (image_shape / scale - 2 * offset)
-        orig_mask_shape = torch.tensor([self.masks.shape[1], self.masks.shape[2]], device=self.device, dtype=self.dtype) - 1  # Get the shape of the masks
-        # Convert the normalized offset to the coordinates of the masks
-        offset_mask_coords = offset_norm * orig_mask_shape
-        # Round the coordinates to the nearest integer and convert to long (needed for indexing)
-        offset_mask_coords = torch.round(offset_mask_coords).long()
-        self.masks.data = self.masks.data[:, offset_mask_coords[0]:(-(offset_mask_coords[0] + 1) if offset_mask_coords[0] != 0 else None), offset_mask_coords[1]:(-(offset_mask_coords[1] + 1) if offset_mask_coords[1] != 0 else None)]  # Slice out the padded parts of the masks
+            self.polygons = [(poly + offset.unsqueeze(0)) * scale for poly in self.polygons]
+
+            # However masks are more complicated since they don't have the same size as the image
+            image_shape = torch.tensor([self.image.shape[1], self.image.shape[2]], device=self.device,
+                                    dtype=self.dtype)  # Get the shape of the original image
+            # Calculate the normalized offset (i.e. the offset as a fraction of the scaled and padded image size, here the scaled and padded image size is calculated from the original image shape, but it would probably be easier just to pass it...)
+            offset_norm = -offset / (image_shape / scale - 2 * offset)
+            orig_mask_shape = torch.tensor([self.masks.shape[1], self.masks.shape[2]], device=self.device, dtype=self.dtype) - 1  # Get the shape of the masks
+            # Convert the normalized offset to the coordinates of the masks
+            offset_mask_coords = offset_norm * orig_mask_shape
+            # Round the coordinates to the nearest integer and convert to long (needed for indexing)
+            offset_mask_coords = torch.round(offset_mask_coords).long()
+            self.masks.data = self.masks.data[:, offset_mask_coords[0]:(-(offset_mask_coords[0] + 1) if offset_mask_coords[0] != 0 else None), offset_mask_coords[1]:(-(offset_mask_coords[1] + 1) if offset_mask_coords[1] != 0 else None)]  # Slice out the padded parts of the masks
 
         if self.time:
             end.record()
@@ -309,7 +312,7 @@ class TensorPredictions:
             # Perform non-maximum suppression on the masks, using the scales as weights, that is the highest resolution masks are given the highest priority
             if self.PREFER_POLYGONS:
                 nms_ind = nms_polygons(self.polygons,
-                                    self.confs * torch.tensor(self.scales, dtype=self.dtype, device=self.device),
+                                    self.confs,# * torch.tensor(self.scales, dtype=self.dtype, device=self.device),
                                     iou_threshold=iou_threshold, return_indices=True, dtype=self.dtype,
                                     boxes=self.boxes, **kwargs)
             else:
@@ -318,7 +321,7 @@ class TensorPredictions:
                     device=self.device, dtype=self.dtype
                 )
                 nms_ind = nms_masks(self.masks.data,
-                                    self.confs * torch.tensor(self.scales, dtype=self.dtype, device=self.device),
+                                    self.confs,# * torch.tensor(self.scales, dtype=self.dtype, device=self.device),
                                     iou_threshold=iou_threshold, return_indices=True,
                                     boxes=self.boxes / image_to_mask_scale.repeat(2).unsqueeze(0), **kwargs)
             # Remove the elements that were not selected
@@ -617,6 +620,33 @@ class TensorPredictions:
             # Save the crop
             torchvision.utils.save_image(crop, os.path.join(outdir, crop_name))
 
+    @property
+    def json_data(self):
+        ## Clean up the data
+        # 1. Convert the boxes to list
+        boxes = self.boxes.cpu().tolist()
+        # 2. Convert the masks to contours as lists 
+        contours = [c.T.cpu().tolist() for c in self.contours]
+        # 3. Convert the confidences to floats in a list
+        confs = self.confs.float().cpu().tolist()
+        # 4. Convert the classes to integers in a list
+        classes = self.classes.cpu().long().tolist()
+        # 5. Get the scales (already floats in a list)
+        scales = self.scales
+        return {
+            "boxes": boxes,
+            "contours": contours,
+            "confs": confs,
+            "classes": classes,
+            "scales": scales,
+            "image_path": self.image_path,
+            "image_width": self.image.shape[2],
+            "image_height": self.image.shape[1],
+            "mask_width": self.image.shape[2] if self.PREFER_POLYGONS else self.masks.data.shape[2],
+            "mask_height": self.image.shape[1] if self.PREFER_POLYGONS else self.masks.data.shape[1],
+            "identifier": None
+        }
+
     def serialize(
             self, 
             outpath: str = None, 
@@ -659,29 +689,8 @@ class TensorPredictions:
         if save_json:
             if os.path.exists(json_path):
                 print(f"WARNING: JSON ({json_path}) already exists, overwriting!")
-            ### Then serialize as .json file
-            ## Clean up the data
-            # 1. Convert the boxes to list
-            boxes = self.boxes.cpu().tolist()
-            # 2. Convert the masks to contours as lists 
-            contours = [c.T.cpu().tolist() for c in self.contours]
-            # 3. Convert the confidences to floats in a list
-            confs = self.confs.float().cpu().tolist()
-            # 4. Convert the classes to integers in a list
-            classes = self.classes.cpu().long().tolist()
-            # 5. Get the scales (already floats in a list)
-            scales = self.scales
-            json_data = {"boxes": boxes,
-                         "contours": contours,
-                         "confs": confs,
-                         "classes": classes,
-                         "scales": scales,
-                         "identifier": identifier if identifier else self.image_path,
-                         "image_path": self.image_path,
-                         "image_width": self.image.shape[2],
-                         "image_height": self.image.shape[1],
-                         "mask_width": self.image.shape[2] if self.PREFER_POLYGONS else self.masks.data.shape[2],
-                         "mask_height": self.image.shape[1] if self.PREFER_POLYGONS else self.masks.data.shape[1]}
+            json_data = self.json_data
+            json_data["identifier"] = identifier if identifier else self.image_path,
             with open(json_path, 'w') as f:
                 json.dump(json_data, f)
 
@@ -959,26 +968,29 @@ def _process_batch(
         return batch, batch_outputs, None
 
 class Predictor(object):
-    # Hyperparameters
-    MIN_MAX_OBJ_SIZE = (8, 2048)
-    MINIMUM_TILE_OVERLAP = 384
-    EDGE_CASE_MARGIN = 64
-    SCORE_THRESHOLD = 0.2
-    IOU_THRESHOLD = 0.25
-    MAX_MASK_SIZE = 2048
-    
-    # Debugging/Development features
-    TIME = False
-    EXPERIMENTAL_NMS_OPTIMIZATION = True
-    PREFER_POLYGONS = True
-    DEBUG = False
-    
-    TILE_SIZE = 1024 # Fixed by the model architecture - do not change unless you know what you are doing
-    BATCH_SIZE = 16 # Used for model initialization and batched tile processing
+    HYPERPARAMETERS = CFG_PARAMS
+    # Hyperparameters, set to None so they are visible in the class
+    MIN_MAX_OBJ_SIZE                = None
+    MAX_MASK_SIZE                   = None
+    SCORE_THRESHOLD                 = None
+    IOU_THRESHOLD                   = None
+    MINIMUM_TILE_OVERLAP            = None
+    EDGE_CASE_MARGIN                = None
+    PREFER_POLYGONS                 = None
+    EXPERIMENTAL_NMS_OPTIMIZATION   = None
+    TIME                            = None
+    TILE_SIZE                       = None
+    BATCH_SIZE                      = None
 
-    def __init__(self, model : Union[str, pathlib.Path], cfg=None, device : Union[torch.device, str, List[Union[torch.device, str]]]=torch.device("cpu"), dtype : torch.dtype=torch.float32):
-        if not cfg is None:
-            raise NotImplementedError("cfg is not implemented yet")
+    # Enable debug mode, only for development
+    DEBUG = False
+
+    def __init__(self, model : Union[str, pathlib.Path], cfg : Optional[Union[dict, str, os.PathLike]]=None, device : Union[torch.device, str, List[Union[torch.device, str]]]=torch.device("cpu"), dtype : torch.dtype=torch.float32):
+        if cfg is None:
+            cfg = DEFAULT_CFG
+        if isinstance(cfg, (str, os.PathLike)):
+            cfg = read_cfg(cfg, strict=True)
+        self.set_hyperparameters(**cfg)
 
         self._multi_gpu = isinstance(device, (list, tuple))
         self._devices = [torch.device(device)] if not self._multi_gpu else [torch.device(d) for d in device]
@@ -1015,6 +1027,13 @@ class Predictor(object):
         self._model.eval()
 
         self._yolo_predictor = None
+
+    def set_hyperparameters(self, **kwargs):
+        for k, v in kwargs.items():
+            if k in self.HYPERPARAMETERS:
+                setattr(self, k, v)
+            else:
+                raise ValueError(f"Unknown hyperparameter: {k}")
     
     def _detect_instances(
             self,
@@ -1206,8 +1225,10 @@ class Predictor(object):
             total_detect_time = start_detect.elapsed_time(end_detect) / 1000  # Convert to seconds
             pred_prop = total_elapsed / total_detect_time
             print(f'Prediction time: {total_elapsed:.3f}s/{pred_prop * 100:.3g}% (overhead: {overhead_prop * 100:.1f}) | Fetch {fetch_prop * 100:.1f}% | Forward {forward_prop * 100:.1f}% | Postprocess {postprocess_prop * 100:.1f}%)')
-            self.total_detection_time += total_detect_time
-            self.total_forward_time += forward_time
+            if hasattr(self, "total_detection_time"):
+                self.total_detection_time += total_detect_time
+            if hasattr(self, "total_forward_time"):
+                self.total_forward_time += forward_time
         return Prepared_Results(
             predictions = postprocessed_results, 
             scale = real_scale, 
@@ -1215,7 +1236,7 @@ class Predictor(object):
             dtype = self._dtype
         )
 
-    def pyramid_predictions(self, image, path=None, scale_increment=2 / 3, scale_before=1, single_scale=False):
+    def pyramid_predictions(self, image, path=None, scale_increment=2 / 3, scale_before=1, single_scale=False) -> TensorPredictions:
         if self.TIME:
             # Initialize timing calculations
             start_pyramid, end_pyramid = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)

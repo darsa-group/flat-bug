@@ -23,6 +23,20 @@ N_PREDICTIONS = N_PREDICTIONS.get(UUID, None)
 if N_PREDICTIONS is None:
     raise ValueError(f"Number of predictions for UUID {UUID} is not known")
 
+TEST_CFG = {
+    "SCORE_THRESHOLD": 0.2,
+    "IOU_THRESHOLD": 0.25,
+    "MINIMUM_TILE_OVERLAP": 384,
+    "EDGE_CASE_MARGIN": 64,
+    "MIN_MAX_OBJ_SIZE": (16, 10**8),
+    "MAX_MASK_SIZE": 1024,
+    "PREFER_POLYGONS": True,
+    "EXPERIMENTAL_NMS_OPTIMIZATION": True,
+    "TIME": False,
+    "TILE_SIZE": 1024,
+    "BATCH_SIZE": 16
+}
+
 class TestTensorPredictions(unittest.TestCase):
     def test_load(self):
         tp = TensorPredictions()
@@ -58,13 +72,28 @@ def cast_nested(obj, new_dtype):
         return obj
     return obj.to(new_dtype)
 
-class DummyModel:
+class DummyModel(torch.nn.Module):
     def __init__(self, type : str, asset_dir : str):
         if type not in ["single_scale", "pyramid"]:
             raise ValueError(f"Invalid type {type}")
         self.type = type
         self.asset_dir = asset_dir
         self.index = 1
+
+    def to(self, *args, **kwargs):
+        return self
+
+    def cpu(self):
+        return self
+
+    def cuda(self, *args, **kwargs):
+        return self
+    
+    def eval(self):
+        return self
+
+    def train(self, mode=True):
+        return self
 
     def __call__(self, image):
         try:
@@ -77,7 +106,7 @@ class DummyModel:
 
     def generate_single_scale_files(self, weights, image):
         dtype, device = image.dtype, image.device
-        model = Predictor(model=weights, device=device, dtype=dtype)
+        model = Predictor(model=weights, device=device, dtype=dtype, cfg=TEST_CFG)
         model.DEBUG = True
         model.TIME = True
         model.total_detection_time = 0
@@ -91,7 +120,7 @@ class DummyModel:
 
     def generate_pyramid_files(self, weights, image, image_path):
         dtype, device = image.dtype, image.device
-        model = Predictor(model=weights, device=device, dtype=dtype)
+        model = Predictor(model=weights, device=device, dtype=dtype, cfg=TEST_CFG)
         model.DEBUG = True
         model.TIME = True
         output = model.pyramid_predictions(image, image_path, scale_increment=1/2, scale_before=1, single_scale=False)
@@ -102,27 +131,31 @@ class DummyModel:
             f.write(str(len(output)))
 
 class TestPredictor(unittest.TestCase):
+    TOLERANCE = 0.1
+
     def test_single_scale(self):
         dtype = torch.float32
-        predictor = Predictor(model=None, dtype=dtype)
-        predictor._model = DummyModel("single_scale", ASSET_DIR)
+        predictor = Predictor(model=DummyModel("single_scale", ASSET_DIR), dtype=dtype, cfg=TEST_CFG)
         image_path = os.path.join(ASSET_DIR, ASSET_NAME + ".jpg")
         image = read_image(image_path).to(torch.device("cpu"), dtype=dtype)
         output = predictor._detect_instances(image, scale=1, max_scale=False)
         output_length = len(output)
-        reference_length = int(open(os.path.join(ASSET_DIR, "single_scale_output_length.txt")).read())
-        self.assertTrue(abs(1 - output_length/reference_length) < 0.1, msg=f"Output length ({output_length}) does not match the reference length ({reference_length})")
+        with open(os.path.join(ASSET_DIR, "single_scale_output_length.txt")) as f:
+            reference_length = int(f.read())
+        # Check that the output length is within tolerance of the reference length
+        self.assertTrue(abs(1 - output_length/reference_length) < self.TOLERANCE, msg=f"Output length ({output_length}) does not match the reference length ({reference_length})")
     
     def test_pyramid(self):
         dtype = torch.float32
-        predictor = Predictor(model=None, dtype=dtype)
-        predictor._model = DummyModel("pyramid", ASSET_DIR)
+        predictor = Predictor(model=DummyModel("pyramid", ASSET_DIR), dtype=dtype, cfg=TEST_CFG)
         image_path = os.path.join(ASSET_DIR, ASSET_NAME + ".jpg")
         image = read_image(image_path).to(torch.device("cpu"), dtype=dtype)
         output = predictor.pyramid_predictions(image, image_path, scale_increment=1/2, scale_before=1, single_scale=False)
         output_length = len(output)
-        reference_length = int(open(os.path.join(ASSET_DIR, "pyramid_output_length.txt")).read())
-        self.assertTrue(abs(1 - output_length/reference_length) < 0.1, msg=f"Output length ({output_length}) does not match the reference length ({reference_length})")
+        with open(os.path.join(ASSET_DIR, "pyramid_output_length.txt")) as f:
+            reference_length = int(f.read())
+        # Check that the output length is within tolerance of the reference length
+        self.assertTrue(abs(1 - output_length/reference_length) < self.TOLERANCE, msg=f"Output length ({output_length}) does not match the reference length ({reference_length})")
 
 if __name__ == '__main__':
     unittest.main()

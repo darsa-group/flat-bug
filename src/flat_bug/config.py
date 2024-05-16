@@ -1,0 +1,227 @@
+import os, yaml
+from collections import OrderedDict
+from typing import Union, Any
+
+# Add support for OrderedDict in PyYAML
+yaml.add_representer(OrderedDict, lambda dumper, data: dumper.represent_dict(data.items()), Dumper=yaml.SafeDumper)
+
+CFG_PARAMS = [
+    "SCORE_THRESHOLD",
+    "IOU_THRESHOLD",
+    "MINIMUM_TILE_OVERLAP",
+    "EDGE_CASE_MARGIN",
+    "MIN_MAX_OBJ_SIZE",
+    "MAX_MASK_SIZE",
+    "PREFER_POLYGONS",
+    "EXPERIMENTAL_NMS_OPTIMIZATION",
+    "TIME",
+    "TILE_SIZE",
+    "BATCH_SIZE"
+]
+
+CFG_DESCRIPTION = {
+    "SCORE_THRESHOLD": "Minimum score for a prediction to be considered.",
+    "IOU_THRESHOLD": "Minimum IOU for a prediction to be considered a duplicate.",
+    "MINIMUM_TILE_OVERLAP": "Minimum overlap between tiles when splitting the image.",
+    "EDGE_CASE_MARGIN": "Margin for edge cases. How far from the edge of the image a prediction can be.",
+    "MIN_MAX_OBJ_SIZE": "Minimum and maximum size of an object. Size is measured as the square root of the area, i.e. the average of the width and height.",
+    "MAX_MASK_SIZE": "Loss of precision may occur if the mask is larger than this, but all shapes are possible. No effect if PREFER_POLYGONS is enabled.",
+    "PREFER_POLYGONS": "Convert masks to polygons as soon as possible, and only use the polygons for further processing - no loss of precision, but only single polygons without holes can be represented, performance impact may depend on hardware and use-case.",
+    "EXPERIMENTAL_NMS_OPTIMIZATION": "Experimental optimization for NMS. Improves performance significantly when there are many predictions.",
+    "TIME": "Enable to print time taken for each step. Can incur a performance penalty.",
+    "TILE_SIZE": "Fixed by the model architecture - do not change unless you know what you are doing.",
+    "BATCH_SIZE": "Used for model initialization and batched tile processing."
+}
+
+DEFAULT_CFG = {
+    "SCORE_THRESHOLD": 0.2,
+    "IOU_THRESHOLD": 0.2,
+    "MINIMUM_TILE_OVERLAP": 384,
+    "EDGE_CASE_MARGIN": 32,
+    "MIN_MAX_OBJ_SIZE": (32, 10**8),
+    "MAX_MASK_SIZE": 1024,
+    "PREFER_POLYGONS": True,
+    "EXPERIMENTAL_NMS_OPTIMIZATION": True,
+    "TIME": False,
+    "TILE_SIZE": 1024,
+    "BATCH_SIZE": 16
+}
+
+LEGACY_CFG = {
+    "SCORE_THRESHOLD": 0.5,
+    "IOU_THRESHOLD": 0.5,
+    "MINIMUM_TILE_OVERLAP": 256,
+    "EDGE_CASE_MARGIN": 128,
+    "MIN_MAX_OBJ_SIZE": (16, 1024),
+    "MAX_MASK_SIZE": 1024,
+    "PREFER_POLYGONS": True,
+    "EXPERIMENTAL_NMS_OPTIMIZATION": True,
+    "TIME": False,
+    "TILE_SIZE": 1024,
+    "BATCH_SIZE": 16
+}
+
+def get_type_def(obj, tuple_list_interchangeable=False):
+    if isinstance(obj, (tuple, list)):
+        otype = type(obj)
+        if tuple_list_interchangeable and otype in (tuple, list):
+            otype = (tuple, list)
+        return [otype, [get_type_def(i, tuple_list_interchangeable) for i in obj]]
+    return type(obj)
+
+CFG_TYPES = {k : get_type_def(DEFAULT_CFG[k], tuple_list_interchangeable=True) for k in DEFAULT_CFG}
+
+def check_types(value : Any, expected_type : Union[type, tuple, set, list], key : str="<Not specified>", strict : bool=True) -> bool:
+    """
+    Recursively check if the type of a value matches the expected type.
+
+    If the expected type is a list, the first element is the type of the value, and the second element is a list of types that the elements of the value match, a single type that all elements should match or a tuple/type of types that all elements should match any of.
+
+    Parameters:
+        value: The value to check.
+        expected_type: The expected type of the value.
+        key: Name of the value to use in error messages.
+
+    Returns:
+        bool: True if the check passes, and False if strict is False and the check fails. Raises an error otherwise.
+    """
+    # If expected type is a list, recursively check the types of the elements
+    if isinstance(expected_type, list):
+        # Check that an expected type has been supplied for both the value and its elements
+        if len(expected_type) != 2:
+            raise ValueError(f"Expected type list must have exactly 2 elements, got {len(expected_type)} for key: {key}.")
+        # Check that the value matches the expected type
+        check_types(value, expected_type[0], key)
+        # If the expected type of the elements is a list, each element of the value should match the corresponding element of the expected type list
+        if isinstance(expected_type[1], list):
+            # Check that the number of types in the list matches the number of items in the value
+            if len(value) != len(expected_type[1]):
+                raise ValueError(f"Expected number of types ({len(expected_type[1])}) does not match number of items in value ({len(value)}) for key: {key}.")
+            # Check that each item in the value matches the corresponding type in the expected type list
+            for item, et in zip(value, expected_type[1]):
+                check_types(item, et, key)
+        # If the expected type of the elements is a single type (or a tuple/set of types), each element of the value should match the expected type
+        elif isinstance(expected_type[1], (type, tuple, set)):
+            for item in value:
+                check_types(item, expected_type[1], key)
+        else:
+            raise TypeError(f"Invalid expected type. Expected 'type', 'tuple', 'set' or 'list', got {type(expected_type[1])} for key: {key}.")
+    # If the expected type is a tuple/set, check if the value is an instance of any of the types in the tuple/set
+    elif isinstance(expected_type, (tuple, set)):
+        if not any([check_types(value, e, key, False) for e in expected_type]):
+            raise TypeError(f"Expected one of {et}, got {type(value)} for key: {key}.")
+    # If the expected type is a 'type' object, check if the value is an instance of the type
+    elif isinstance(expected_type, type):
+        if not isinstance(value, expected_type):
+            if strict:
+                raise TypeError(f"Expected {expected_type}, got {type(value)} for key {key}.")
+            else:
+                return False
+    # If the expected type is not a list, a tuple/set or a 'type' object raise an error
+    else:
+        raise TypeError(f"Invalid expected type. Expected 'type', 'tuple', 'set' or 'list', got {type(expected_type)} for key: {key}.")
+    # If no errors are raised, return True
+    return True
+
+def check_cfg_types(cfg : dict, strict : bool = False) -> bool:
+    """
+    Check if the config is a dictionary and that the types of the values in the config dictionary are correct.
+
+    Parameters:
+        cfg (dict): The config dictionary to check.
+        strict (bool): If True, raise an error if a key is not recognized.
+    
+    Returns:
+        bool: True if all checks pass, raises an error otherwise.
+    """
+    # Check if cfg is a dictionary
+    if not isinstance(cfg, dict):
+        raise TypeError(f"Invalid config type. Expected dict, got {type(cfg)}.")
+    # Check if the types of the values in the config dictionary are correct
+    for key in cfg:
+        if key not in CFG_TYPES:
+            if strict:
+                raise KeyError(f"Config parameter {key} not recognized.")
+            else:
+                pass
+        else:
+            check_types(cfg[key], CFG_TYPES[key], key)
+    # If no errors are raised, return True
+    return True
+
+def read_cfg(config : Union[str, os.PathLike], strict : bool=False) -> dict:
+    """
+    Load and validate the config file.
+
+    Missing keys are replaced with default values.
+
+    Parameters:
+        config (Union[str, os.PathLike]): The path to the config file.
+        strict (bool): If True, raise an error if a key is not recognized.
+
+    Returns:
+        dict: The config dictionary.
+    """
+    # Check if config is a string or path-like object
+    if not isinstance(config, (str, os.PathLike)):
+        raise TypeError(f"Invalid config location. Expected str or os.PathLike, got {type(config)}.")
+    # Check if the config file is a YAML file
+    if not config.endswith(".yaml"):
+        raise ValueError(f"Cannot read config. Expected YAML file, got {config}.")
+    # Check if config file exists
+    if not os.path.exists(config):
+        raise FileNotFoundError(f"Config file {config} not found.")
+    # Load config file
+    with open(config, "r") as f:
+        cfg = yaml.safe_load(f)
+    # Type check config
+    check_cfg_types(cfg, strict)
+    # Replace missing keys with default values
+    for key in DEFAULT_CFG:
+        if key not in cfg:
+            cfg[key] = DEFAULT_CFG[key]
+    # Return config
+    return cfg
+
+def write_cfg(cfg : dict, path : Union[str, os.PathLike], overwrite : bool=False) -> Union[str, os.PathLike]:
+    """
+    Save the config dictionary to a YAML file.
+
+    Parameters:
+        cfg (dict): The config dictionary to save.
+        path (Union[str, os.PathLike]): The path to save the config file.
+        overwrite (bool): If True, overwrite the file if it already exists.
+
+    Returns:
+        Union[str, os.PathLike]: The path to the saved config file.
+    """
+    # Check if path is a string or path-like object
+    if not isinstance(path, (str, os.PathLike)):
+        raise TypeError(f"Invalid config location. Expected str or os.PathLike, got {type(path)}.")
+    # Check if path is a YAML file
+    if not path.endswith(".yaml"):
+        raise ValueError(f"Cannot save config. Expected YAML file, got {path}.")
+    # Check if path exists
+    if not overwrite and os.path.exists(path):
+        raise FileExistsError(f"Config file {path} already exists.")
+    # Type check config
+    check_cfg_types(cfg)
+    # Convert the MIN_MAX_OBJ_SIZE tuple to a list (prettier in the YAML file)
+    if isinstance(cfg["MIN_MAX_OBJ_SIZE"], tuple):
+        cfg["MIN_MAX_OBJ_SIZE"] = list(cfg["MIN_MAX_OBJ_SIZE"])
+    # Create an ordered dict to control the order of the keys in the config YAML
+    sorted_cfg = OrderedDict()
+    # First add the known keys in the order they are defined in CFG_PARAMS
+    for key in CFG_PARAMS:
+        if key in cfg:
+            sorted_cfg[key] = cfg[key]
+    # Then add any additional keys that are not in CFG_PARAMS in the order they appear in the config dictionary
+    for key in cfg:
+        if key not in sorted_cfg:
+            sorted_cfg[key] = cfg[key]
+    # Save config file
+    with open(path, "w") as f:
+        # OBS: will fail if not using yaml.SafeDumper (default with yaml.safe_dump). If another dumper is to be used, the representer for OrderedDict must be added manually.
+        yaml.safe_dump(sorted_cfg, f, sort_keys=False, default_flow_style=None)
+    # Return the path to the saved config YAML file
+    return path
