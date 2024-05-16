@@ -288,14 +288,14 @@ if __name__ == '__main__':
 
         generator = random.Random(42)
         def mock_metric(x):
-            return sum([abs(xi-1/2) for xi in x]) / len(x) + 1/10
+            return sum([abs(xi-1/2) for xi in x]) / len(x)
 
         def objective(x):
             global pbar
             pbar.update(1)
             time.sleep(0.01)
             true_cost = mock_metric(x)
-            cost = true_cost + 2 * (generator.random() - 1/2) / 10
+            cost = true_cost + 2 * (generator.random() - 1/2) / 10 + 1/10
             if verbose:
                 print(f"Cost={cost} for true cost={true_cost}")
             return cost
@@ -318,7 +318,8 @@ if __name__ == '__main__':
                                         maxiter=max_iter, popsize=pop_size,
                                         disp=True, polish=False, updating="immediate") 
     elif optimization_algorithm in "bayesian" or optimization_algorithm in "gaussian process" or optimization_algorithm in "gp":
-        result = gp_minimize(objective, bounds, x0=initial, n_calls=max_fun, n_random_starts=min(10, max_fun), acq_optimizer="sampling", verbose=False)
+        # Fixme: Initial guess seems to lead to worse convergence, perhaps this optimization algorithm isn't suited for providing an initial guess? For now we just ignore the initial guess
+        result = gp_minimize(objective, bounds, x0=None, n_calls=max_fun, n_random_starts=min(10, max_fun), verbose=False)
 
     if mock:
         final_cost = mock_metric(result.x)
