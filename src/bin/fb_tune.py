@@ -226,24 +226,25 @@ if __name__ == '__main__':
     )
 
     # Create the dataset for evaluating the tuning objective function - fixme: what to do here when mocking?
-    files = sorted([f for f in glob.glob(os.path.join(input_dir, "**"), recursive=True) if re.search(input_pattern, f)])
-    if max_images is not None:
-        dataset_lens = [len(v) for v in get_datasets(files).values()]
-        if max_images > sum(dataset_lens):
-            logging.warning(f"max_images={max_images} is greater than the total number of images in the dataset. "
-                            f"Setting max_images to {sum(dataset_lens)}")
-        else:
-            image_per_dataset = max_images // len(dataset_lens)
-            total_images = sum([min(image_per_dataset, l) for l in dataset_lens])
-            while total_images < max_images:
-                image_per_dataset += 1
+    if not mock:
+        files = sorted([f for f in glob.glob(os.path.join(input_dir, "**"), recursive=True) if re.search(input_pattern, f)])
+        if max_images is not None:
+            dataset_lens = [len(v) for v in get_datasets(files).values()]
+            if max_images > sum(dataset_lens):
+                logging.warning(f"max_images={max_images} is greater than the total number of images in the dataset. "
+                                f"Setting max_images to {sum(dataset_lens)}")
+            else:
+                image_per_dataset = max_images // len(dataset_lens)
                 total_images = sum([min(image_per_dataset, l) for l in dataset_lens])
-            if total_images > max_images and verbose:
-                logging.warning(f"max_images={max_images} is not divisible* by the number of datasets. "
-                                f"Setting max_images to {total_images}")
-            max_images = total_images
-            files = [f for v in get_datasets(files).values() for f in v[:image_per_dataset]]
-    dataset = AnnotatedDataset(files, annotations)
+                while total_images < max_images:
+                    image_per_dataset += 1
+                    total_images = sum([min(image_per_dataset, l) for l in dataset_lens])
+                if total_images > max_images and verbose:
+                    logging.warning(f"max_images={max_images} is not divisible* by the number of datasets. "
+                                    f"Setting max_images to {total_images}")
+                max_images = total_images
+                files = [f for v in get_datasets(files).values() for f in v[:image_per_dataset]]
+        dataset = AnnotatedDataset(files, annotations)
 
     if not mock:
         # Get the model
@@ -341,4 +342,10 @@ if __name__ == '__main__':
     result_values = create_cfg(scaler.unscale(result.x))
     if verbose:
         print(f"Best configuration: {result_values}")
-    write_cfg(result_values, os.path.join(results_dir, "best_cfg.yaml"), overwrite=True)
+    try:
+        write_cfg(result_values, os.path.join(results_dir, "best_cfg.yaml"), overwrite=True)
+    except Exception as e:
+        if mock:
+            print(f"Failed to save result config to {os.path.join(results_dir, 'best_cfg.yaml')} due to {str(e)}")
+        else:
+            raise e
