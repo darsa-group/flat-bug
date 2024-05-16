@@ -21,7 +21,8 @@ from flat_bug.coco_utils import fb_to_coco, split_annotations, filter_coco
 from flat_bug.eval_utils import compare_groups
 from flat_bug.config import write_cfg, read_cfg, DEFAULT_CFG
 
-from scipy.optimize import minimize, differential_evolution
+from scipy.optimize import differential_evolution
+from skopt import gp_minimize
 
 # Fixed ranges for the parameters during tuning - should probably be configurable
 PARAMETER_RANGES = {
@@ -165,10 +166,14 @@ if __name__ == '__main__':
     args_parse.add_argument("--init-cfg", type=str, default=None,
                             help="Path to a YAML containing the initial configuration guess or the string 'default' which will set the initial configuration guess to the default config."
                                  "Default is None, which is 1/3 of the range for each parameter.")
-    args_parse.add_argument("--max-iter", type=int, default=10,
-                            help="Maximum number of iterations for the optimization algorithm. Default is 10.")
-    args_parse.add_argument("--pop-size", type=int, default=10,
-                            help="Population size for the optimization algorithm. Default is 10.")
+    args_parse.add_argument("--max-iter", type=int, default=2,
+                            help="Maximum number of iterations for the evolutionary optimization algorithm. Default is 2.")
+    args_parse.add_argument("--pop-size", type=int, default=5,
+                            help="Population size for the evolutionary optimization algorithm. Default is 5.")
+    args_parse.add_argument("--method", type=str, default="bayesian",
+                            help="Optimization algorithm to use. Default is 'bayesian'."
+                                 "Options are 'evolutionary' or 'genetic' for differential evolution and 'bayesian'/'gaussian process'/'gp' for gaussian process optimization."
+                                 "The maximum number of function evaluation for both methods is pop_size * (max_iter + 1) * number_of_parameters (5).")
     args_parse.add_argument("--mock", action="store_true",
                             help="Mock the tuning process. Doesn't load the model, but instead immediately returns the initial configuration guess.")
     args_parse.add_argument("--verbose", action="store_true",
@@ -190,6 +195,7 @@ if __name__ == '__main__':
     scale_before = option_dict["scale_before"]
 
     # Get optimization options
+    optimization_algorithm = option_dict["method"]
     init_cfg = option_dict["init_cfg"]
     max_iter = option_dict["max_iter"]
     pop_size = option_dict["pop_size"]
@@ -219,7 +225,7 @@ if __name__ == '__main__':
         unit="evaluations"
     )
 
-    # Create the dataset for evaluating the tuning objective function
+    # Create the dataset for evaluating the tuning objective function - fixme: what to do here when mocking?
     files = sorted([f for f in glob.glob(os.path.join(input_dir, "**"), recursive=True) if re.search(input_pattern, f)])
     if max_images is not None:
         dataset_lens = [len(v) for v in get_datasets(files).values()]
@@ -232,7 +238,7 @@ if __name__ == '__main__':
             while total_images < max_images:
                 image_per_dataset += 1
                 total_images = sum([min(image_per_dataset, l) for l in dataset_lens])
-            if total_images > max_images:
+            if total_images > max_images and verbose:
                 logging.warning(f"max_images={max_images} is not divisible* by the number of datasets. "
                                 f"Setting max_images to {total_images}")
             max_images = total_images
@@ -280,12 +286,18 @@ if __name__ == '__main__':
         import random, time
 
         generator = random.Random(42)
+        def mock_metric(x):
+            return sum([abs(xi-1/2) for xi in x]) / len(x) + 1/10
 
-        def objective(*args, **kwargs):
+        def objective(x):
             global pbar
             pbar.update(1)
             time.sleep(0.01)
-            return generator.random()
+            true_cost = mock_metric(x)
+            cost = true_cost + 2 * (generator.random() - 1/2) / 10
+            if verbose:
+                print(f"Cost={cost} for true cost={true_cost}")
+            return cost
     
     # Define the arguments for the optimization algorithm
     if init_cfg is None:
@@ -299,13 +311,20 @@ if __name__ == '__main__':
     lower_bound = scaler.scale([r[0] for r in PARAMETER_RANGES.values()])
     upper_bound = scaler.scale([r[1] for r in PARAMETER_RANGES.values()])
     bounds = [(l, u) for l, u in zip(lower_bound, upper_bound)]
-        
-    # We cannot use a gradient-based optimizer when the cost function is stochastic
-    # result = minimize(objective, initial, method='L-BFGS-B', bounds=bounds,
-    #                   options={'maxiter': 10, 'disp': True, 'ftol': 1e-2, "eps": 5e-2})
-    result = differential_evolution(objective, bounds, x0=initial, strategy="best1bin",
-                                    maxiter=max_iter, popsize=pop_size, 
-                                    disp=True, polish=False, updating="immediate")
+
+    if optimization_algorithm in "evolutionary" or optimization_algorithm in "genetic":
+        result = differential_evolution(objective, bounds, x0=initial, strategy="best1bin",
+                                        maxiter=max_iter, popsize=pop_size,
+                                        disp=True, polish=False, updating="immediate") 
+    elif optimization_algorithm in "bayesian" or optimization_algorithm in "gaussian process" or optimization_algorithm in "gp":
+        result = gp_minimize(objective, bounds, x0=initial, n_calls=max_fun, n_random_starts=min(10, max_fun), acq_optimizer="sampling", verbose=False)
+
+    if mock:
+        final_cost = mock_metric(result.x)
+        init_cost = mock_metric(initial)
+        improvement = (init_cost - final_cost) / init_cost * 100
+        print(f"Mock optimization found minimum at {final_cost} with parameters {result.x}. True minimum should be [0.5, 0.5, 0.5, 0.5, 0.5]. Improvement over initial guess: {improvement:.1f}%.")
+
     pbar.close()
 
     if mock:
