@@ -108,8 +108,8 @@ class Tuner(Predictor):
         pd.DataFrame(self.cost_log).to_csv(path)
 
 class AnnotatedDataset(torch.utils.data.IterableDataset):
-    DATASETS_PER_ITER = 15
-    FILES_PER_DATASET_PER_ITER = 1
+    DATASETS_PER_ITER = 23
+    FILES_PER_DATASET_PER_ITER = 3
 
     def __init__(self, files : list, annotations : dict):
         self.files = files
@@ -225,8 +225,9 @@ if __name__ == '__main__':
         unit="evaluations"
     )
 
-    # Create the dataset for evaluating the tuning objective function - fixme: what to do here when mocking?
+    # fixme: what to do here when mocking?
     if not mock:
+        # Create the dataset for evaluating the tuning objective function
         files = sorted([f for f in glob.glob(os.path.join(input_dir, "**"), recursive=True) if re.search(input_pattern, f)])
         if max_images is not None:
             dataset_lens = [len(v) for v in get_datasets(files).values()]
@@ -245,8 +246,6 @@ if __name__ == '__main__':
                 max_images = total_images
                 files = [f for v in get_datasets(files).values() for f in v[:image_per_dataset]]
         dataset = AnnotatedDataset(files, annotations)
-
-    if not mock:
         # Get the model
         tuner = Tuner(loader=dataset, default_cfg=DEFAULT_CFG, scale_before=scale_before, model=model_weights, device=device, dtype=dtype)
     else:
