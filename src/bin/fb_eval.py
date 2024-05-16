@@ -1,11 +1,14 @@
 
 import os
-from glob import glob
 import json
+import argparse
+
+from glob import glob
+
 from tqdm import tqdm
+
 from flat_bug.coco_utils import fb_to_coco, split_annotations, filter_coco
 from flat_bug.eval_utils import compare_groups
-import argparse
 
 if __name__ == "__main__":
 

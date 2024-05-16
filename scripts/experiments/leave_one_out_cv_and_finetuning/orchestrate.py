@@ -1,12 +1,10 @@
-import yaml, os, re, subprocess, sys
+import yaml, os, sys
 
 import yaml.serializer
 
-from flat_bug.datasets import get_datasets
-
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
-from scripts.experiments.experiment_helpers import EXEC_DIR, DATASETS, set_default_config, get_config, custom_print, run_command
+from scripts.experiments.experiment_helpers import EXEC_DIR, set_default_config, get_config, run_command
 
 BASE_NAME = "fb_leave_one_out"
 BASE_PATH = os.path.join(EXEC_DIR, "scripts", "experiments", "leave_one_out_cv_and_finetuning")

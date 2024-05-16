@@ -15,21 +15,22 @@
 #      PSA: Here it is probably easiest to understand in the beginning if PYREMOTEDATA_REMOTE_DIRECTORY is set to "/", i.e. in .bashrc 'export PYREMOTEDATA_REMOTE_DIRECTORY=/'. 
 #      Otherwise the default IOHandler will start in the directory specified by PYREMOTEDATA_REMOTE_DIRECTORY, instead of the root directory.
 
+import os
 import argparse
 import logging
 import uuid
-
-import os
 import re
 
 from tqdm import tqdm
 
 import torch
 
-from flat_bug.predictor import Predictor
-
 from pyremotedata.implicit_mount import *
 from pyremotedata.dataloader import *
+
+from flat_bug.predictor import Predictor
+
+
 
 if __name__ == '__main__':
     # Catch all instances of "ERROR:root:"exiftool" is not found, on path or as absolute path"

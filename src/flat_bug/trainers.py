@@ -1,25 +1,19 @@
 import json, glob, os, random
 
-from copy import deepcopy
+from copy import copy
 
 import numpy as np
-from ultralytics.models.yolo.segment import SegmentationTrainer
-from flat_bug.datasets import MyYOLODataset, MyYOLOValidationDataset
-from ultralytics.utils import yaml_load, DEFAULT_CFG, RANK, LOGGER
-
 import torch
-from ultralytics.nn.tasks import attempt_load_one_weight, attempt_load_weights
-from ultralytics.utils import (DEFAULT_CFG, LOGGER, RANK, SETTINGS, TQDM_BAR_FORMAT, __version__, callbacks, clean_url,
-                               colorstr, emojis, yaml_save, IterableSimpleNamespace)
 
-from ultralytics.utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, init_seeds, one_cycle, select_device,
-                                           strip_optimizer, smart_inference_mode, torch_distributed_zero_first)
+from ultralytics.models import yolo
+from ultralytics.models.yolo.segment import SegmentationTrainer
+from ultralytics.nn.tasks import attempt_load_one_weight
+from ultralytics.utils import DEFAULT_CFG, LOGGER, RANK, __version__, yaml_load, IterableSimpleNamespace
+from ultralytics.utils.torch_utils import smart_inference_mode, torch_distributed_zero_first
 from ultralytics.data.utils import PIN_MEMORY
 from ultralytics.data.build import InfiniteDataLoader, seed_worker
 
-from copy import copy
-
-from ultralytics.models import yolo
+from flat_bug.datasets import MyYOLODataset, MyYOLOValidationDataset
 
 def remove_custom_fb_args(args):
     if isinstance(args, dict):

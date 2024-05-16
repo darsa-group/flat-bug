@@ -2,7 +2,7 @@ import unittest
 
 import os, tempfile, copy
 
-from flat_bug.config import get_type_def, check_types, check_cfg_types, read_cfg, write_cfg, DEFAULT_CFG, CFG_TYPES
+from flat_bug.config import get_type_def, check_types, check_cfg_types, read_cfg, write_cfg, DEFAULT_CFG
 
 TEST_OBJECTS = {
     "float": 1.23,

@@ -2,11 +2,9 @@ import yaml, os, sys
 
 import tempfile
 
-from flat_bug.datasets import get_datasets
-
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
-from scripts.experiments.experiment_helpers import EXEC_DIR, DATASETS, set_default_config, get_config, custom_print, run_command
+from scripts.experiments.experiment_helpers import EXEC_DIR, set_default_config, get_config, run_command
 
 BASE_NAME = "fb_compare_backbone_sizes"
 BASE_PATH = os.path.join(EXEC_DIR, "scripts", "experiments", "compare_backbone_sizes")
