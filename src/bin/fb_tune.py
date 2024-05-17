@@ -8,7 +8,7 @@ import re
 import json
 import random
 
-from typing import Union
+from typing import Union, Optional
 
 from tqdm import tqdm
 
@@ -61,13 +61,27 @@ class Scaler:
         return value
 
 class Tuner(Predictor):
-    def __init__(self, loader : torch.utils.data.DataLoader, default_cfg : dict, scale_before : Union[float, int], *args, **kwargs):
+    def __init__(self, loader : torch.utils.data.DataLoader, default_cfg : dict, scale_before : Union[float, int], file_path : Optional[str], *args, **kwargs):
         self.loader = loader
         self.default_cfg = default_cfg
         self.scale_before = scale_before
+        self.file_path = file_path
+        if self.file_path is not None:
+            self.file_path = os.path.abspath(self.file_path)
+            # Check if path is a CSV
+            if not self.file_path.endswith(".csv"):
+                raise ValueError("The file path should end with '.csv'")
+            # Check if the file exists, then remove it
+            if os.path.exists(self.file_path):
+                os.remove(self.file_path)
+        self.positional_args = (", ".join([str(a) for a in args]))
+        if len(self.positional_args) > 0:
+            self.positional_args += ", "
+        self.kwargs = (", ".join([f"{k}={v}" for k, v in kwargs.items()]))
+        if len(self.kwargs) > 0:
+            self.kwargs = ", " + self.kwargs
         super().__init__(*args, **kwargs)
         self.set_hyperparameters(**self.default_cfg)
-        self.cost_log = {col : [] for col in list(self.default_cfg.keys()) + ["COST"]}
 
     def evaluate(self) -> float:
         costs = []
@@ -97,21 +111,59 @@ class Tuner(Predictor):
     def cost(self, cfg : dict) -> float:
         self.set_hyperparameters(**cfg)
         cost = self.evaluate()
+        if not hasattr(self, "cost_log"):
+            self.cost_log = {col : [] for col in list(cfg.keys()) + ["COST"]}
         for k, v in cfg.items():
             self.cost_log[k].append(v)
         self.cost_log["COST"].append(cost)
+        self.sync_data(1)
         self.set_hyperparameters(**self.default_cfg)
         return cost
-    
-    def save_log(self, path : str):
-        import pandas as pd
-        pd.DataFrame(self.cost_log).to_csv(path)
+
+    def sync_data(self, n):
+        if n <= 0 or n > len(self.cost_log):
+            raise ValueError("The argument n should be between 1 and the length of the data.")
+        if not hasattr(self, "file_path") or self.file_path is None:
+            return
+
+        # Get the rows that need to be added
+        new_data = {k : v[-n:] for k, v in self.cost_log.items()}
+
+        # If the file doesn't exist, or if it is empty, write the header
+        if not os.path.exists(self.file_path) or os.path.getsize(self.file_path) == 0:
+            # Write new data including header if the file does not exist or is empty
+            with open(self.file_path, "w") as f:
+                f.write(";".join(new_data.keys()) + "\n")
+        # Append the new data to the file
+        with open(self.file_path, "a") as f:
+            for i in range(n):
+                f.write(";".join([str(v[i]) for v in new_data.values()]) + "\n")
+
+    def __repr__(self) -> str:
+        # Create a string representation of the tuner
+        call = f"Tuner({self.positional_args}loader={self.loader}, default_cfg={self.default_cfg}, scale_before={self.scale_before}{self.kwargs})"
+        if not hasattr(self, "cost_log"):
+            return call
+        # Get first and best cost and the associated parameter values
+        first_cost = self.cost_log["COST"][0]
+        best_cost = min(self.cost_log["COST"])
+        best_idx = self.cost_log["COST"].index(best_cost)
+        first_params = {k : v[0] for k, v in self.cost_log.items() if k != "COST"}
+        best_params = {k : v[best_idx] for k, v in self.cost_log.items() if k != "COST"}
+        # Create a string for the first and best results
+        result_str = "{} Cost: {:.4f} achieved with parameters: {}"
+        first_result = result_str.format("First", first_cost, first_params)
+        best_result = result_str.format("Best", best_cost, best_params)
+        # Create a summary string
+        improvement = (first_cost - best_cost) / first_cost * 100
+        summary = f"Optimization found minimum at {best_cost} with parameters {best_params}. Improvement over initial guess: {improvement:.1f}%."
+        # Return the call, summary, first result and best result
+        return "\n".join([call, summary, first_result, best_result])
 
 class AnnotatedDataset(torch.utils.data.IterableDataset):
-    DATASETS_PER_ITER = 23
-    FILES_PER_DATASET_PER_ITER = 3
+    FILES_PER_DATASET_PER_ITER = 1
 
-    def __init__(self, files : list, annotations : dict):
+    def __init__(self, files : list, annotations : dict, datasets_per_iter : Optional[int] = None, files_per_iter : Optional[int] = None):
         self.files = files
         self.datasets = get_datasets(files)
         self.file_dataset_idx = [i for f in files for i, v in enumerate(self.datasets.values()) if f in v]
@@ -120,7 +172,12 @@ class AnnotatedDataset(torch.utils.data.IterableDataset):
             self.dataset_file_idx[v].append(i)
         self.annotations = split_annotations(filter_coco(json.load(open(annotations, "r")), area=32**2), strip_directories=True)
 
-        self.DATASETS_PER_ITER = min(self.DATASETS_PER_ITER, len(self.datasets))
+        if datasets_per_iter is None:
+            self.DATASETS_PER_ITER = len(self.datasets)
+        else:
+            self.DATASETS_PER_ITER = min(datasets_per_iter, len(self.datasets))
+        if not files_per_iter is None:
+            self.FILES_PER_DATASET_PER_ITER = files_per_iter
 
     def __getitem__(self, idx):
         image = self.files[idx]
@@ -148,8 +205,6 @@ if __name__ == '__main__':
     args_parse.add_argument("-a", "--annotations", dest="annotations")
     args_parse.add_argument("-p", "--input-pattern", dest="input_pattern", default=r"[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$",
                             help=r"The pattern to match the images. Default is '[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$' i.e. jpg/jpeg/png case-insensitive.")
-    args_parse.add_argument("-n", "--max-images", type=int, default=None, 
-                            help="Maximum number of images to process. Default is None. Truncates in alphabetical order.")
     args_parse.add_argument("-o", "--output-dir", dest="results_dir",
                             help="The result directory")
     args_parse.add_argument("-w", "--model-weights", dest="model_weights",
@@ -166,6 +221,10 @@ if __name__ == '__main__':
     args_parse.add_argument("--init-cfg", type=str, default=None,
                             help="Path to a YAML containing the initial configuration guess or the string 'default' which will set the initial configuration guess to the default config."
                                  "Default is None, which is 1/3 of the range for each parameter.")
+    args_parse.add_argument("-n", "--images-per-iter", type=int, default=1, 
+                            help="Number of images per dataset used to estimate the cost. Default is 1.")
+    args_parse.add_argument("--datasets-per-iter", type=int, default=None,
+                            help="Number of datasets per iteration. Default is None, i.e. all datasets.")
     args_parse.add_argument("--max-iter", type=int, default=2,
                             help="Maximum number of iterations for the evolutionary optimization algorithm. Default is 2.")
     args_parse.add_argument("--pop-size", type=int, default=5,
@@ -188,11 +247,13 @@ if __name__ == '__main__':
     # Get input options
     input_dir = option_dict["input_dir"]
     input_pattern = option_dict["input_pattern"]
-    max_images = option_dict["max_images"]
     annotations = option_dict["annotations"]
     results_dir = option_dict["results_dir"]
     model_weights = option_dict["model_weights"]
     scale_before = option_dict["scale_before"]
+    images_per_iter = option_dict["images_per_iter"]
+    datasets_per_iter = option_dict["datasets_per_iter"]
+    max_images = None # fixme: disabled for now
 
     # Get optimization options
     optimization_algorithm = option_dict["method"]
@@ -245,9 +306,9 @@ if __name__ == '__main__':
                                     f"Setting max_images to {total_images}")
                 max_images = total_images
                 files = [f for v in get_datasets(files).values() for f in v[:image_per_dataset]]
-        dataset = AnnotatedDataset(files, annotations)
+        dataset = AnnotatedDataset(files, annotations, datasets_per_iter=datasets_per_iter, files_per_iter=images_per_iter)
         # Get the model
-        tuner = Tuner(loader=dataset, default_cfg=DEFAULT_CFG, scale_before=scale_before, model=model_weights, device=device, dtype=dtype)
+        tuner = Tuner(loader=dataset, default_cfg=DEFAULT_CFG, scale_before=scale_before, file_path=str(os.path.join(results_dir, "tuning_log.csv")), model=model_weights, device=device, dtype=dtype)
     else:
         # If objective is called an error will be raised: "TypeError: 'NoneType' object is not callable"
         tuner = None
@@ -325,6 +386,8 @@ if __name__ == '__main__':
         init_cost = mock_metric(initial)
         improvement = (init_cost - final_cost) / init_cost * 100
         print(f"Mock optimization found minimum at {final_cost} with parameters {result.x}. True minimum should be [0.5, 0.5, 0.5, 0.5, 0.5]. Improvement over initial guess: {improvement:.1f}%.")
+    else:
+        print(tuner)
 
     pbar.close()
 
@@ -333,10 +396,6 @@ if __name__ == '__main__':
             def __init__(self):
                 self.x = np.array(initial)
         result = DUMMY()
-
-    if not mock:
-        # Save the intermediate results
-        tuner.save_log(os.path.join(results_dir, "tuning_log.csv"))
 
     # Convert the best configuration to a dictionary and save it as a YAML
     result_values = create_cfg(scaler.unscale(result.x))
