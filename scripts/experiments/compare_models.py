@@ -1,5 +1,9 @@
-import os, sys, glob, argparse, re, queue, threading, subprocess, csv
+import os, sys
+import glob, argparse, re
+import queue, threading, subprocess
+import csv, yaml
 
+# todo: remove pandas dependency
 import pandas as pd
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -148,24 +152,37 @@ def combine_result_csvs(result_directories, new_directory, dry_run=False):
     # Check if the new result CSV exists and delete it if it does
     if os.path.exists(new_result_csv):
         os.remove(new_result_csv)
-    # Combine the result CSVs into the new result CSV
+    # Combine the result CSVs into the new result CSV with the following additional columns from the metadata file:
+    new_column_names = ['model', 'commit', 'time']
     with open(new_result_csv, 'w', newline='') as new_file:
         csv_writer = None
         for result_directory in result_directories:
             result_csv_path = os.path.join(result_directory, "results", "results.csv")
+            metadata_path = os.path.join(result_directory, "metadata.yml")
+            
             if not os.path.exists(result_csv_path):
                 raise FileNotFoundError(f"Result CSV not found: {result_csv_path}")
+            if not os.path.exists(metadata_path):
+                raise FileNotFoundError(f"Metadata file not found: {metadata_path}")
+            
+            with open(metadata_path, 'r') as file:
+                metadata = yaml.safe_load(file)
+                if metadata is None:
+                    raise ValueError(f"Metadata file is empty: {metadata_path}")
+                for column in new_column_names:
+                    if column not in metadata:
+                        raise ValueError(f"Metadata file does not contain the '{column}' key: {metadata_path}")
+                columns = [metadata[column] for column in new_column_names]
             
             with open(result_csv_path, 'r') as file:
                 csv_reader = csv.reader(file)
                 headers = next(csv_reader)
                 if csv_writer is None:
                     csv_writer = csv.writer(new_file)
-                    csv_writer.writerow(['model'] + headers)
+                    csv_writer.writerow(new_column_names + headers)
                 
-                model = result_directory.removesuffix(os.sep).split(os.sep)[-1] if os.sep in result_directory else result_directory
                 for row in csv_reader:
-                    csv_writer.writerow([model] + row)
+                    csv_writer.writerow(columns + row)
     # Return the path to the new result CSV
     return new_result_csv
 
@@ -190,7 +207,7 @@ if __name__ == "__main__":
     arg_parse.add_argument("-g", "--ground_truth", dest="ground_truth", help="The path to the ground truth file.", type=str)
     arg_parse.add_argument("-i", "--input", dest="input", help="A directory containing the data to evaluate the models on.", type=str)
     arg_parse.add_argument("--input_pattern", dest="input_pattern", help="The pattern to use for selecting the input files. Defaults to selecting all files.", type=str)
-    arg_parse.add_argument("--weight_pattern", dest="weight_pattern", help="The pattern to use for selecting the weight files. Defaults to selecting only the best weight files.", type=str)
+    arg_parse.add_argument("--weight_pattern", dest="weight_pattern", help="The pattern to use for selecting the weight files. Defaults to 'best' when all_weights is not set, otherwise all files are selected.", type=str)
     arg_parse.add_argument("--all_weights", dest="all_weights", help="If set, all weights in the directory will be evaluated.", action="store_true")
     arg_parse.add_argument("--multi_gpu", dest="multi_gpu", help="If set, the evaluation will be done on multiple GPUs.", action="store_true")
     arg_parse.add_argument("--device", dest="device", help="The device to use for inference. If not set, the default device is used. Cannot be used with --multi_gpu.", type=str)
@@ -203,7 +220,19 @@ if __name__ == "__main__":
     args = arg_parse.parse_args()
 
     if args.device is not None:
-        assert not args.multi_gpu, "Cannot specify a device when using multi-gpu mode."
+        if args.device == "cpu":
+            pass
+        else:
+            EXTRACT_DEVICE_NUMS_PATTERN = re.compile(r"(?<!\d)(\d+)(?!\d)")
+            device_nums = EXTRACT_DEVICE_NUMS_PATTERN.findall(args.device)
+            if len(device_nums) == 0:
+                raise ValueError(f"Invalid device string: {args.device}, no device number(s) found.")
+            if len(device_nums) == 1:
+                args.device = f"cuda:{device_nums[0]}"
+            else:
+                args.multi_gpu = True
+                args.device = [f"cuda:{num}" for num in device_nums]
+
 
     # Get the model director(y/ies)
     model_directories = glob.glob(args.directory)
@@ -218,7 +247,10 @@ if __name__ == "__main__":
         # Initialize a producer-consumer queue
         eval_queue = queue.Queue()
         # Get the available GPUs
-        gpus = get_gpus()
+        if args.device is not None:
+            gpus = args.device
+        else:
+            gpus = get_gpus()
         # Check if there are any GPUs
         assert len(gpus) > 0, "No GPUs found."
         # Initialize the evaluation consumer threads
@@ -248,7 +280,9 @@ if __name__ == "__main__":
                 continue
             weight_ids = [os.path.basename(file).split(".")[0] for file in all_weight_files]
         else:
-            all_weight_files = [file for file in all_weight_files if re.search("best", file)]
+            if args.weight_pattern is None:
+                args.weight_pattern = "best"
+            all_weight_files = [file for file in all_weight_files if re.search(args.weight_pattern, file)]
             assert len(all_weight_files) == 1, f'Exactly one best weight file should be found. Found: {len(all_weight_files)}.'
             weight_ids = [""]
 
@@ -294,6 +328,7 @@ if __name__ == "__main__":
             eval_thread.join()
 
     if not args.no_compile:
+        per_weight_combined_results = []
         # Combine the results
         for model_directory in model_directories:
             this_result_dirs = result_directories[model_directory]
@@ -301,4 +336,20 @@ if __name__ == "__main__":
                 print(f'No results found for model: {model_directory}')
                 continue
             new_result_csv = combine_result_csvs(this_result_dirs, os.path.join(RESULT_DIR, os.path.basename(model_directory), args.name), dry_run=args.dry_run)
+            per_weight_combined_results.append(new_result_csv)
+            print(f'Combined results saved to: {new_result_csv}')
+        # Combine the results for all models
+        if len(per_weight_combined_results) > 0:
+            all_combined_csv_path = os.path.join(RESULT_DIR, args.name, "all_results.csv")
+            with open(all_combined_csv_path, 'w', newline='') as new_file:
+                csv_writer = None
+                for result_csv in per_weight_combined_results:
+                    with open(result_csv, 'r') as file:
+                        csv_reader = csv.reader(file)
+                        headers = next(csv_reader)
+                        if csv_writer is None:
+                            csv_writer = csv.writer(new_file)
+                            csv_writer.writerow(headers)
+                        for row in csv_reader:
+                            csv_writer.writerow(row)
             print(f'Combined results saved to: {new_result_csv}')

@@ -88,7 +88,9 @@ echo "model: ${WEIGHTS}" >> ${METADATA_FILE}
 echo "model_hash: ${MODEL_HASH}" >> ${METADATA_FILE}
 echo "commit: ${COMMIT_HASH}" >> ${METADATA_FILE}
 # todo add hyperparam here
- #todo, copy inference time to results?
+
+# Record start time
+START_TIME=$(date +%s)
 
 # Run the model on the validation set
 # PREDICT_CMD="fb_predict.py -i \"${DIR}\" -w \"${WEIGHTS}\" -o \"${ODIR}/preds\"${GPU}${IPAT} --no-crops"
@@ -105,7 +107,7 @@ echo "Executing inference with:${PREDICT_CMD_STR}"
 
 # Compare the predictions with the ground truth
 #EVAL_CMD="fb_eval.py -p \"${ODIR}/preds/coco_instances.json\" -g \"$LDIR\" -I \"${DIR}\" -P  -c -o \"${ODIR}/eval\""
-EVAL_CMD=(python src/bin/fb_eval.py -p "${ODIR}/preds/coco_instances.json" -g "$LDIR" -I "${DIR}" -P -c -o "${ODIR}/eval")
+EVAL_CMD=(python src/bin/fb_eval.py -p "${ODIR}/preds/coco_instances.json" -g "$LDIR" -I "${DIR}" -P -c -o "${ODIR}/eval" --combine)
 printf -v EVAL_CMD_STR ' %q' "${EVAL_CMD[@]}"
 echo "Executing evaluation with:${EVAL_CMD_STR}"
 "${EVAL_CMD[@]}" &&
@@ -117,4 +119,13 @@ printf -v METRIC_CMD_STR ' %q' "${METRIC_CMD[@]}"
 echo "Executing evaluation metrics and figure creation with:${METRIC_CMD_STR}"
 "${METRIC_CMD[@]}" &&
 
+# Record end time
+END_TIME=$(date +%s)
+EVAL_TIME=$((END_TIME - START_TIME))
+# Print time taken in H:M:S
+printf "Time taken: %02d:%02d:%02d\n" "$((EVAL_TIME/3600))" "$((EVAL_TIME%3600/60))" "$((EVAL_TIME%60))"
+# Save time taken in metadata file
+echo "time: ${EVAL_TIME}" >> ${METADATA_FILE}
+
+echo "Evaluation complete. Results saved in ${ODIR}/results"
 exit 0

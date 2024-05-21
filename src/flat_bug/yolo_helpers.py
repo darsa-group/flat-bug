@@ -1,14 +1,12 @@
 from typing import Union, List, Tuple, Optional
 
-import math
-
 import torch
 import torch.nn.functional as F
 
 from ultralytics.engine.results import Results, Masks
 
-from .geometric import find_contours, resize_mask
-from .nms import nms_boxes, fancy_nms, nms_masks, iou_boxes
+from flat_bug.geometric import find_contours, resize_mask
+from flat_bug.nms import nms_boxes, fancy_nms, nms_masks, iou_boxes
 
 
 class ResultsWithTiles(Results):

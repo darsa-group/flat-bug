@@ -1,4 +1,4 @@
-import os, sys, subprocess, glob
+import os, sys, subprocess, glob, tempfile
 import yaml, re
 
 EXEC_DIR = "/home/altair/flat-bug"
@@ -93,3 +93,39 @@ def split_by_sample(files):
                 samples[sample] = []
             samples[sample].append(file)
     return {k : sorted(v) for k, v in samples.items()}
+
+
+DATADIR = os.path.join(EXEC_DIR, "dev", "fb_yolo")
+TMP_DIR = "<UNSET>"
+
+def get_temp_config_path():
+    global TMP_DIR
+    if TMP_DIR == "<UNSET>":
+        TMP_DIR = tempfile.mkdtemp()
+    return os.path.join(TMP_DIR, "temp_experiment_yolo_config.yaml")
+
+def clean_temporary_dir():
+    global TMP_DIR
+    if TMP_DIR != "<UNSET>":
+        tmp_files = os.listdir(TMP_DIR)
+        for tmp_file in tmp_files:
+            os.remove(os.path.join(TMP_DIR, tmp_file))
+        os.rmdir(TMP_DIR)
+        TMP_DIR = "<UNSET>"
+
+def do_yolo_train_run(config, dry_run : bool=False):
+    config_path = get_temp_config_path()
+    if os.path.exists(config_path):
+        os.remove(config_path)
+
+    with open(config_path, "w") as conf:
+        yaml.dump(config, conf, default_flow_style=False, sort_keys=False)
+    
+    command = f'/home/altair/.conda/envs/test/bin/python -u src/bin/fb_train.py -c "{config_path}" -d "{DATADIR}"'
+    if dry_run:
+        print(command)
+    else:
+        run_command(command)
+
+    if os.path.exists(config_path):
+        os.remove(config_path)

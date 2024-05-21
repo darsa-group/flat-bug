@@ -8,8 +8,7 @@ from flat_bug.trainers import MySegmentationTrainer
 from ultralytics import settings
 
 # fixme, resume should continue on the same "run folder"
-if __name__ == '__main__':
-
+def main():
     DEFAULT_CONF = {
         "batch": 8,
         "imgsz": 1024,
@@ -86,3 +85,6 @@ if __name__ == '__main__':
     if not option_dict["resume"]:
         t.start_epoch = 0
     t.train()
+
+if __name__ == "__main__":
+    main()

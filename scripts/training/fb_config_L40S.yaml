@@ -11,7 +11,7 @@ fb_max_instances: 9999
 fb_max_images: -1
 fb_custom_eval: false
 fb_custom_eval_num_images: 100
-fb_exclude_datasets: ["ALUS", "amarathunga2022", "00-prospective-ALUS-mixed", "01-partial-gernat2018", "sticky-pi", "sittinger2023", "ubc-pitfall-traps", "anTraX", "AMT", "ArTaxOr", "01-partial-abram2023", "cao2022", "00-prospective-InsectCV", "ubc-scanned-sticky-cards", "PeMaToEuroPep", "DIRT", "01-partial-NHM-beetles-crops", "00-prospective-crall2023", "DiversityScanner", "00-prospective-chavez2024", "BIOSCAN", "pitfall", "CollembolAI", "scanned-sticky-cards"]
+fb_exclude_datasets: ["ALUS", "amarathunga2022", "00-prospective-ALUS-mixed", "01-partial-Diopsis", "biodiscover-arm", "01-partial-gernat2018", "sticky-pi", "sittinger2023", "ubc-pitfall-traps", "Mothitor", "anTraX", "AMT", "ArTaxOr", "01-partial-abram2023", "AMI-traps", "cao2022", "00-prospective-InsectCV", "01-partial-AMI-traps", "ubc-scanned-sticky-cards", "PeMaToEuroPep", "DIRT", "01-partial-NHM-beetles-crops", "pinoy2023", "00-prospective-crall2023", "DiversityScanner", "00-prospective-chavez2024", "BIOSCAN", "biodiversa-arm", "pitfall", "CollembolAI", "scanned-sticky-cards"]
 plots: true
 name: "large_finetune"
 resume: true
