@@ -121,7 +121,7 @@ def do_yolo_train_run(config, dry_run : bool=False):
     with open(config_path, "w") as conf:
         yaml.dump(config, conf, default_flow_style=False, sort_keys=False)
     
-    command = f'/home/altair/.conda/envs/test/bin/python -u src/bin/fb_train.py -c "{config_path}" -d "{DATADIR}"'
+    command = f'{sys.executable} -u src/bin/fb_train.py -c "{config_path}" -d "{DATADIR}"'
     if dry_run:
         print(command)
     else:

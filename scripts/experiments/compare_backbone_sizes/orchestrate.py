@@ -43,7 +43,7 @@ if __name__ == "__main__":
 
     # Clean up the temporary directory
     clean_temporary_dir()
-
-    print("All experiments completed.")
+    
+    print(f"All (n={len(experiment_configs)}) experiments completed successfully.")
 
     

@@ -3,10 +3,12 @@ import os, sys, re, argparse
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 from scripts.experiments.experiment_helpers import EXEC_DIR, DATADIR, DATASETS, set_default_config, get_config, do_yolo_train_run, clean_temporary_dir
 
+from typing import List
+
 from collections import OrderedDict
 
-BASE_NAME = "fb_compare_backbone_sizes"
-BASE_PATH = os.path.join(EXEC_DIR, "scripts", "experiments", "compare_backbone_sizes")
+BASE_NAME = "leave_two_out"
+BASE_PATH = os.path.join(EXEC_DIR, "scripts", "experiments", "leave_two_out_dataset_mapping")
 DEFAULT_CONFIG = os.path.join(BASE_PATH, "default.yaml")
 
 set_default_config(os.path.join(BASE_PATH, "default.yaml"))
@@ -17,7 +19,7 @@ def parse_include_datasets(path : str) -> List[str]:
     """
     remove_comment = lambda line: line[:line.find("#")] if "#" in line else line
     with open(path, "r") as f:
-        datasets = [remove_comment(line).strip() for line in f]
+        datasets = [remove_comment(line).strip() for line in f if not line.startswith("/")]
     return [dataset for dataset in datasets if dataset]
 
 if __name__ == "__main__":
@@ -58,4 +60,4 @@ if __name__ == "__main__":
 
     clean_temporary_dir()
 
-    print("All experiments completed successfully.")
+    print(f"All (n={len(experiment_configs)}) experiments completed successfully.")

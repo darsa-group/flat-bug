@@ -1,7 +1,7 @@
 ## Install
 
 ```commandline
-pip install -e src
+pip install -e .
 ```
 
 ## Downloading data
@@ -13,7 +13,7 @@ DATA_DIR=~/Desktop/flat-bug-sorted-data
 ## Preparing data
 ```sh
 
-fb_prepare_data.py -i ${DATA_DIR}/pre-pro/ -o ${DATA_DIR}/yolo
+fb_prepare_data -i ${DATA_DIR}/pre-pro/ -o ${DATA_DIR}/yolo
 ```
 
 ## Configuration file:
@@ -33,12 +33,12 @@ workers: 4
 ## Training 
 
 ```sh
-fb_train.py -d ${DATA_DIR}/yolo -c fb_config.yaml
+fb_train -d ${DATA_DIR}/yolo -c fb_config.yaml
 ```
 
 
 ## Inference 
 
 ```sh
-fb_predict.py -i ${DATA_DIR}/pre-pro/AMI-traps -w runs/segment/train59/weights/last.pt -o /tmp/AMI-traps-preds
+fb_predict -i ${DATA_DIR}/pre-pro/AMI-traps -w runs/segment/train59/weights/last.pt -o /tmp/AMI-traps-preds
 ```
