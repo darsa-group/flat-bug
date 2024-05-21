@@ -11,7 +11,7 @@ from flat_bug.predictor import Predictor
 import torch
 from tqdm import tqdm
 
-if __name__ == '__main__':
+def main():
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
     args_parse.add_argument("-i", "--input-data", dest="input_dir",
@@ -265,3 +265,5 @@ if __name__ == '__main__':
     if isERDA:
         io.stop()
 
+if __name__ == "__main__":
+    main()

@@ -30,9 +30,7 @@ from pyremotedata.dataloader import *
 
 from flat_bug.predictor import Predictor
 
-
-
-if __name__ == '__main__':
+def main():
     # Catch all instances of "ERROR:root:"exiftool" is not found, on path or as absolute path"
     logging.basicConfig(level=logging.CRITICAL)
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
@@ -171,3 +169,5 @@ if __name__ == '__main__':
                 raise e
         logging.info(f"Finished processing {len(path_iterator)} images from {input_directory} with {errors} errors.")
 
+if __name__ == "__main__":
+    main()

@@ -11,6 +11,15 @@ DEFAULT_CONFIG = os.path.join(BASE_PATH, "default.yaml")
 
 set_default_config(os.path.join(BASE_PATH, "default.yaml"))
 
+def parse_include_datasets(path : str) -> List[str]:
+    """
+    Parses the include datasets file.
+    """
+    remove_comment = lambda line: line[:line.find("#")] if "#" in line else line
+    with open(path, "r") as f:
+        datasets = [remove_comment(line).strip() for line in f]
+    return [dataset for dataset in datasets if dataset]
+
 if __name__ == "__main__":
     args_parse = argparse.ArgumentParser()
     args_parse.add_argument("--dry-run", action="store_true", help="Print the experiment configurations without running them.")
@@ -23,7 +32,7 @@ if __name__ == "__main__":
     assert os.getcwd() == EXEC_DIR, f"Current working directory ({os.getcwd()}) is not the execution directory: {EXEC_DIR}"
 
     # Filter out the prospective datasets
-    relevant_datasets = [d for d in DATASETS if not re.search("00-prospective", d)]
+    relevant_datasets = parse_include_datasets(os.path.join(BASE_PATH, "include_datasets"))
 
     # Create the base configs for the full and leave-one-out experiments
     full_config = get_config()

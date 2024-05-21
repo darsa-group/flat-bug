@@ -195,7 +195,7 @@ class AnnotatedDataset(torch.utils.data.IterableDataset):
         for i in this_iter_idx:
             yield self[i]
 
-if __name__ == '__main__':
+def main():
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
     args_parse.add_argument("-i", "--input-data", dest="input_dir",
@@ -408,3 +408,6 @@ if __name__ == '__main__':
             print(f"Failed to save result config to {os.path.join(results_dir, 'best_cfg.yaml')} due to {str(e)}")
         else:
             raise e
+        
+if __name__ == "__main__":
+    main()

@@ -101,7 +101,7 @@ def prepare_coco_file(source_file, image_list, out):
     with open(out, "w") as f:
         json.dump(coco, f)
 
-if __name__ == '__main__':
+def main():
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
     args_parse.add_argument("-i", "--input-data", dest="coco_data_root",
@@ -228,3 +228,6 @@ if __name__ == '__main__':
     for subset in {"val", "train"}:
         all_json = [f for f in sorted(glob.glob(os.path.join(PREPARED_DATA_TARGET_SUBDIR, "labels", subset, "*.json")))]
         merge_cocos(all_json, os.path.join(PREPARED_DATA_TARGET_SUBDIR, "labels", subset,JSON_FILE_BASENAME), delete=True)
+
+if __name__ == "__main__":
+    main()
