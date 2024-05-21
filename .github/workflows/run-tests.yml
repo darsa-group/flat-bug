@@ -1,6 +1,17 @@
 name: Flat-bug Unit Tests
 run-name: ${{ github.ref }} is running unit tests
-on: [push]
+on: 
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+    types:
+      - opened
+
 jobs:
   Continous-Testing:
     runs-on: ubuntu-latest
