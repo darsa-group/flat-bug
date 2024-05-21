@@ -7,8 +7,8 @@ from typing import List
 
 from collections import OrderedDict
 
-BASE_NAME = "fb_compare_backbone_sizes"
-BASE_PATH = os.path.join(EXEC_DIR, "scripts", "experiments", "compare_backbone_sizes")
+BASE_NAME = "leave_two_out"
+BASE_PATH = os.path.join(EXEC_DIR, "scripts", "experiments", "leave_two_out_dataset_mapping")
 DEFAULT_CONFIG = os.path.join(BASE_PATH, "default.yaml")
 
 set_default_config(os.path.join(BASE_PATH, "default.yaml"))
@@ -60,4 +60,4 @@ if __name__ == "__main__":
 
     clean_temporary_dir()
 
-    print("All experiments completed successfully.")
+    print(f"All (n={len(experiment_configs)}) experiments completed successfully.")

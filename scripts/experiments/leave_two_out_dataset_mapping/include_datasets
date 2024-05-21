@@ -17,8 +17,8 @@ biodiscover-arm
 / biodiversa-arm # Empty?
 BIOSCAN # Single animal
 / cao2022 # Ants, easy
-CollembolAI # Collombola (spring tails), relatively hard
-DIRT # Messy complex background
+/ CollembolAI # Collombola (spring tails), relatively hard
+/ DIRT # Messy complex background
 DiversityScanner # Single animal
 / Mothitor # Too small
 PeMaToEuroPep # Large scan, hard
