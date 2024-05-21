@@ -40,7 +40,10 @@ TEST_CFG = {
 
 def file_is_lfs_pointer(file):
     with open(file, "r") as f:
-        return bool(re.search(r"git-lfs\.github\.com", f.read()))
+        try:
+            return bool(re.search(r"git-lfs\.github\.com", f.read()))
+        except UnicodeDecodeError:
+            return False
     
 def check_file_with_remote_fallback(file, file_storage : str="https://anon.erda.au.dk/share_redirect/ecgKtuRWe5"):
     if not os.path.exists(file) or file_is_lfs_pointer(file):
