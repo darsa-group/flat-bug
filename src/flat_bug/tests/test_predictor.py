@@ -1,7 +1,8 @@
 import unittest
 
-import os, shutil, re, tempfile
+import os, shutil, re, tempfile, urllib
 from glob import glob
+import urllib.request
 
 import torch
 import numpy as np
@@ -132,6 +133,18 @@ class DummyModel(torch.nn.Module):
 
 class TestPredictor(unittest.TestCase):
     TOLERANCE = 0.1
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        test_files = glob(os.path.join(ASSET_DIR, "single_scale_tps_*.pt")) + glob(os.path.join(ASSET_DIR, "pyramid_tps_*.pt"))
+        file_storage = "https://anon.erda.au.dk/share_redirect/ecgKtuRWe5"
+        # Check if the test files exist and are not dummy git-lfs pointers, if so get them from the storage
+        for file in test_files:
+            if not os.path.exists(file) or os.path.getsize(file) < 100:
+                try:
+                    urllib.request.urlretrieve(f"{file_storage}/{os.path.basename(file)}", file)
+                except Exception as e:
+                    raise type(e)(f"Failed to download test file {file} from remote file storage (https://anon.erda.au.dk/cgi-sid/ls.py?share_id=dR1l3pwJPf), perhaps the file is not available." + str(e))
 
     def test_single_scale(self):
         dtype = torch.float32
