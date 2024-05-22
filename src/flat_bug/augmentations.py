@@ -57,6 +57,60 @@ class MyRandomPerspective(RandomPerspective):
             else:  # affine
                 img = cv2.warpAffine(img, M[:2], dsize=self.size, borderValue=self.fill_value)
         return img, M, s
+    
+    def __call__(self, labels : dict):
+        """
+        Affine images and targets.
+
+        Args:
+            labels (dict): a dict of `bboxes`, `segments`, `keypoints`.
+        """
+        if self.pre_transform and "mosaic_border" not in labels:
+            labels = self.pre_transform(labels)
+        labels.pop("ratio_pad", None)  # do not need ratio pad
+
+        img = labels["img"]
+        cls = labels["cls"]
+        instances : Instances = labels.pop("instances")
+        # Make sure the coord formats are right
+        instances.convert_bbox(format="xyxy")
+        instances.denormalize(*img.shape[:2][::-1])
+
+        border = labels.pop("mosaic_border", self.border)
+        self.size = img.shape[1] + border[1] * 2, img.shape[0] + border[0] * 2  # w, h
+        # M is affine matrix
+        # Scale for func:`box_candidates`
+        img, M, scale = self.affine_transform(img, border)
+
+        bboxes = self.apply_bboxes(instances.bboxes, M)
+
+        segments = instances.segments
+        keypoints = instances.keypoints
+        # Update bboxes if there are segments.
+        if len(segments):
+            bboxes, segments = self.apply_segments(segments, M)
+
+        if keypoints is not None:
+            keypoints = self.apply_keypoints(keypoints, M)
+        new_instances = Instances(bboxes, segments, keypoints, bbox_format="xyxy", normalized=False)
+        # Clip
+        new_instances.clip(*self.size)
+
+        # Filter instances
+        instances.scale(scale_w=scale, scale_h=scale, bbox_only=True)
+        # Make the bboxes have the same scale with new_bboxes
+        i = self.box_candidates(
+            box1=instances.bboxes.T, box2=new_instances.bboxes.T, area_thr=0.01 if len(segments) else 0.10
+        )
+        labels["instances"] = new_instances[i]
+        labels["cls"] = cls[i]
+        # if len(cls) > 0:
+        #     labels["cls"] = cls[i]
+        # else:
+        #     labels["cls"] = np.empty((0), dtype=np.int32)
+        labels["img"] = img
+        labels["resized_shape"] = img.shape[:2]
+        return labels
 
 
 class RandomCrop:
@@ -157,14 +211,22 @@ class RandomCrop:
         invalid_segments = [np.array(s, dtype=np.int32) for s in invalid_segments]
 
         if len(invalid_segments):
-            cv2.drawContours(or_img,
-                             invalid_segments,
-                             contourIdx=-1,
-                             color=self.bg_fill,
-                             thickness=-1,
-                             lineType=cv2.LINE_4,
-                             offset=(px0 - x_offset, py0 - y_offset)
-                             )
+            inpaint_bitmap = cv2.drawContours(
+                np.zeros(or_img.shape[:2], dtype=np.uint8),
+                invalid_segments,
+                contourIdx=-1,
+                color=1,
+                thickness=-1,
+                lineType=cv2.LINE_4,
+                offset=(px0 - x_offset, py0 - y_offset)
+            )
+            cv2.inpaint(
+                src=or_img,
+                dst=or_img,
+                inpaintMask=inpaint_bitmap,
+                inpaintRadius=5,
+                flags=cv2.INPAINT_TELEA
+            )
         labels["img"] = np.copy(np.ascontiguousarray(img))
         # cv2.imwrite(f"/tmp/{os.path.basename(labels['im_file'])}", or_img)
         valid_i = np.nonzero(valid)[0]
@@ -172,7 +234,7 @@ class RandomCrop:
         if len(valid_i) == 0:
             labels["instances"] = Instances(np.empty([0, 4], dtype=np.float32), np.empty([0, 2], dtype=np.float32),
                                             normalized=False)
-            labels["cls"] = []  # np.empty_like(labels["cls"])
+            labels["cls"] = np.empty_like(labels["cls"])
             return labels
 
         instances.segments = instances.segments[valid_i]

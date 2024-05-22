@@ -1,4 +1,4 @@
-batch: 16
+batch: 8
 model: "./yolov8s-seg.pt"
 epochs: 10
 device: 0
@@ -6,7 +6,7 @@ patience: 9999
 lr0: 0.01
 lrf: 0.0001
 optimizer: 'SGD'
-workers: 1
+workers: 24
 cache: "ram"
 fb_max_instances: 9999
 fb_max_images: -1
