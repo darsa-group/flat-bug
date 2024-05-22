@@ -102,11 +102,11 @@ class MyYOLODataset(YOLODataset):
 
         return Compose([
             RandomHSV(hgain=hyp.hsv_h, sgain=hyp.hsv_s, vgain=hyp.hsv_v),
-            RandomColorInv(),
+            RandomColorInv(p=0.25),
+            RandomCrop(self.imgsz, max_targets=self._max_instances),
             RandomFlip(direction="vertical", p=hyp.flipud),
             RandomFlip(direction="horizontal", p=hyp.fliplr),
             MyRandomPerspective(imgsz=self.imgsz, degrees=180, translate=0),
-            RandomCrop(self.imgsz, max_targets=self._max_instances),
             # MyAlbumentations(self.imgsz),
             # LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False),
             Format(bbox_format="xywh",

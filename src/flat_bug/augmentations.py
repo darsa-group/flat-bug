@@ -72,11 +72,11 @@ class RandomCrop:
     def crop_labels(self, labels, start_x, start_y, apply_max_targets=False):
 
         or_img = labels["img"]
-        debug = os.path.basename(labels["im_file"]) == "a_63-20190826004609-00.jpg"
+        # debug = os.path.basename(labels["im_file"]) == "a_63-20190826004609-00.jpg"
 
         h, w = or_img.shape[:2]
 
-        instances = labels.pop("instances")
+        instances : Instances = labels.pop("instances")
 
         instances.convert_bbox(format="xywh")
         instances.denormalize(w, h)
@@ -128,7 +128,7 @@ class RandomCrop:
         if b.shape[0] == 0:
             labels["instances"] = Instances(np.empty([0, 4], dtype=np.float32), np.empty([0, 2], dtype=np.float32),
                                             normalized=False)
-            labels["cls"] = []
+            labels["cls"] = np.empty((0), dtype=np.int32)
             return labels
 
         valid = np.all([(b[:, 0] - b[:, 2] / 2) > 0,
@@ -210,11 +210,26 @@ class MyCrop(RandomCrop):
 
 
 class RandomColorInv(object):
+    """
+    Invert the colors of an image with a probability p
+
+    Args:
+        p (float): probability of inverting the colors
+    """
+
+    def __init__(self, p : float=0.5):
+        if p < 0:
+            print("Warning: p should be in [0,1], got", p, "setting to 0")
+            p = 0
+        if p > 1:
+            print("Warning: p should be in [0,1], got", p, "setting to 1")
+            p = 1
+        self.p = 1 - p
 
     def __call__(self, labels):
         img = labels['img']
         r = random.uniform(0, 1)
-        if r > 0.5:
+        if r > self.p:
             assert img.dtype == np.uint8
             labels['img'] = 255 - img
         return labels
