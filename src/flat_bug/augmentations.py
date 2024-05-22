@@ -4,8 +4,67 @@ import math
 import numpy as np
 import random
 
+from typing import List, Union
+
 from ultralytics.data.augment import RandomPerspective
 from ultralytics.utils.instance import Instances
+
+def telea_inpaint(img : np.ndarray, polys : List[np.ndarray], exclude_polys, downscale_factor : Union[int, float] = 6, **kwargs) -> np.ndarray:
+    """
+    Mutably inpaints the polygons in an image using the Fast Marching method by Alexandru Telea.
+
+    The inpainting algorithm is performed on a downsampled version of the image to speed up the process, and the inpainted results are then upsampled and pasted back into the original image.
+    
+    Args:
+        img (np.ndarray): The image to inpaint.
+        polys (List[np.ndarray]): A list of polygons to inpaint.
+        downscale_factor (Union[int, float]): The factor by which to downscale the image before inpainting. Default is 6.
+        **kwargs: Additional keyword arguments to pass to `cv2.drawContours`.
+
+    Returns:
+        np.ndarray: The inpainted image.
+    """
+    # Get the original and low-res image shapes
+    orig_shape = img.shape[:2][::-1]
+    low_res_size = [s // downscale_factor for s in orig_shape]
+
+    # Initialize the inpaint bitmap and create the low-res image
+    inpaint_bitmap = np.zeros(low_res_size[::-1], dtype=np.uint8)
+    lr_img = cv2.resize(img, low_res_size)
+
+    # Downscale the exclusion polygons
+    exclude_polys = [p // downscale_factor for p in exclude_polys]
+
+    # Draw the polygons on the inpaint bitmap
+    for p in polys:
+        inpaint_bitmap = cv2.drawContours(
+            inpaint_bitmap,
+            [p // downscale_factor] + exclude_polys, # We add the exclude polygons here, since overlapping polygons "cancel out"
+            color=1,
+            **kwargs
+        )
+    
+    # Dilate the inpaint bitmap to ensure that the inpainting doesn't bleed from the edges of the instances under the polygons
+    cv2.dilate(src=inpaint_bitmap, dst=inpaint_bitmap, kernel=np.ones((3, 3), np.uint8), iterations=1)
+    
+    # Inpaint the low-res image using the Fast Marching algorithm
+    cv2.inpaint(
+        src=lr_img,
+        dst=lr_img,
+        inpaintMask=inpaint_bitmap,
+        inpaintRadius=5,
+        flags=cv2.INPAINT_TELEA
+    )
+
+    # Upsample the inpainted image and bitmap
+    inpaint_bitmap = cv2.resize(inpaint_bitmap, orig_shape)
+    lr_img = cv2.resize(lr_img, orig_shape)
+    
+    # Copy the inpainted low-res image back into the original image
+    img[inpaint_bitmap == 1] = lr_img[inpaint_bitmap == 1]
+
+    # Return the inpainted image (not necessary, as the inpainting is done in-place)
+    return img
 
 
 class MyRandomPerspective(RandomPerspective):
@@ -209,24 +268,29 @@ class RandomCrop:
         invalid_i = np.nonzero(invalid)[0]
         invalid_segments = instances.segments[invalid_i]
         invalid_segments = [np.array(s, dtype=np.int32) for s in invalid_segments]
+        valid_segments = [np.array(s, dtype=np.int32) for s in instances.segments[np.nonzero(valid)[0]]]
 
         if len(invalid_segments):
-            inpaint_bitmap = cv2.drawContours(
-                np.zeros(or_img.shape[:2], dtype=np.uint8),
-                invalid_segments,
+            # cv2.drawContours(
+            #     or_img,
+            #     invalid_segments,
+            #     contourIdx=-1,
+            #     color=self.bg_fill,
+            #     thickness=-1,
+            #     lineType=cv2.LINE_4,
+            #     offset=(px0-x_offset, py0-y_offset)
+            # ) 
+            telea_inpaint(
+                img=or_img, 
+                polys=invalid_segments, 
+                exclude_polys=valid_segments,
+                downscale_factor=6, 
                 contourIdx=-1,
-                color=1,
                 thickness=-1,
                 lineType=cv2.LINE_4,
-                offset=(px0 - x_offset, py0 - y_offset)
+                offset=((px0-x_offset) // 6, (py0-y_offset) // 6)
             )
-            cv2.inpaint(
-                src=or_img,
-                dst=or_img,
-                inpaintMask=inpaint_bitmap,
-                inpaintRadius=5,
-                flags=cv2.INPAINT_TELEA
-            )
+
         labels["img"] = np.copy(np.ascontiguousarray(img))
         # cv2.imwrite(f"/tmp/{os.path.basename(labels['im_file'])}", or_img)
         valid_i = np.nonzero(valid)[0]

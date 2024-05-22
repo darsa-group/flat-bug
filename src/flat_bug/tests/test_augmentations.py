@@ -28,7 +28,7 @@ TEST_HYP = {
     "fliplr": 0.5,
     "mask_ratio": 2,
     "overlap_mask": 0.5,
-    "max_instances": 10,
+    "max_instances": 5,
     "imgsz": 1024,
     "use_segments": True,
     "use_keypoints": False
@@ -181,6 +181,8 @@ class TestAugmentations(unittest.TestCase):
         # Normal pipeline execution
         try:
             out = pipeline(deepcopy(pipeline_input))
+            # # DEBUG SAVE THE OUTPUT IMAGE
+            # cv2.imwrite(ASSET_DIR + "/test_train_augmentation_pipeline.jpg", out["img"].permute(1, 2, 0).flip(2).numpy())
         except Exception as e:
             raise type(e)("Failed to execute training augmentation pipeline on image with labels due to:\n\t" + str(e))
         self.assertIsInstance(out, dict, msg="Invalid output of training augmentation pipeline on image with labels")

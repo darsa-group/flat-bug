@@ -7,7 +7,7 @@ from typing import List
 
 from collections import OrderedDict
 
-BASE_NAME = "leave_two_out"
+BASE_NAME = "fb_leave_two_out"
 BASE_PATH = os.path.join(EXEC_DIR, "scripts", "experiments", "leave_two_out_dataset_mapping")
 DEFAULT_CONFIG = os.path.join(BASE_PATH, "default.yaml")
 

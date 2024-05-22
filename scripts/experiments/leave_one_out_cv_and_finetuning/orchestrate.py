@@ -5,8 +5,8 @@ from scripts.experiments.experiment_helpers import EXEC_DIR, DATADIR, DATASETS, 
 
 from collections import OrderedDict
 
-BASE_NAME = "fb_compare_backbone_sizes"
-BASE_PATH = os.path.join(EXEC_DIR, "scripts", "experiments", "compare_backbone_sizes")
+BASE_NAME = "fb_leave_one_out"
+BASE_PATH = os.path.join(EXEC_DIR, "scripts", "experiments", "leave_one_out_cv_and_finetuning")
 DEFAULT_CONFIG = os.path.join(BASE_PATH, "default.yaml")
 
 set_default_config(os.path.join(BASE_PATH, "default.yaml"))
@@ -23,10 +23,11 @@ if __name__ == "__main__":
     assert os.getcwd() == EXEC_DIR, f"Current working directory ({os.getcwd()}) is not the execution directory: {EXEC_DIR}"
 
     # Filter out the prospective datasets
-    relevant_datasets = [d for d in DATASETS if not re.search("00-prospective", d)]
+    relevant_datasets = ["01-partial-AMI-traps"] # [d for d in DATASETS if not re.search("00-prospective", d)]
 
     # Create the base configs for the full and leave-one-out experiments
     full_config = get_config()
+
     full_config["name"] = f"{BASE_NAME}_FULL"
     # We use order-preserving dictionaries to store the experiment configs,
     # ensuring that the experiments are run in the correct order
@@ -37,18 +38,18 @@ if __name__ == "__main__":
         this_config["fb_exclude_datasets"] += [dataset]
         experiment_configs[dataset] = this_config
 
-    # Create the fine-tuning configs
-    fine_tuning_configs = []
-    for name, config in experiment_configs.items():
-        fine_tune_config = config.copy()
-        fine_tune_config["name"] = f"FINE_TUNE_{name}"
-        fine_tune_config["model"] = f"./runs/segment/{name}/weights/best.pt"
-        fine_tune_config["fb_exclude_datasets"] = [d for d in fine_tune_config["fb_exclude_datasets"] if d != name]
-        fine_tune_config["epochs"] = 10
-        fine_tuning_configs.append(fine_tune_config)
+    # # Create the fine-tuning configs
+    # fine_tuning_configs = []
+    # for name, config in experiment_configs.items():
+    #     fine_tune_config = config.copy()
+    #     fine_tune_config["name"] = f"FINE_TUNE_{name}"
+    #     fine_tune_config["model"] = f"./runs/segment/{name}/weights/best.pt"
+    #     fine_tune_config["fb_exclude_datasets"] = [d for d in fine_tune_config["fb_exclude_datasets"] if d != name]
+    #     fine_tune_config["epochs"] = 10
+    #     fine_tuning_configs.append(fine_tune_config)
     
-    for config in fine_tuning_configs:
-        experiment_configs[config["name"]] = config
+    # for config in fine_tuning_configs:
+    #     experiment_configs[config["name"]] = config
 
     # Run the experiments
     for name, config in experiment_configs.items():
