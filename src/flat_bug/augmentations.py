@@ -32,14 +32,12 @@ def telea_inpaint(img : np.ndarray, polys : List[np.ndarray], exclude_polys, dow
     inpaint_bitmap = np.zeros(low_res_size[::-1], dtype=np.uint8)
     lr_img = cv2.resize(img, low_res_size)
 
-    # Downscale the exclusion polygons
-    exclude_polys = [p // downscale_factor for p in exclude_polys]
-
-    # Draw the polygons on the inpaint bitmap
-    for p in polys:
+    # Draw both the polygons and the exclusion polygons on the inpaint bitmap
+    # This is done so that excluded polygons don't bleed into the inpainted regions
+    for p in polys + exclude_polys:
         inpaint_bitmap = cv2.drawContours(
             inpaint_bitmap,
-            [p // downscale_factor] + exclude_polys, # We add the exclude polygons here, since overlapping polygons "cancel out"
+            [p // downscale_factor],
             color=1,
             **kwargs
         )
@@ -55,6 +53,15 @@ def telea_inpaint(img : np.ndarray, polys : List[np.ndarray], exclude_polys, dow
         inpaintRadius=5,
         flags=cv2.INPAINT_TELEA
     )
+
+    # Remove the exclude polygons from the inpaint bitmap, so that the original image is not inpainted under them
+    for p in exclude_polys:
+        inpaint_bitmap = cv2.drawContours(
+            inpaint_bitmap,
+            [p // downscale_factor],
+            color=0,
+            **kwargs
+        )
 
     # Upsample the inpainted image and bitmap
     inpaint_bitmap = cv2.resize(inpaint_bitmap, orig_shape)

@@ -28,7 +28,7 @@ TEST_HYP = {
     "fliplr": 0.5,
     "mask_ratio": 2,
     "overlap_mask": 0.5,
-    "max_instances": 5,
+    "max_instances": 10,
     "imgsz": 1024,
     "use_segments": True,
     "use_keypoints": False
