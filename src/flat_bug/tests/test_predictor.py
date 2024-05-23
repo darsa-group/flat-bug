@@ -47,10 +47,11 @@ def file_is_lfs_pointer(file):
     
 def check_file_with_remote_fallback(file, file_storage : str="https://anon.erda.au.dk/share_redirect/ecgKtuRWe5"):
     if not os.path.exists(file) or file_is_lfs_pointer(file):
+        remote_uri = f"{file_storage}/{os.path.basename(file)}"
         try:
-            urllib.request.urlretrieve(f"{file_storage}/{os.path.basename(file)}", file)
+            urllib.request.urlretrieve(remote_uri, file)
         except Exception as e:
-            raise type(e)(f"Failed to download test file {file} from remote file storage (https://anon.erda.au.dk/cgi-sid/ls.py?share_id=dR1l3pwJPf), perhaps the file is not available." + str(e))
+            raise type(e)(f"Failed to download test file {file} from remote file storage ({remote_uri}), perhaps the file is not available." + str(e))
     return file
 
 class TestTensorPredictions(unittest.TestCase):
