@@ -1,12 +1,12 @@
 batch: 8
-model: "./yolov8s-seg.pt"
+model: "./yolov8m-seg.pt"
 epochs: 100
 device: 1
 patience: 9999
 lr0: 0.01
 lrf: 0.0001
 optimizer: 'SGD'
-workers: 16
+workers: 32
 fb_max_instances: 9999
 fb_max_images: -1
 fb_custom_eval: false
