@@ -8,6 +8,7 @@ import re
 
 from flat_bug.coco_utils import fb_to_coco
 from flat_bug.predictor import Predictor
+from flat_bug.config import read_cfg, DEFAULT_CFG
 import torch
 from tqdm import tqdm
 
@@ -80,6 +81,10 @@ def main():
         raise ValueError(f"Dtype '{option_dict['dtype']}' is not supported.")
     
     config = option_dict["config"]
+    if config:
+        config = read_cfg(config)
+    else:
+        config = DEFAULT_CFG
     
     crops = not option_dict["no_crops"]
     metadata = not option_dict["no_metadata"]
@@ -201,7 +206,7 @@ def main():
         logging.info(f"Processing {os.path.basename(f)}")
         try:
             # Run the model
-            prediction = pred.pyramid_predictions(f, scale_increment=1/2, scale_before=option_dict["scale_before"], single_scale=option_dict["single_scale"])
+            prediction = pred.pyramid_predictions(f, scale_increment=3/4, scale_before=option_dict["scale_before"], single_scale=option_dict["single_scale"])
             # Save the results
             if not option_dict["no_save"]:
                 result_directory = prediction.save(

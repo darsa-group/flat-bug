@@ -1,0 +1,5 @@
+nodes: 1 # Number of nodes
+gpus_per_node: 1 # Number of GPUs per node
+cpus_per_task: 16 # Number of CPU cores per task/job
+mem_gb: 32000 # Memory in MiB(10 GiB = 10 * 1024 MiB)
+timeout_min: 96:00:00 # Timelimit in HH:MM:SS

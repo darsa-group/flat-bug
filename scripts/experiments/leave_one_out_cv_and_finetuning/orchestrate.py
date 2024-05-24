@@ -1,34 +1,26 @@
 
 import os, sys, re, argparse
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-from scripts.experiments.experiment_helpers import EXEC_DIR, DATADIR, DATASETS, set_default_config, get_config, do_yolo_train_run, clean_temporary_dir
+from scripts.experiments.experiment_helpers import DATASETS, set_default_config, set_datadir, get_config, get_cmd_args, read_slurm_params, ExperimentRunner
 
 from collections import OrderedDict
 
 BASE_NAME = "fb_leave_one_out"
-BASE_PATH = os.path.join(EXEC_DIR, "scripts", "experiments", "leave_one_out_cv_and_finetuning")
+BASE_PATH = os.path.dirname(__file__)
 DEFAULT_CONFIG = os.path.join(BASE_PATH, "default.yaml")
 
-set_default_config(os.path.join(BASE_PATH, "default.yaml"))
+set_default_config(DEFAULT_CONFIG)
 
 if __name__ == "__main__":
-    args_parse = argparse.ArgumentParser()
-    args_parse.add_argument("--dry-run", action="store_true", help="Print the experiment configurations without running them.")
-    args = args_parse.parse_args()
-    dry_run = args.dry_run
-
-    # Check for the existence of the necessary files and directories, and the correct execution directory
-    assert os.path.exists(DEFAULT_CONFIG), f"Default config file not found: {DEFAULT_CONFIG}"
-    assert os.path.exists(DATADIR) and os.path.isdir(DATADIR), f"Data directory not found: {DATADIR}"
-    assert os.getcwd() == EXEC_DIR, f"Current working directory ({os.getcwd()}) is not the execution directory: {EXEC_DIR}"
+    args = get_cmd_args()
 
     # Filter out the prospective datasets
     relevant_datasets = ["01-partial-AMI-traps"] # [d for d in DATASETS if not re.search("00-prospective", d)]
 
     # Create the base configs for the full and leave-one-out experiments
     full_config = get_config()
-
     full_config["name"] = f"{BASE_NAME}_FULL"
+    
     # We use order-preserving dictionaries to store the experiment configs,
     # ensuring that the experiments are run in the correct order
     experiment_configs = OrderedDict({"FULL" : full_config})
@@ -38,25 +30,28 @@ if __name__ == "__main__":
         this_config["fb_exclude_datasets"] += [dataset]
         experiment_configs[dataset] = this_config
 
-    # # Create the fine-tuning configs
-    # fine_tuning_configs = []
-    # for name, config in experiment_configs.items():
-    #     fine_tune_config = config.copy()
-    #     fine_tune_config["name"] = f"FINE_TUNE_{name}"
-    #     fine_tune_config["model"] = f"./runs/segment/{name}/weights/best.pt"
-    #     fine_tune_config["fb_exclude_datasets"] = [d for d in fine_tune_config["fb_exclude_datasets"] if d != name]
-    #     fine_tune_config["epochs"] = 10
-    #     fine_tuning_configs.append(fine_tune_config)
-    
-    # for config in fine_tuning_configs:
-    #     experiment_configs[config["name"]] = config
-
-    # Run the experiments
+    # Create the fine-tuning configs
+    fine_tuning_configs = OrderedDict()
     for name, config in experiment_configs.items():
-        print(f"Running experiment: {name}")
-        print("Experiment config:", config)
-        do_yolo_train_run(config, dry_run=dry_run)
+        fine_tune_config = config.copy()
+        fine_tune_config["name"] = f"{BASE_NAME}_fine_tune_{name}"
+        fine_tune_config["model"] = f"./runs/segment/{name}/weights/best.pt"
+        fine_tune_config["fb_exclude_datasets"] = [d for d in fine_tune_config["fb_exclude_datasets"] if d != name]
+        fine_tune_config["epochs"] = 10
+        fine_tune_config["resume"] = True
+        fine_tuning_configs[name] = fine_tune_config
 
-    clean_temporary_dir()
+    # First run the full training
+    experiment_runner = ExperimentRunner(inputs=experiment_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition))
+    experiment_runner.run()
+    experiment_runner.complete()
+    experiment_runner.wait() # Here we must wait for the full training to complete before starting the fine-tuning
 
-    print(f"All (n={len(experiment_configs)}) experiments completed successfully.")
+    ## FIXME ##
+    # This is **NOT** a good way to do this for SLURM, we should somehow schedule the fine-tuning jobs to wait for the full training to complete using SLURM instead of keeping this process alive
+    #  - For non-SLURM systems, this is fine, but we should still find a better way to do this
+
+    # Then run the fine-tuning training 
+    experiment_runner = ExperimentRunner(inputs=fine_tuning_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition))
+    experiment_runner.run()
+    experiment_runner.complete()

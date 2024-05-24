@@ -1,7 +1,7 @@
 library("data.table")
 library("ggplot2")
-# library("tidyverse")
-# library(tibble)
+# library("dplyr")
+# library("tibble")
 # library(dplyr)
 library("scales")
 library("optparse")
@@ -38,9 +38,10 @@ scientific_10 <- function(x) {
 
 RES_DIR = opts$input_directory # where all the CSV files are
 files = list.files(RES_DIR, pattern="*.csv", full.names=TRUE)
+files = files[!grepl("combined_results", files)]
 
 all_data = lapply(files, function(f){
-    dt = fread(f)
+    dt = fread(f, sep=";")
     dt[, filename := basename (f) ]
     dt[, contour_1:=NULL ]
     dt[, contour_2:=NULL ]

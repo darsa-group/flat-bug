@@ -149,7 +149,7 @@ def check_cfg_types(cfg : dict, strict : bool = False) -> bool:
     # If no errors are raised, return True
     return True
 
-def read_cfg(config : Union[str, os.PathLike], strict : bool=False) -> dict:
+def read_cfg(path : Union[str, os.PathLike], strict : bool=False) -> dict:
     """
     Load and validate the config file.
 
@@ -163,16 +163,16 @@ def read_cfg(config : Union[str, os.PathLike], strict : bool=False) -> dict:
         dict: The config dictionary.
     """
     # Check if config is a string or path-like object
-    if not isinstance(config, (str, os.PathLike)):
-        raise TypeError(f"Invalid config location. Expected str or os.PathLike, got {type(config)}.")
+    if not isinstance(path, (str, os.PathLike)):
+        raise TypeError(f"Invalid config location. Expected str or os.PathLike, got {type(path)}.")
     # Check if the config file is a YAML file
-    if not config.endswith(".yaml"):
-        raise ValueError(f"Cannot read config. Expected YAML file, got {config}.")
+    if not (path.endswith(".yaml") or path.endswith(".yml")):
+        raise ValueError(f"Cannot read config. Expected YAML file, got {path}.")
     # Check if config file exists
-    if not os.path.exists(config):
-        raise FileNotFoundError(f"Config file {config} not found.")
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Config file {path} not found.")
     # Load config file
-    with open(config, "r") as f:
+    with open(path, "r") as f:
         cfg = yaml.safe_load(f)
     # Type check config
     check_cfg_types(cfg, strict)
@@ -199,7 +199,7 @@ def write_cfg(cfg : dict, path : Union[str, os.PathLike], overwrite : bool=False
     if not isinstance(path, (str, os.PathLike)):
         raise TypeError(f"Invalid config location. Expected str or os.PathLike, got {type(path)}.")
     # Check if path is a YAML file
-    if not path.endswith(".yaml"):
+    if not (path.endswith(".yaml") or path.endswith(".yml")):
         raise ValueError(f"Cannot save config. Expected YAML file, got {path}.")
     # Check if path exists
     if not overwrite and os.path.exists(path):

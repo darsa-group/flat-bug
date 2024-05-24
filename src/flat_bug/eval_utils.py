@@ -1,10 +1,85 @@
-import os
-import time
+import os, time
+import csv
+
 from typing import Union, List, Tuple
+
 import cv2
 import numpy as np
+
 from flat_bug.coco_utils import contour_bbox, contour_area, annotations_to_numpy
 
+def isfloat(num : str) -> bool:
+    try:
+        num = float(num)
+        return not num.is_integer()
+    except Exception:
+        return False
+
+def ispath(path : str) -> bool:
+    return "/" in path or "\\" in path
+    
+def format_cell(cell : str, digits : int = 3, max_length : int = 30) -> str:
+    if isfloat(cell):
+        return f"{float(cell):.{digits}f}"
+    if len(cell) > max_length and not ispath(cell):
+        left_size = (max_length - 3) // 2
+        right_size = max_length - 3 - left_size
+        return f"{cell[:left_size]}...{cell[-right_size:]}"
+    return cell
+
+def format_row(cells : List[str], widths : List[int], align : str = "center") -> str:
+    """
+    Format a row of a table.
+
+    Args:
+        cells (List[Any]): The cells of the row.
+        widths (List[int]): The widths of each column.
+
+    Returns:
+        str: The formatted row.
+    """
+    row = "|"
+    for cell, width in zip(cells, widths):
+        match align:
+            case "center":
+                row += f" {cell:^{width}} |"
+            case "left":
+                row += f" {cell:<{width}} |"
+            case "right":
+                row += f" {cell:>{width}} |"
+    return row
+
+def pretty_print_csv(csv_file : str, delimiter : str = ","):
+    """
+    Pretty print the CSV file.
+
+    Args:
+        csv_file (str): The path to the CSV file.
+    """
+    # Read the CSV file data
+    with open(csv_file, 'r') as file:
+        csv_reader = csv.reader(file, delimiter=delimiter)
+        try:
+            headers = next(csv_reader)
+        except StopIteration:
+            print("pretty_print_csv: Empty CSV file.")
+            return
+        max_lengths = [len(h) for h in headers]
+        rows = []
+        for row in csv_reader:
+            rows.append([format_cell(cell, digits=3, max_length=min(30, header_width * 4)) for cell, header_width in zip(row, max_lengths)])
+    # Get the maximum length of each column
+    for row in rows:
+        for i, cell in enumerate(row):
+            max_lengths[i] = max(max_lengths[i], len(cell))
+    header = format_row(headers, max_lengths, align="center")
+    horizontal_line = "-" * len(header)
+    print(horizontal_line)
+    print(header)
+    print(horizontal_line)
+    for row in rows:
+        print(format_row(row, max_lengths, align="right"))   
+    print(horizontal_line)   
 
 def bbox_intersect(b1, b2s):
     """
@@ -806,20 +881,6 @@ def compare_groups(group1: list, group2: list, group_labels: Union[str, None] = 
     # Convert the annotations to NumPy arrays, and calculate bounding boxes and areas
     b1, c1 = annotations_to_numpy(group1)
     b2, c2 = annotations_to_numpy(group2)
-    # # Filter annotations/predictions for boxes with an area less than 64^2
-    # size_threshold = 128 **2
-    # if image_path is not None and "AMI-traps" in image_path:
-    #     size_threshold = 64 ** 2
-    # if all(b1.shape):
-    #     g1_filter = np.prod(b1[:, 2:] - b1[:, :2], axis=1) >= size_threshold
-    #     b1 = b1[g1_filter]
-    #     c1 = [c for i, c in enumerate(c1) if g1_filter[i]]
-    #     group1 = [g for i, g in enumerate(group1) if g1_filter[i]]
-    # if all(b2.shape):
-    #     g2_filter = np.prod(b2[:, 2:] - b2[:, :2], axis=1) >= size_threshold
-    #     b2 = b2[g2_filter]
-    #     c2 = [c for i, c in enumerate(c2) if g2_filter[i]]
-    #     group2 = [g for i, g in enumerate(group2) if g2_filter[i]]
 
     a1, a2 = np.array([contour_area(c) for c in c1]), np.array([contour_area(c) for c in c2])
     len_1, len_2 = len(c1), len(c2)
