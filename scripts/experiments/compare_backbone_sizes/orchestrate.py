@@ -1,6 +1,6 @@
 import os, sys, argparse
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-from scripts.experiments.experiment_helpers import set_default_config, set_datadir, get_config, get_cmd_args, read_slurm_params, ExperimentRunner
+from scripts.experiments.experiment_helpers import set_default_config, get_config, get_cmd_args, read_slurm_params, ExperimentRunner
 
 BASE_NAME = "fb_compare_backbone_sizes"
 BASE_PATH = os.path.dirname(__file__)

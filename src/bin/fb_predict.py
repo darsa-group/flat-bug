@@ -58,7 +58,8 @@ def main():
         _, ext = os.path.splitext(option_dict["input_dir"])
         isVideo = ext in [".mp4", ".avi"]
         if not isVideo:
-            assert os.path.isdir(option_dict["input_dir"])
+            if not os.path.isdir(option_dict["input_dir"]):
+                raise FileNotFoundError(f"Directory '{option_dict['input_dir']}' not found.")
     assert os.path.isfile(option_dict["model_weights"])
 
     device = option_dict["gpu"]
@@ -206,7 +207,7 @@ def main():
         logging.info(f"Processing {os.path.basename(f)}")
         try:
             # Run the model
-            prediction = pred.pyramid_predictions(f, scale_increment=3/4, scale_before=option_dict["scale_before"], single_scale=option_dict["single_scale"])
+            prediction = pred.pyramid_predictions(f, scale_increment=1/2, scale_before=option_dict["scale_before"], single_scale=option_dict["single_scale"])
             # Save the results
             if not option_dict["no_save"]:
                 result_directory = prediction.save(

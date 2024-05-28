@@ -391,13 +391,13 @@ def postprocess(
         if min_confidence != 0:
             pred = pred[pred[:, 4] > min_confidence]
         boxes = scale_boxes((tile_size, tile_size), pred[:, :4], imgs[i].shape[-2:], padding=False)
-        if valid_size_range is not None:
+        if valid_size_range is not None and valid_size_range[0] > 0 and valid_size_range[1] > 0 and valid_size_range[1] < tile_size:
             valid_size = ((boxes[:, 2:] - boxes[:, :2]).log()/2).sum(dim=1).exp()
             valid = (valid_size >= valid_size_range[0]) & (valid_size <= valid_size_range[1])
             pred = pred[valid]
             boxes = boxes[valid]
-        if edge_margin is not None:
-            close_to_edge = (boxes[:, :2] < edge_margin).any(dim=1) | (boxes[:, 2:] > (1024 - edge_margin)).any(dim=1)
+        if edge_margin is not None and edge_margin > 0:
+            close_to_edge = (boxes[:, :2] < edge_margin).any(dim=1) | (boxes[:, 2:] > (tile_size - edge_margin)).any(dim=1)
             pred = pred[~close_to_edge]
             boxes = boxes[~close_to_edge]
         if nms != 0:

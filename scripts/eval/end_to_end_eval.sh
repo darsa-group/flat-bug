@@ -7,9 +7,8 @@ Usage: $0 -w weights -d directory [-c config.yaml] [-l local_directory] [-o outp
         The path to the weights file.
 
     -d directory (MANDATORY): 
-        The directory where the data is located and where the results will be saved the directory
-        should have a 'reference' directory with the ground truth json in
-        'instances_default.json' and the matching images'.
+        The directory where the data is located, the directory should have a 'reference' directory 
+        with the ground truth json in 'instances_default.json' and the matching images'.
 
     -c config (OPTIONAL):
         The path to the config file.

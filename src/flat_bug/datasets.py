@@ -1,4 +1,5 @@
 import os
+import math
 import cv2
 import numpy as np
 import re
@@ -6,11 +7,67 @@ import re
 from typing import List, Dict, Optional
 
 from ultralytics.data import YOLODataset
+from ultralytics.utils import IterableSimpleNamespace
 from ultralytics.data.augment import RandomFlip, RandomHSV, Compose, Format
-from flat_bug.augmentations import MyCrop, RandomCrop, MyRandomPerspective, RandomColorInv
+from flat_bug.augmentations import CenterCrop, RandomCrop, MyRandomPerspective, RandomColorInv, FixInstances
 
 HELP_URL = 'See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
 IMG_FORMATS = 'bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 'pfm'  # include image suffixes
+
+def calculate_image_weights(image_paths) -> List[float]:
+    """
+    Calculate normalized weights for each image based on the sqrt of the file sizes,
+    normalized by the minimum file size, so that the values are between 1 and infinity.
+    
+    Args:
+        image_paths (list of str): List of image file paths.
+    
+    Returns:
+        list of float: Sqrt-normalized weights for each image.
+    """
+    file_sizes = [os.path.getsize(path) + 1 for path in image_paths]
+    min_size = min(file_sizes)
+    return [(size / min_size) for size in file_sizes]
+
+def reweight(weights, target_sum) -> List[float]:
+    """
+    Reweights the provided list of weights so that their sum equals the target sum.
+    
+    Args:
+        weights (list of float): List of weights to reweight.
+        target_sum (float): Desired sum of the weights.
+    
+    Returns:
+        list of float: Reweighted weights.
+    """
+    sum_weights = sum(weights)
+    return [max(round(w * target_sum / sum_weights), 1) for w in weights]
+
+def generate_indices(weights, target_size : Optional[int]=None) -> List[int]:
+    """
+    Deterministically generates a list of indices based on the provided weights to oversample the items.
+    
+    Args:
+        weights (list of float): List of weights for each item.
+        target_size (int): Desired size of the output list. If None, the size of the output is approximately the sum of the weights.
+
+    Returns:
+        list of int: List of indices to oversample the items.
+    """
+    n = len(weights)
+    weights = [max(round(w), 1) for w in weights]
+    indices = []
+
+    if target_size is not None:
+        for _ in range(10):
+            if abs(sum(weights) - target_size)/target_size < 0.01:
+                break
+            weights = reweight(weights, target_size)
+
+    for i, w in enumerate(weights):
+        indices.extend([i] * int(max(round(w), 1)))
+
+    return indices
 
 def get_datasets(files : List[str]) -> Dict[str, List[str]]:
     file_dataset = [re.match(r"[^_]+", os.path.basename(f)).group(0) for f in files]
@@ -19,6 +76,7 @@ def get_datasets(files : List[str]) -> Dict[str, List[str]]:
     for file, fd in zip(files, file_dataset):
         datasets[fd].append(file)
     return datasets
+
 
 def subset(self, n : Optional[int]=None, pattern : Optional[str]=None):
     """
@@ -53,13 +111,57 @@ def hook_get_labels_with_subset(obj, args):
         return obj.get_labels()
     obj.get_labels = subset_then_get
 
+def train_augmentation_pipeline(hyperparameters : IterableSimpleNamespace, image_size : int, max_instances : Optional[int], min_size : int, use_segments : bool, use_keypoints : bool) -> Compose:
+    return Compose([
+        RandomCrop(imsize=int(image_size * 1.5)),
+        RandomHSV(hgain=hyperparameters.hsv_h, sgain=hyperparameters.hsv_s, vgain=hyperparameters.hsv_v),
+        RandomColorInv(p=0.25),
+        RandomFlip(direction="vertical", p=hyperparameters.flipud),
+        RandomFlip(direction="horizontal", p=hyperparameters.fliplr),
+        MyRandomPerspective(imgsz=int(image_size * 1.5), degrees=180, translate=0, scale=0),
+        CenterCrop(image_size),
+        # MyAlbumentations(self.imgsz),
+        # LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False),
+        FixInstances(area_thr=0.99, max_targets=max_instances, min_size=min_size),
+        Format(
+            bbox_format="xywh",
+            normalize=True,
+            return_mask=use_segments,
+            return_keypoint=use_keypoints,
+            batch_idx=True,
+            mask_ratio=hyperparameters.mask_ratio,
+            mask_overlap=hyperparameters.overlap_mask
+        )
+    ])
+
+def validation_augmentation_pipeline(image_size : int, min_size : int, use_segments : bool, use_keypoints : bool) -> Compose:
+    return Compose([
+        RandomCrop(imsize=image_size),
+        FixInstances(area_thr=0.99, max_targets=None, min_size=min_size),
+        Format(
+            bbox_format="xywh",
+            normalize=True,
+            return_mask=use_segments,
+            return_keypoint=use_keypoints,
+            batch_idx=True,
+            mask_ratio=1,
+            mask_overlap=True
+        )
+    ])
+
+
 class MyYOLODataset(YOLODataset):
-    def __init__(self, max_instances, classes=None, subset_args=None, *args, **kwargs):
+    _min_size : int=4 # What is the minimum size of an instance to be considered (width or height in pixels after augmentations)
+    _oversample_factor : int=2 # How much do we allow the dataset to grow when oversampling - this is done to ensure larger images are not underrepresented
+
+    def __init__(self, max_instances : Optional[int], classes=None, subset_args=None, *args, **kwargs):
         self._max_instances = max_instances
         self._include_classes = classes # Only used so the class list is visible in the subset method
         if subset_args is not None:
             hook_get_labels_with_subset(self, subset_args)
         super().__init__(classes=classes, *args, **kwargs)
+        self.sample_weights = [image_weight * len(label_i["cls"]) for label_i, image_weight in zip(self.labels, calculate_image_weights(self.im_files))]
+        self.__indices = generate_indices(self.sample_weights, target_size=len(self.im_files) * self._oversample_factor)
 
     def _debug_write_loaded_images(self, out, index):
         m = np.ascontiguousarray(out["masks"].detach().numpy().transpose(1, 2, 0)) * 255
@@ -74,7 +176,6 @@ class MyYOLODataset(YOLODataset):
 
     def load_image(self, i):
         # Loads 1 image from dataset index 'i', returns (im, resized hw)
-
         im, f, fn = self.ims[i], self.im_files[i], self.npy_files[i]
 
         if im is None:  # not cached in RAM
@@ -88,61 +189,42 @@ class MyYOLODataset(YOLODataset):
 
             h0, w0 = im.shape[:2]  # orig hw
 
-            # # fixme
-            # if os.path.basename(self.im_files[i]).startswith("2023-"):
-            #     im = cv2.resize(im, (round(w0 / 4.0), round(h0 / 4.0)), interpolation=cv2.INTER_AREA)
-            #     # print("not cached", f, (h0, w0), im.shape[:2])
-            #     h0, w0 = im.shape[:2]
-
             return im, (h0, w0), im.shape[:2]  # im, hw_original, hw_resized
         # print("cached", f, self.im_hw0[i], self.im_hw[i])
         return self.ims[i], self.im_hw0[i], self.im_hw[i]  # im, hw_original, hw_resized
 
-    def build_transforms(self, hyp=None):
-
-        return Compose([
-            RandomHSV(hgain=hyp.hsv_h, sgain=hyp.hsv_s, vgain=hyp.hsv_v),
-            RandomColorInv(p=0.25),
-            RandomCrop(self.imgsz, max_targets=self._max_instances),
-            RandomFlip(direction="vertical", p=hyp.flipud),
-            RandomFlip(direction="horizontal", p=hyp.fliplr),
-            MyRandomPerspective(imgsz=self.imgsz, degrees=180, translate=0),
-            # MyAlbumentations(self.imgsz),
-            # LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False),
-            Format(bbox_format="xywh",
-                   normalize=True,
-                   return_mask=self.use_segments,
-                   return_keypoint=self.use_keypoints,
-                   batch_idx=True,
-                   mask_ratio=hyp.mask_ratio,
-                   mask_overlap=hyp.overlap_mask)
-        ])
+    def build_transforms(self, hyp : IterableSimpleNamespace) -> Compose:
+        return train_augmentation_pipeline(
+            hyperparameters=hyp, 
+            image_size=self.imgsz, 
+            max_instances=self._max_instances, 
+            min_size=self._min_size, 
+            use_segments=self.use_segments, 
+            use_keypoints=self.use_keypoints
+        )
+    
+    def __len__(self):
+        return len(self.__indices)
 
     def __getitem__(self, index):
+        index = self.__indices[index]
         out = self.transforms(self.get_image_and_label(index))
         return out
 
 
 class MyYOLOValidationDataset(MyYOLODataset):
-    _resample_n = 5
+    _resample_n : int= 5
 
-    def build_transforms(self, hyp=None):
-        return Compose([
-            MyRandomPerspective(imgsz=self.imgsz, degrees=0, scale=(.1, 1), translate=0),
-            RandomCrop(self.imgsz, max_targets=self._max_instances),
-            Format(bbox_format="xywh",
-                   normalize=True,
-                   return_mask=self.use_segments,
-                   return_keypoint=self.use_keypoints,
-                   batch_idx=True,
-                   mask_ratio=hyp.mask_ratio,
-                   mask_overlap=hyp.overlap_mask)
-        ])
+    def build_transforms(self, hyp : IterableSimpleNamespace) -> Compose:
+        return validation_augmentation_pipeline(
+            image_size=self.imgsz, 
+            min_size=self._min_size, 
+            use_segments=self.use_segments, 
+            use_keypoints=self.use_keypoints
+        )
 
     def __len__(self):
         return super().__len__() * self._resample_n
-
-    #
 
     def __getitem__(self, index):
         i = index % super().__len__()

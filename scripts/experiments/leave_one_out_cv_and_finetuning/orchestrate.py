@@ -1,7 +1,7 @@
 
 import os, sys, re, argparse
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-from scripts.experiments.experiment_helpers import DATASETS, set_default_config, set_datadir, get_config, get_cmd_args, read_slurm_params, ExperimentRunner
+from scripts.experiments.experiment_helpers import DATASETS, set_default_config, get_config, get_cmd_args, read_slurm_params, ExperimentRunner
 
 from collections import OrderedDict
 
@@ -15,7 +15,7 @@ if __name__ == "__main__":
     args = get_cmd_args()
 
     # Filter out the prospective datasets
-    relevant_datasets = ["01-partial-AMI-traps"] # [d for d in DATASETS if not re.search("00-prospective", d)]
+    relevant_datasets = [] # ["01-partial-AMI-traps"] # [d for d in DATASETS if not re.search("00-prospective", d)]
 
     # Create the base configs for the full and leave-one-out experiments
     full_config = get_config()
@@ -23,7 +23,7 @@ if __name__ == "__main__":
     
     # We use order-preserving dictionaries to store the experiment configs,
     # ensuring that the experiments are run in the correct order
-    experiment_configs = OrderedDict({"FULL" : full_config})
+    experiment_configs = OrderedDict({full_config["name"]: full_config})
     for dataset in relevant_datasets:
         this_config = get_config()
         this_config["name"] = f"{BASE_NAME}_{dataset}"
@@ -46,12 +46,16 @@ if __name__ == "__main__":
     experiment_runner.run()
     experiment_runner.complete()
     experiment_runner.wait() # Here we must wait for the full training to complete before starting the fine-tuning
+    
+    #### FIXME ####
+    # Finetuning doesn't work properly at the moment, when multiple runs have used the same name, the save folder names are appended with incrementing numbers (e.g. "runs/segment/01-partial-AMI-traps"/"runs/segment/01-partial-AMI-traps1"/"runs/segment/01-partial-AMI-traps2")
+    # This causes the fine-tuning to be invalid as it tries to load the weights from the original folder, but the weights are saved in the new folder
 
-    ## FIXME ##
-    # This is **NOT** a good way to do this for SLURM, we should somehow schedule the fine-tuning jobs to wait for the full training to complete using SLURM instead of keeping this process alive
-    #  - For non-SLURM systems, this is fine, but we should still find a better way to do this
+    # ## FIXME ##
+    # # This is **NOT** a good way to do this for SLURM, we should somehow schedule the fine-tuning jobs to wait for the full training to complete using SLURM instead of keeping this process alive
+    # #  - For non-SLURM systems, this is fine, but we should still find a better way to do this
 
-    # Then run the fine-tuning training 
-    experiment_runner = ExperimentRunner(inputs=fine_tuning_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition))
-    experiment_runner.run()
-    experiment_runner.complete()
+    # # Then run the fine-tuning training 
+    # experiment_runner = ExperimentRunner(inputs=fine_tuning_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition))
+    # experiment_runner.run()
+    # experiment_runner.complete()

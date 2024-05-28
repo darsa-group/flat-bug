@@ -32,6 +32,7 @@ from flat_bug.yolo_helpers import ResultsWithTiles, stack_masks, offset_box, res
 from flat_bug.geometric import find_contours, contours_to_masks, simplify_contour, create_contour_mask, scale_contour
 from flat_bug.nms import nms_masks, nms_polygons, detect_duplicate_boxes
 from flat_bug.config import read_cfg, DEFAULT_CFG, CFG_PARAMS
+from flat_bug.augmentations import InpaintPad
 
 
 # Class for containing the results from a single _detect_instances call - This should probably not be its own class, but just a TensorPredictions object with a single element instead, but this would require altering the TensorPredictions._combine_predictions function to handle a single element differently or pass a flag or something
@@ -385,6 +386,40 @@ class TensorPredictions:
 
         return scaled_contour
 
+    def flip(self, direction : str="vertical") -> "TensorPredictions":
+        """
+        Flips the masks and boxes along the specified axis.
+        """
+        if self.time:
+            # Initialize timing calculations
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
+            start.record()
+
+        if direction == "vertical" or direction == "y":
+            if self.masks.data.dim() == 3:
+                self.masks.data = torch.flip(self.masks.data, [1])
+            self.boxes[:, 1] = self.image.shape[1] - self.boxes[:, 1]
+            self.boxes[:, 3] = self.image.shape[1] - self.boxes[:, 3]
+            for i in range(len(self)):
+                self.polygons[i][:, 1] = self.image.shape[1] - self.polygons[i][:, 1]
+        elif direction == "horizontal" or direction == "x":
+            if self.masks.data.dim() == 3:
+                self.masks.data = torch.flip(self.masks.data, [2])
+            self.boxes[:, 0] = self.image.shape[2] - self.boxes[:, 0]
+            self.boxes[:, 2] = self.image.shape[2] - self.boxes[:, 2]
+            for i in range(len(self)):
+                self.polygons[i][:, 0] = self.image.shape[2] - self.polygons[i][:, 0]
+        else:
+            raise RuntimeError(f"Unknown direction `{direction}` - should be 'vertical'/'y' or 'horizontal'/'x'")
+
+        if self.time:
+            end.record()
+            torch.cuda.synchronize()
+            print(f'Flipping masks and boxes {direction} took {start.elapsed_time(end) / 1000:.3f} s')
+
+        return self
+
     def __len__(self) -> int:
         return len(self.polygons)
 
@@ -558,13 +593,17 @@ class TensorPredictions:
                             fontScale=1 * scale,
                             thickness=max(1, round(2 * scale))
                         )
+                        # Calculate the text position
+                        xp, yp = start_point[0], start_point[1] - text_height // 2
+                        if yp < text_height:
+                            yp = end_point[1] + text_height + 4 * linewidth
                         # Get the average color intensity behind the text
-                        avg_color = np.mean(image[start_point[1]:start_point[1] + text_height, start_point[0]:start_point[0] + text_width])
+                        avg_color = np.mean(image[yp:yp + text_height, xp:xp + text_width])
                         # Draw the text
                         cv2.putText(
                             img=image,
                             text=f"{conf * 100:.3g}%",
-                            org=(start_point[0], start_point[1] - round(10 * scale)),
+                            org=(xp, yp), 
                             fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                             fontScale=1 * scale,
                             color=(0, 0, 0) if avg_color > 127 else (255, 255, 255),
@@ -575,11 +614,7 @@ class TensorPredictions:
         if outpath:
             cv2.imwrite(outpath, image)
         else:
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            plt.figure(figsize=(20, 20))
-            plt.imshow(image)
-            plt.gca().axis('off')
-            plt.show()
+            return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
     def save_crops(
             self, 
@@ -1161,7 +1196,7 @@ class Predictor(object):
             fetch_time, forward_time, postprocess_time = sum(fetch_times), sum(forward_times), sum(postprocess_times)
             fetch_prop, forward_prop, postprocess_prop = fetch_time / total_batch_time, forward_time / total_batch_time, postprocess_time / total_batch_time
 
-        ## DEBUG #####
+        # DEBUG #####
         # if self.DEBUG:
         #     print(f'Number of tiles processed before merging and plotting: {len(postprocessed_results)}')
         # for i in range(len(postprocessed_results)):
@@ -1175,7 +1210,7 @@ class Predictor(object):
         # plt.savefig(os.path.join(f"{image_base_name}_debug_{scale:.3f}_fraw.png"), dpi=300)
         # for i in range(len(postprocessed_results)):
         #     postprocessed_results[i].orig_img = torch.tensor(postprocessed_results[i].orig_img).squeeze(0).to(dtype=self._dtype, device=self._device) / 255.0 # Backtransform
-        ################
+        ###############
 
         ## Combine the results from the tiles
         MASK_SIZE = 256  # Defined by the YOLOv8 model segmentation architecture
@@ -1236,7 +1271,21 @@ class Predictor(object):
             dtype = self._dtype
         )
 
-    def pyramid_predictions(self, image, path=None, scale_increment=2 / 3, scale_before=1, single_scale=False) -> TensorPredictions:
+    def pyramid_predictions(self, image : Union[torch.Tensor, str], path : Optional[str]=None, scale_increment : float=2/3, scale_before : Union[float, int]=1, single_scale : bool=False) -> TensorPredictions:
+        """
+        Performs inference on an image at multiple scales and returns the predictions.
+        
+        Args:
+            image (Union[torch.Tensor, str]): The image to run inference on. If a string is given, the image is read from the path. 
+                If it is a `torch.Tensor`, the path must be provided. We assume that the image values are in the range [0, 255] if the data type is an integer, otherwise we assume that the values are in the range [0, 1].
+            path (Optional[str], optional): The path to the image. Defaults to None. Must be provided if `image` is a `torch.Tensor`.
+            scale_increment (float, optional): The scale increment to use when resizing the image. Defaults to 2/3.
+            scale_before (Union[float, int], optional): The scale to apply before running inference. Defaults to 1.
+            single_scale (bool, optional): Whether to run inference on a single scale. Defaults to False.
+
+        Returns:
+            TensorPredictions: The predictions for the image.
+        """
         if self.TIME:
             # Initialize timing calculations
             start_pyramid, end_pyramid = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
@@ -1244,7 +1293,7 @@ class Predictor(object):
 
         if isinstance(image, str):
             # C, H, W
-            im : torch.Tensor = read_image(image, mode=ImageReadMode.RGB).to(self._device, self._dtype)
+            im : torch.Tensor = read_image(image, mode=ImageReadMode.RGB).to(self._device)
             if EXIFTOOL_AVAILABLE:
                 try:
                     # Check for rotation in EXIF
@@ -1286,7 +1335,11 @@ class Predictor(object):
 
         c, h, w = im.shape
         # add transforms.toDType(self._dtype) here? (probably slower than forcing the user to precast the image)
-        transform_list = [transforms.Normalize(0, 255)]
+        transform_list = []
+        # Check if the image has an integer data type
+        if im.dtype in [torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64]:
+            transform_list.append(transforms.Normalize(0, 255))
+            im = im.to(self._dtype)
 
         if scale_before != 1:
             w, h = int(w * scale_before), int(h * scale_before)
@@ -1295,14 +1348,17 @@ class Predictor(object):
 
         # A border is always added now, to avoid edge-cases on the actual edge of the image. I.e. only detections on internal edges of tiles should be removed, not detections on the edge of the image.
         edge_case_margin_padding_multiplier = 2
-        padding_for_edge_cases = transforms.Pad(
-            padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier, 
-            fill=0, 
-            padding_mode='constant'
-        )
         padding_offset = torch.tensor((self.EDGE_CASE_MARGIN, self.EDGE_CASE_MARGIN), dtype=self._dtype, device=self._device) * edge_case_margin_padding_multiplier
         if padding_offset.sum() > 0:
+            # padding_for_edge_cases = transforms.Pad(
+            #     padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier, 
+            #     fill=0.5,
+            #     padding_mode='constant'
+            # )
+            padding_for_edge_cases = InpaintPad(padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier)
             transform_list.append(padding_for_edge_cases)
+        else:
+            padding_offset[:] = 0
         if transform_list:
             transforms_composed = transforms.Compose(transform_list)
 
@@ -1313,12 +1369,14 @@ class Predictor(object):
         assert im_b.size(0) == 3, f"Image does not have 3 channels"
 
         max_dim = max(im_b.shape[1:])
+        min_dim = min(im_b.shape[1:])
+
+        # fixme, what to do if the image is too small? - RE: Fixed by adding padding in _detect_instances
+        scales = []
 
         if single_scale:
-            scales = [1]
+            scales.append(1024 / min_dim)
         else:
-            # fixme, what to do if the image is too small? - RE: Fixed by adding padding in _detect_instances
-            scales = []
             s = 1024 / max_dim
 
             if s > 1:

@@ -1,6 +1,6 @@
 import os, yaml
 from collections import OrderedDict
-from typing import Union, Any
+from typing import List, Iterable,Union, Any
 
 # Add support for OrderedDict in PyYAML
 yaml.add_representer(OrderedDict, lambda dumper, data: dumper.represent_dict(data.items()), Dumper=yaml.SafeDumper)
@@ -71,7 +71,7 @@ def get_type_def(obj, tuple_list_interchangeable=False):
 
 CFG_TYPES = {k : get_type_def(DEFAULT_CFG[k], tuple_list_interchangeable=True) for k in DEFAULT_CFG}
 
-def check_types(value : Any, expected_type : Union[type, tuple, set, list], key : str="<Not specified>", strict : bool=True) -> bool:
+def check_types(value : Any, expected_type : Union[List[Any], Iterable[type], type], key : str="<Not specified>", strict : bool=True) -> bool:
     """
     Recursively check if the type of a value matches the expected type.
 
@@ -85,43 +85,68 @@ def check_types(value : Any, expected_type : Union[type, tuple, set, list], key 
     Returns:
         bool: True if the check passes, and False if strict is False and the check fails. Raises an error otherwise.
     """
-    # If expected type is a list, recursively check the types of the elements
-    if isinstance(expected_type, list):
-        # Check that an expected type has been supplied for both the value and its elements
-        if len(expected_type) != 2:
-            raise ValueError(f"Expected type list must have exactly 2 elements, got {len(expected_type)} for key: {key}.")
-        # Check that the value matches the expected type
-        check_types(value, expected_type[0], key)
-        # If the expected type of the elements is a list, each element of the value should match the corresponding element of the expected type list
-        if isinstance(expected_type[1], list):
-            # Check that the number of types in the list matches the number of items in the value
-            if len(value) != len(expected_type[1]):
-                raise ValueError(f"Expected number of types ({len(expected_type[1])}) does not match number of items in value ({len(value)}) for key: {key}.")
-            # Check that each item in the value matches the corresponding type in the expected type list
-            for item, et in zip(value, expected_type[1]):
-                check_types(item, et, key)
-        # If the expected type of the elements is a single type (or a tuple/set of types), each element of the value should match the expected type
-        elif isinstance(expected_type[1], (type, tuple, set)):
-            for item in value:
-                check_types(item, expected_type[1], key)
-        else:
-            raise TypeError(f"Invalid expected type. Expected 'type', 'tuple', 'set' or 'list', got {type(expected_type[1])} for key: {key}.")
-    # If the expected type is a tuple/set, check if the value is an instance of any of the types in the tuple/set
-    elif isinstance(expected_type, (tuple, set)):
-        if not any([check_types(value, e, key, False) for e in expected_type]):
-            raise TypeError(f"Expected one of {et}, got {type(value)} for key: {key}.")
-    # If the expected type is a 'type' object, check if the value is an instance of the type
-    elif isinstance(expected_type, type):
-        if not isinstance(value, expected_type):
-            if strict:
-                raise TypeError(f"Expected {expected_type}, got {type(value)} for key {key}.")
+    try:
+        # If expected type is a list, recursively check the types of the elements
+        if isinstance(expected_type, list):
+            # Check that an expected type has been supplied for both the value and its elements
+            if len(expected_type) != 2:
+                raise ValueError(f"Expected type list must have exactly 2 elements, got {len(expected_type)} for key: {key}.")
+            # Check that the value matches the expected type
+            check_types(value, expected_type[0], key, strict)
+            # If the expected type of the elements is a list, each element of the value should match the corresponding element of the expected type list
+            if isinstance(expected_type[1], list):
+                # Check that the number of types in the list matches the number of items in the value
+                if len(value) != len(expected_type[1]):
+                    raise ValueError(f"Expected number of types ({len(expected_type[1])}) does not match number of items in value ({len(value)}) for key: {key}.")
+                # Check that each item in the value matches the corresponding type in the expected type list
+                for item, et in zip(value, expected_type[1]):
+                    check_types(item, et, key, strict)
+            # If the expected type of the elements is a single type, each element of the value should match the expected type
+            elif isinstance(expected_type[1], type):
+                for item in value:
+                    check_types(item, expected_type[1], key, strict)
+            # If the expected type of the elements is a tuple, each element of the value should match any of the types in the tuple
+            elif isinstance(expected_type[1], tuple):
+                check_types(value, expected_type[1], key, strict)
+            # If the expected type of the elements is an iterable, the value should be an iterable and each element of the value should match the corresponding type in the expected type iterable
+            elif hasattr(expected_type[1], "__iter__") and hasattr(expected_type[1], "__len__"):
+                assert len(expected_type[1]) == len(value), f"Expected number of types ({len(expected_type[1])}) does not match number of items in value ({len(value)}) for key: {key}."
+                errors = []
+                for item, et in zip(value, expected_type[1]):
+                    try:
+                        check_types(item, et, key, strict)
+                    except TypeError as e:
+                        errors.append(str(e))
+                if len(errors) != 0:
+                    raise TypeError("\n  - ".join(errors))
             else:
-                return False
-    # If the expected type is not a list, a tuple/set or a 'type' object raise an error
-    else:
-        raise TypeError(f"Invalid expected type. Expected 'type', 'tuple', 'set' or 'list', got {type(expected_type)} for key: {key}.")
-    # If no errors are raised, return True
-    return True
+                raise TypeError(f"Invalid expected type. Expected 'list', 'type', 'tuple' or an iterable got {type(expected_type[1])} for key: {key}.")
+        # If the expected type is an iterable, check if the value is an instance of any of the types in the iterable
+        elif hasattr(expected_type, "__iter__") and not isinstance(expected_type, type):
+            if not any([check_types(value, e, key, False) for e in expected_type]):
+                raise TypeError(f"Expected one of {et}, got {type(value)} for key: {key}.")
+        # If the expected type is a 'type' object, check if the value is an instance of the type
+        elif isinstance(expected_type, type):
+            if not isinstance(value, expected_type):
+                raise TypeError(f"Expected {expected_type}, got {type(value)} for key {key}.")
+        # If the expected type is None, check if the value is None
+        elif expected_type is None:
+            if not value is None:
+                raise TypeError(f"Expected None, got {type(value)} for key: {key}.")
+        # If the expected type is typing.Any, pass everything
+        elif expected_type is Any:
+            pass
+        # If the expected type is not a list, a iterable or a 'type' object raise an error
+        else:
+            raise TypeError(f"Invalid expected type. Expected 'list', an iterable, 'type' or 'typing.Any' got {type(expected_type)} for key: {key}.")
+        # If no errors are raised, return True
+        return True
+    # If an error is raised, return False if strict is False, otherwise raise the error
+    except Exception as e:
+        if strict:
+            raise e
+        else:
+            return False
 
 def check_cfg_types(cfg : dict, strict : bool = False) -> bool:
     """

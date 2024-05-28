@@ -10,15 +10,14 @@ import cv2
 import numpy as np
 import torch
 
-from torchvision.transforms import Compose
-
-from ultralytics.data.augment import RandomHSV, RandomFlip, Format
 from ultralytics.data.base import Path
-from ultralytics.utils.instance import Instances
 from ultralytics.data.utils import verify_image_label
+from ultralytics.data.augment import Compose
+from ultralytics.utils import IterableSimpleNamespace
+from ultralytics.utils.instance import Instances
 from ultralytics.utils.ops import resample_segments
 
-from flat_bug.augmentations import RandomCrop, MyRandomPerspective, RandomColorInv
+from flat_bug.datasets import train_augmentation_pipeline, validation_augmentation_pipeline
 
 TEST_HYP = {
     "hsv_h": 0.5,
@@ -28,7 +27,8 @@ TEST_HYP = {
     "fliplr": 0.5,
     "mask_ratio": 2,
     "overlap_mask": 0.5,
-    "max_instances": 10,
+    "max_instances": 1000,
+    "min_size": 4,
     "imgsz": 1024,
     "use_segments": True,
     "use_keypoints": False
@@ -36,44 +36,29 @@ TEST_HYP = {
 
 ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")
 ASSET_NAME = "ALUS_Non-miteArachnids_Unknown_2020_11_03_4545"
-ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")
 
 TEST_IMG = os.path.join(ASSET_DIR, ASSET_NAME + ".jpg")
 TEST_LABEL = os.path.join(ASSET_DIR, ASSET_NAME + ".txt")
 
 def generate_train_augmentation_pipeline(hyp):
-    return Compose([
-        RandomHSV(hgain=hyp["hsv_h"], sgain=hyp["hsv_s"], vgain=hyp["hsv_v"]),
-        RandomColorInv(p=0.25),
-        RandomCrop(hyp["imgsz"], max_targets=hyp["max_instances"]),
-        RandomFlip(direction="vertical", p=hyp["flipud"]),
-        RandomFlip(direction="horizontal", p=hyp["fliplr"]),
-        MyRandomPerspective(imgsz=hyp["imgsz"], degrees=180, translate=0),
-        Format(
-            bbox_format="xywh",
-            normalize=True,
-            return_mask=hyp["use_segments"],
-            return_keypoint=hyp["use_keypoints"],
-            batch_idx=True,
-            mask_ratio=hyp["mask_ratio"],
-            mask_overlap=hyp["overlap_mask"]
-        )
-    ])
+    hyp = IterableSimpleNamespace(**hyp)
+    return train_augmentation_pipeline(
+        hyperparameters=hyp,
+        image_size=hyp.imgsz,
+        max_instances=hyp.max_instances,
+        min_size=hyp.min_size,
+        use_segments=hyp.use_segments,
+        use_keypoints=hyp.use_keypoints
+    )
 
 def generate_validation_augmentation_pipeline(hyp):
-    return Compose([
-        MyRandomPerspective(imgsz=hyp["imgsz"], degrees=0, scale=(.1, 1), translate=0),
-        RandomCrop(hyp["imgsz"], max_targets=hyp["max_instances"]),
-        Format(
-            bbox_format="xywh",
-            normalize=True,
-            return_mask=hyp["use_segments"],
-            return_keypoint=hyp["use_keypoints"],
-            batch_idx=True,
-            mask_ratio=hyp["mask_ratio"],
-            mask_overlap=hyp["overlap_mask"]
-        )
-    ])
+    hyp = IterableSimpleNamespace(**hyp)
+    return validation_augmentation_pipeline(
+        image_size=hyp.imgsz,
+        min_size=hyp.min_size,
+        use_segments=hyp.use_segments,
+        use_keypoints=hyp.use_keypoints
+    )
 
 def mock_verify_image_label(image_path, label_path):
     args = (image_path, label_path, "unit_test", False, 1, 0, 0)
@@ -166,23 +151,26 @@ class TestAugmentations(unittest.TestCase):
     def test_generate_train_augmentation_pipeline(self):
         pipeline = generate_train_augmentation_pipeline(TEST_HYP)
         self.assertTrue(isinstance(pipeline, Compose), msg=f"Expected {Compose} object, got {type(pipeline)}")
-        self.assertEqual(len(pipeline.transforms), 7, msg=f"Expected 7 transformations in the pipeline, got {len(pipeline.transforms)}")
 
     def test_generate_validation_augmentation_pipeline(self):
         pipeline = generate_validation_augmentation_pipeline(TEST_HYP)
         self.assertTrue(isinstance(pipeline, Compose), msg=f"Expected {Compose} object, got {type(pipeline)}")
-        self.assertEqual(len(pipeline.transforms), 3, msg=f"Expected 3 transformations in the pipeline, got {len(pipeline.transforms)}")
 
     def test_train_augmentation_pipeline(self):
         pipeline = generate_train_augmentation_pipeline(TEST_HYP)
-        loaded_img, _, _ = mock_yolo_base_dataset_load_image(TEST_IMG, TEST_HYP["imgsz"])
+        loaded_img, _, _ = mock_yolo_base_dataset_load_image(TEST_IMG, int(TEST_HYP["imgsz"] * 2))
         pipeline_input = mock_verify_image_label(TEST_IMG, TEST_LABEL)
         pipeline_input["img"] = loaded_img
         # Normal pipeline execution
         try:
             out = pipeline(deepcopy(pipeline_input))
-            # # DEBUG SAVE THE OUTPUT IMAGE
-            # cv2.imwrite(ASSET_DIR + "/test_train_augmentation_pipeline.jpg", out["img"].permute(1, 2, 0).flip(2).numpy())
+            # DEBUG SAVE THE OUTPUT IMAGE
+            # out_img = out["img"].permute(1, 2, 0).flip(2).numpy()
+            # out_img = np.ascontiguousarray(out_img).astype(np.uint8)
+            # polys = out["instances"].segments
+            # polys = [poly.astype(int) for poly in polys]
+            # cv2.drawContours(out_img, polys, -1, (0, 255, 0), 2)
+            # cv2.imwrite(ASSET_DIR + "/test_train_augmentation_pipeline.jpg", out_img)
         except Exception as e:
             raise type(e)("Failed to execute training augmentation pipeline on image with labels due to:\n\t" + str(e))
         self.assertIsInstance(out, dict, msg="Invalid output of training augmentation pipeline on image with labels")
@@ -203,7 +191,7 @@ class TestAugmentations(unittest.TestCase):
 
     def test_validation_augmentation_pipeline(self):
         pipeline = generate_validation_augmentation_pipeline(TEST_HYP)
-        loaded_img, _, _ = mock_yolo_base_dataset_load_image(TEST_IMG, TEST_HYP["imgsz"])
+        loaded_img, _, _ = mock_yolo_base_dataset_load_image(TEST_IMG, int(TEST_HYP["imgsz"] * 2))
         pipeline_input = mock_verify_image_label(TEST_IMG, TEST_LABEL)
         pipeline_input["img"] = loaded_img
         # Normal pipeline execution

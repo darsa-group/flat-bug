@@ -180,3 +180,5 @@ src/flat_bug/tests/assets/*.txt
 !src/flat_bug/tests/assets/ALUS_Non-miteArachnids_Unknown_2020_11_03_4545.jpg
 
 scripts/experiments/results/**
+
+prototypes/**

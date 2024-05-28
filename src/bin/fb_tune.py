@@ -201,14 +201,14 @@ def main():
     args_parse.add_argument("-i", "--input-data", dest="input_dir",
                             help="A directory that contains subdirectories for each COCO sub-datasets."
                                  "Each sub-dataset contains a single json file named 'instances_default.json' "
-                                 "and the associated images")
-    args_parse.add_argument("-a", "--annotations", dest="annotations")
+                                 "and the associated images", required=True)
+    args_parse.add_argument("-a", "--annotations", dest="annotations", required=True)
     args_parse.add_argument("-p", "--input-pattern", dest="input_pattern", default=r"[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$",
                             help=r"The pattern to match the images. Default is '[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$' i.e. jpg/jpeg/png case-insensitive.")
     args_parse.add_argument("-o", "--output-dir", dest="results_dir",
-                            help="The result directory")
+                            help="The result directory", required=True)
     args_parse.add_argument("-w", "--model-weights", dest="model_weights",
-                            help="The .pt file")
+                            help="The .pt file", required=True)
     args_parse.add_argument("-s", "--scale-before", dest="scale_before", default=1.0, type=float,
                             help="Scale the image before inference."
                                   "Default is 1.0, i.e. no downscaling."
@@ -278,6 +278,7 @@ def main():
     verbose = option_dict["verbose"]
 
     # Create a progress bar
+    global pbar
     pbar = tqdm(
         total=max_fun,
         dynamic_ncols=True,

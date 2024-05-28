@@ -1,7 +1,7 @@
 
 import os, sys, re, argparse
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-from scripts.experiments.experiment_helpers import set_default_config, set_datadir, get_config, get_cmd_args, read_slurm_params, ExperimentRunner
+from scripts.experiments.experiment_helpers import set_default_config, get_config, get_cmd_args, read_slurm_params, ExperimentRunner
 
 from typing import List
 
