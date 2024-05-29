@@ -41,7 +41,7 @@ if __name__ == "__main__":
             this_config["name"] = "{}_{}_{}".format(BASE_NAME, *this_excluded_datasets)
             if this_config["name"] in experiment_configs:
                 continue
-            this_config["fb_exclude_datasets"].extend(this_excluded_datasets)
+            this_config["fb_exclude_datasets"].extend(list(set(this_excluded_datasets)))
             experiment_configs[this_config["name"]] = this_config
 
     experiment_runner = ExperimentRunner(inputs=experiment_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition))

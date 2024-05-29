@@ -181,4 +181,6 @@ src/flat_bug/tests/assets/*.txt
 
 scripts/experiments/results/**
 
+slurm_logs
+
 prototypes/**
