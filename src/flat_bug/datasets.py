@@ -208,16 +208,31 @@ class MyYOLODataset(YOLODataset):
 
     def cache_labels(self, path=Path("./labels.cache")):
         LOGGER.warning("!! OBS !! ==>>== Flat-bug doesn't use the .cache-file! ==<<== !! OBS !!")
+
         # To bypass the creation of .cache files we use a temporary dummy file, which is set to read-only, causing a check in ultralytics to bail on creating the file
-        with tempfile.NamedTemporaryFile() as tmp_file:
-            # The path passed to the superclass `cache_labels` method must be a pathlib.Path object
-            unwriteable_tmp_path = Path(tmp_file)
-            
-            # Change the file to read-only
-            os.chmod(str(unwriteable_tmp_path), stat.S_IREAD)
-            
-            # Call the superclass `cache_labels` method with the temporary read-only pathlib.Path object 
-            return super().cache_labels(path=unwriteable_tmp_path)
+        tmp_file = tempfile.NamedTemporaryFile(delete=False)
+        # The path passed to the superclass `cache_labels` method must be a pathlib.Path object
+        unwriteable_tmp_path = Path(tmp_file.name)
+        
+        # Change the file to read-only
+        os.chmod(str(unwriteable_tmp_path), stat.S_IREAD)
+
+        # Before calling the superclass `cache_labels` method, we need to create a dummy `<unwriteable_tmp_path>.cache.npy` file
+        temporary_dummy_numpy_cache_file = unwriteable_tmp_path.with_suffix(".cache.npy")
+        np.save(temporary_dummy_numpy_cache_file, np.array([0]))
+        
+        # Call the superclass `cache_labels` method with the temporary read-only pathlib.Path object 
+        return_val = super().cache_labels(path=unwriteable_tmp_path)
+
+        # Remove the temporary file if it still exists
+        if os.path.exists(unwriteable_tmp_path):
+            os.remove(unwriteable_tmp_path)
+        # Remove the temporary numpy cache file if it still exists
+        if os.path.exists(temporary_dummy_numpy_cache_file):
+            os.remove(temporary_dummy_numpy_cache_file)
+        
+        return return_val
+
     
     def __len__(self):
         return len(self.__indices)

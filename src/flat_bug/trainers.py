@@ -10,6 +10,7 @@ from ultralytics.models.yolo.segment import SegmentationTrainer
 from ultralytics.nn.tasks import attempt_load_one_weight
 from ultralytics.utils import DEFAULT_CFG, LOGGER, RANK, __version__, yaml_load, IterableSimpleNamespace
 from ultralytics.utils.torch_utils import smart_inference_mode, torch_distributed_zero_first
+from ultralytics.data import build_dataloader
 from ultralytics.data.utils import PIN_MEMORY
 from ultralytics.data.build import InfiniteDataLoader, seed_worker
 
@@ -74,114 +75,114 @@ def _custom_end_to_end_validation(self):
         # Run command
         os.system(command)
 
-### WORK IN PROGRESS - NOT YET FUNCTIONAL ###
-class TrackingWeightedRandomSampler(torch.utils.data.WeightedRandomSampler):
-    """Sampler that tracks the indices it samples."""
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.sampled_indices = []
+# ### WORK IN PROGRESS - NOT YET FUNCTIONAL ###
+# class TrackingWeightedRandomSampler(torch.utils.data.WeightedRandomSampler):
+#     """Sampler that tracks the indices it samples."""
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         self.sampled_indices = []
 
-    def __iter__(self):
-        self.sampled_indices = []
-        for idx in super().__iter__():
-            self.sampled_indices.append(idx)
-            yield idx
+#     def __iter__(self):
+#         self.sampled_indices = []
+#         for idx in super().__iter__():
+#             self.sampled_indices.append(idx)
+#             yield idx
 
-### WORK IN PROGRESS - NOT YET FUNCTIONAL ###
-class DynamicWeightedDataLoader(InfiniteDataLoader):
-    def __init__(self, dataset, batch_size, num_workers, pin_memory, generator, alpha=0.9, **kwargs):
+# ### WORK IN PROGRESS - NOT YET FUNCTIONAL ###
+# class DynamicWeightedDataLoader(InfiniteDataLoader):
+#     def __init__(self, dataset, batch_size, num_workers, pin_memory, generator, alpha=0.9, **kwargs):
 
-        self.dataset = dataset
-        self.alpha = alpha  # Smoothing factor for EWA
-        self.ewa_losses = None  # Initialize EWA loss tracker
-        weights = torch.ones(len(dataset))  # Start with uniform weights
-        self.sampler = TrackingWeightedRandomSampler(weights, num_samples=len(dataset), generator=generator)
-        if "sampler" in kwargs:
-            del kwargs["sampler"]
-        super().__init__(dataset, batch_size=batch_size, num_workers=num_workers, pin_memory=pin_memory, generator=generator, sampler=self.sampler, **kwargs)
+#         self.dataset = dataset
+#         self.alpha = alpha  # Smoothing factor for EWA
+#         self.ewa_losses = None  # Initialize EWA loss tracker
+#         weights = torch.ones(len(dataset))  # Start with uniform weights
+#         self.sampler = TrackingWeightedRandomSampler(weights, num_samples=len(dataset), generator=generator)
+#         if "sampler" in kwargs:
+#             del kwargs["sampler"]
+#         super().__init__(dataset, batch_size=batch_size, num_workers=num_workers, pin_memory=pin_memory, generator=generator, sampler=self.sampler, **kwargs)
 
-    def update_sampler(self, current_epoch_losses):
-        # Apply the EWA to update the losses based on the indices sampled in the last epoch
-        current_losses = np.array(current_epoch_losses)[self.sampler.sampled_indices]
+#     def update_sampler(self, current_epoch_losses):
+#         # Apply the EWA to update the losses based on the indices sampled in the last epoch
+#         current_losses = np.array(current_epoch_losses)[self.sampler.sampled_indices]
 
-        if self.ewa_losses is None:
-            self.ewa_losses = current_losses
-        else:
-            self.ewa_losses = self.alpha * self.ewa_losses + (1 - self.alpha) * current_losses
+#         if self.ewa_losses is None:
+#             self.ewa_losses = current_losses
+#         else:
+#             self.ewa_losses = self.alpha * self.ewa_losses + (1 - self.alpha) * current_losses
 
-        weights = np.exp(-self.ewa_losses)
-        weights /= np.sum(weights)
-        self.sampler.weights = torch.as_tensor(weights, dtype=torch.double)
+#         weights = np.exp(-self.ewa_losses)
+#         weights /= np.sum(weights)
+#         self.sampler.weights = torch.as_tensor(weights, dtype=torch.double)
     
-    def reset(self):
-        self.ewa_losses = None
-        self.current_epoch_losses = None
-        super().reset()
+#     def reset(self):
+#         self.ewa_losses = None
+#         self.current_epoch_losses = None
+#         super().reset()
 
-def build_dataloader(dataset, batch, workers, shuffle=True, rank=-1, alpha=0.9):
-    """Return an InfiniteDataLoader or DataLoader for training or validation set."""
-    batch = min(batch, len(dataset))
-    nd = torch.cuda.device_count()  # number of CUDA devices
-    nw = min([os.cpu_count() // max(nd, 1), workers])  # number of workers
-    generator = torch.Generator()
-    generator.manual_seed(6148914691236517205 + rank)
+# def build_dataloader(dataset, batch, workers, shuffle=True, rank=-1, alpha=0.9):
+#     """Return an InfiniteDataLoader or DataLoader for training or validation set."""
+#     batch = min(batch, len(dataset))
+#     nd = torch.cuda.device_count()  # number of CUDA devices
+#     nw = min([os.cpu_count() // max(nd, 1), workers])  # number of workers
+#     generator = torch.Generator()
+#     generator.manual_seed(6148914691236517205 + rank)
     
-    if rank != -1:
-        # Distributed case: use the old implementation
-        sampler = torch.utils.data.distributed.DistributedSampler(dataset, shuffle=shuffle)
-        return InfiniteDataLoader(
-            dataset=dataset,
-            batch_size=batch,
-            shuffle=shuffle and sampler is None,
-            num_workers=nw,
-            sampler=sampler,
-            pin_memory=PIN_MEMORY,
-            collate_fn=getattr(dataset, "collate_fn", None),
-            worker_init_fn=seed_worker,
-            generator=generator,
-        )
-    else:
-        # Non-distributed case: use DynamicWeightedDataLoader with updated sampler based on EWA of losses
-        return DynamicWeightedDataLoader(
-            dataset=dataset,
-            batch_size=batch,
-            shuffle=False,
-            num_workers=nw,
-            sampler=None,
-            pin_memory=PIN_MEMORY,
-            collate_fn=getattr(dataset, "collate_fn", None),
-            worker_init_fn=seed_worker,
-            generator=generator,
-            alpha=alpha
-        )
+#     if rank != -1:
+#         # Distributed case: use the old implementation
+#         sampler = torch.utils.data.distributed.DistributedSampler(dataset, shuffle=shuffle)
+#         return InfiniteDataLoader(
+#             dataset=dataset,
+#             batch_size=batch,
+#             shuffle=shuffle and sampler is None,
+#             num_workers=nw,
+#             sampler=sampler,
+#             pin_memory=PIN_MEMORY,
+#             collate_fn=getattr(dataset, "collate_fn", None),
+#             worker_init_fn=seed_worker,
+#             generator=generator,
+#         )
+#     else:
+#         # Non-distributed case: use DynamicWeightedDataLoader with updated sampler based on EWA of losses
+#         return DynamicWeightedDataLoader(
+#             dataset=dataset,
+#             batch_size=batch,
+#             shuffle=False,
+#             num_workers=nw,
+#             sampler=None,
+#             pin_memory=PIN_MEMORY,
+#             collate_fn=getattr(dataset, "collate_fn", None),
+#             worker_init_fn=seed_worker,
+#             generator=generator,
+#             alpha=alpha
+#         )
     
-def save_loss_items(self):
-    print(self.loss_items)
-    raise NotImplementedError
-    self.current_epoch_losses += self.loss_items.tolist()
+# def save_loss_items(self):
+#     print(self.loss_items)
+#     raise NotImplementedError
+#     self.current_epoch_losses += self.loss_items.tolist()
 
-def update_sampler(self):
-    self.train_loader.update_sampler(self.current_epoch_losses)
-    self.current_epoch_losses = []
+# def update_sampler(self):
+#     self.train_loader.update_sampler(self.current_epoch_losses)
+#     self.current_epoch_losses = []
 
-def override_get_dataloader(self, dataset_path, batch_size=16, rank=0, mode="train"):
-        """Construct and return dataloader."""
-        assert mode in {"train", "val"}, f"Mode must be 'train' or 'val', not {mode}."
-        with torch_distributed_zero_first(rank):  # init dataset *.cache only once if DDP
-            dataset = self.build_dataset(dataset_path, mode, batch_size)
-        shuffle = mode == "train"
-        if getattr(dataset, "rect", False) and shuffle:
-            LOGGER.warning("WARNING ⚠️ 'rect=True' is incompatible with DataLoader shuffle, setting shuffle=False")
-            shuffle = False
-        workers = self.args.workers if mode == "train" else self.args.workers * 2
-        return build_dataloader(dataset, batch_size, workers, shuffle, rank)  # return dataloader
+# def override_get_dataloader(self, dataset_path, batch_size=16, rank=0, mode="train"):
+#         """Construct and return dataloader."""
+#         assert mode in {"train", "val"}, f"Mode must be 'train' or 'val', not {mode}."
+#         with torch_distributed_zero_first(rank):  # init dataset *.cache only once if DDP
+#             dataset = self.build_dataset(dataset_path, mode, batch_size)
+#         shuffle = mode == "train"
+#         if getattr(dataset, "rect", False) and shuffle:
+#             LOGGER.warning("WARNING ⚠️ 'rect=True' is incompatible with DataLoader shuffle, setting shuffle=False")
+#             shuffle = False
+#         workers = self.args.workers if mode == "train" else self.args.workers * 2
+#         return build_dataloader(dataset, batch_size, workers, shuffle, rank)  # return dataloader
 
-def use_ewa_sampler(self):
-    raise NotImplementedError("EWA (Exponentially Weighted Average of losses) sampler is not yet implemented.")
-    self.current_epoch_losses = []
-    self.add_callback("on_train_batch_end", save_loss_items)
-    self.add_callback("on_train_epoch_end", update_sampler)
-    self.get_dataloader = override_get_dataloader
+# def use_ewa_sampler(self):
+#     raise NotImplementedError("EWA (Exponentially Weighted Average of losses) sampler is not yet implemented.")
+#     self.current_epoch_losses = []
+#     self.add_callback("on_train_batch_end", save_loss_items)
+#     self.add_callback("on_train_epoch_end", update_sampler)
+#     self.get_dataloader = override_get_dataloader
 
 
 class MySegmentationTrainer(SegmentationTrainer):
