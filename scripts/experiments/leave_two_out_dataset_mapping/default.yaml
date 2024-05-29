@@ -6,7 +6,7 @@ patience: 9999
 lr0: 0.001
 lrf: 0.00001
 optimizer: 'AdamW'
-workers: 60
+workers: 32
 fb_max_instances: 9999
 fb_max_images: -1
 fb_custom_eval: false

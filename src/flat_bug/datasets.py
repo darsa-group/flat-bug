@@ -1,13 +1,16 @@
-import os
-import math
+import os, stat, re, tempfile
+
+from pathlib import Path
+
 import cv2
 import numpy as np
-import re
+
 
 from typing import List, Dict, Optional
 
-from ultralytics.data import YOLODataset
 from ultralytics.utils import IterableSimpleNamespace
+from ultralytics.data import YOLODataset
+from ultralytics.data.dataset import LOGGER
 from ultralytics.data.augment import RandomFlip, RandomHSV, Compose, Format
 from flat_bug.augmentations import CenterCrop, RandomCrop, MyRandomPerspective, RandomColorInv, FixInstances
 
@@ -202,6 +205,19 @@ class MyYOLODataset(YOLODataset):
             use_segments=self.use_segments, 
             use_keypoints=self.use_keypoints
         )
+
+    def cache_labels(self, path=Path("./labels.cache")):
+        LOGGER.warning("!! OBS !! ==>>== Flat-bug doesn't use the .cache-file! ==<<== !! OBS !!")
+        # To bypass the creation of .cache files we use a temporary dummy file, which is set to read-only, causing a check in ultralytics to bail on creating the file
+        with tempfile.NamedTemporaryFile() as tmp_file:
+            # The path passed to the superclass `cache_labels` method must be a pathlib.Path object
+            unwriteable_tmp_path = Path(tmp_file)
+            
+            # Change the file to read-only
+            os.chmod(str(unwriteable_tmp_path), stat.S_IREAD)
+            
+            # Call the superclass `cache_labels` method with the temporary read-only pathlib.Path object 
+            return super().cache_labels(path=unwriteable_tmp_path)
     
     def __len__(self):
         return len(self.__indices)

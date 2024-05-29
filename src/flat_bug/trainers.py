@@ -1,4 +1,4 @@
-import json, glob, os, random
+import os, glob, random, json
 
 from copy import copy
 
@@ -279,6 +279,18 @@ class MySegmentationTrainer(SegmentationTrainer):
             )
 
         return dataset
+    
+    def get_dataloader(self, dataset_path, batch_size=16, rank=0, mode="train"):
+        """Construct and return dataloader."""
+        assert mode in {"train", "val"}, f"Mode must be 'train' or 'val', not {mode}."
+        with torch_distributed_zero_first(rank):  # init dataset *.cache only once if DDP
+            dataset = self.build_dataset(dataset_path, mode, batch_size)
+        shuffle = mode == "train"
+        if getattr(dataset, "rect", False) and shuffle:
+            LOGGER.warning("WARNING ⚠️ 'rect=True' is incompatible with DataLoader shuffle, setting shuffle=False")
+            shuffle = False
+        workers = self.args.workers
+        return build_dataloader(dataset, batch_size, workers, shuffle, rank)  # return dataloader
 
     @smart_inference_mode()
     def validate(self):

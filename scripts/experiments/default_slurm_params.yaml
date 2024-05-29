@@ -1,4 +1,4 @@
 nodes: 1 # Number of nodes
-cpus_per_task: 16 # Number of CPU cores per task/job
-mem_gb: 32 # Memory in MiB(10 GiB = 10 * 1024 MiB)
-timeout_min: 1440 # Timelimit in HH:MM:SS
+cpus_per_task: 32 # Number of CPU cores per task/job
+mem_gb: 32 # Memory in gb
+timeout_min: 1440 # Timelimit in minutes
