@@ -1,5 +1,3 @@
-import math
-
 from typing import Union, List, Tuple, Optional
 
 import torch

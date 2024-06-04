@@ -2,8 +2,6 @@ import os
 import time
 from typing import Union, List, Tuple
 import cv2
-from IPython.display import display, clear_output
-import ipywidgets as widgets
 import numpy as np
 from flat_bug.coco_utils import contour_bbox, contour_area, annotations_to_numpy
 
@@ -711,6 +709,9 @@ def compatible_display(image: np.array):
     TIMEOUT = 5  # seconds
     # Check if the image is displayed in a Jupyter notebook
     if 'get_ipython' in globals():
+        # Only import the necessary modules if the image is displayed in a Jupyter notebook, ensures they are optional dependencies
+        from IPython.display import display, clear_output
+        import ipywidgets as widgets
         # Convert the image from BGR to RGB
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         # Create a button widget

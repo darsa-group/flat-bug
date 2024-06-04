@@ -7,7 +7,7 @@
 # # SBATCH -t 96:00:00 
 
 #CONFIG=fb_config_L40S_fine-tune.yaml
-CONFIG=fb_config_L40S.yaml
+CONFIG=fb_finetune_ArTaxOr_only.yaml
 ROOT=/home/altair/flat-bug
 # source ${ROOT}/.venv/bin/activate
 # fb_prepare_data.py -i ${ROOT}/flat-bug-data/pre-pro/  -o ${ROOT}/flat-bug-data/yolo/ -f

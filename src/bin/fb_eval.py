@@ -1,14 +1,16 @@
 
 import os
-from glob import glob
 import json
-from tqdm import tqdm
-from flat_bug.coco_utils import fb_to_coco, split_annotations, filter_coco
-from flat_bug.eval_utils import compare_groups
 import argparse
 
-if __name__ == "__main__":
+from glob import glob
 
+from tqdm import tqdm
+
+from flat_bug.coco_utils import fb_to_coco, split_annotations, filter_coco
+from flat_bug.eval_utils import compare_groups
+
+def main():
     # # Development defaults
     # predictions = "dev/**/**.json"
     # ground_truth = "s3/CollembolAI/instances_default.json"
@@ -28,7 +30,7 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--coco_predictions', action="store_true", help='Whether the predictions are already in a COCO format (legacy)')
     parser.add_argument('-s', '--scale', type=float, default=1, help='Scale of the output images. Defaults to 1. Lower is faster.')
     parser.add_argument('-n', type=int, default=-1, help='Number of images to process. Defaults to -1 (all images)')
-    parser.add_argument('--workers', type=int, default=32, help='Number of workers to use for the evaluation. Defaults to 1.')
+    parser.add_argument('--workers', type=int, default=8, help='Number of workers to use for the evaluation. Defaults to 1.')
     parser.add_argument('--combine', action="store_true", help='Combine the results into a single CSV file')
     
     args = parser.parse_args()
@@ -114,3 +116,6 @@ if __name__ == "__main__":
             return df
         combined_result = pd.concat([read_and_add_new_column(f) for f in result_files])
         combined_result.to_csv(f"{args.output_directory}{os.sep}combined_results.csv", index=False,sep=";")
+
+if __name__ == "__main__":
+    main()

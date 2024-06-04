@@ -1,6 +1,6 @@
 batch: 8
-model: "./yolov8s-seg.pt"
-epochs: 200
+model: "./yolov8n-seg.pt"
+epochs: 100
 device: "cuda:0"
 patience: 9999
 lr0: 0.001

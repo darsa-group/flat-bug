@@ -1,7 +1,8 @@
 import unittest
 
-import os, shutil, re, tempfile
+import os, shutil, re, tempfile, urllib
 from glob import glob
+import urllib.request
 
 import torch
 import numpy as np
@@ -23,16 +24,47 @@ N_PREDICTIONS = N_PREDICTIONS.get(UUID, None)
 if N_PREDICTIONS is None:
     raise ValueError(f"Number of predictions for UUID {UUID} is not known")
 
+TEST_CFG = {
+    "SCORE_THRESHOLD": 0.2,
+    "IOU_THRESHOLD": 0.25,
+    "MINIMUM_TILE_OVERLAP": 384,
+    "EDGE_CASE_MARGIN": 64,
+    "MIN_MAX_OBJ_SIZE": (16, 10**8),
+    "MAX_MASK_SIZE": 1024,
+    "PREFER_POLYGONS": True,
+    "EXPERIMENTAL_NMS_OPTIMIZATION": True,
+    "TIME": False,
+    "TILE_SIZE": 1024,
+    "BATCH_SIZE": 16
+}
+
+def file_is_lfs_pointer(file):
+    with open(file, "r") as f:
+        try:
+            return bool(re.search(r"git-lfs\.github\.com", f.read()))
+        except UnicodeDecodeError:
+            return False
+    
+def check_file_with_remote_fallback(file, file_storage : str="https://anon.erda.au.dk/share_redirect/ecgKtuRWe5"):
+    if not os.path.exists(file) or file_is_lfs_pointer(file):
+        try:
+            urllib.request.urlretrieve(f"{file_storage}/{os.path.basename(file)}", file)
+        except Exception as e:
+            raise type(e)(f"Failed to download test file {file} from remote file storage (https://anon.erda.au.dk/cgi-sid/ls.py?share_id=dR1l3pwJPf), perhaps the file is not available." + str(e))
+    return file
+
 class TestTensorPredictions(unittest.TestCase):
     def test_load(self):
         tp = TensorPredictions()
-        tp.load(SERIALISED_TENSOR_PREDS)
+        tp.load(check_file_with_remote_fallback(SERIALISED_TENSOR_PREDS))
         self.assertEqual(len(tp), N_PREDICTIONS, msg=f"Number of predictions ({len(tp)}) does not match the expected number of predictions ({N_PREDICTIONS})")
 
     def test_save(self):
         tp = TensorPredictions()
-        tp = tp.load(SERIALISED_TENSOR_PREDS)
-        tp.image = read_image(os.path.join(os.path.dirname(__file__), "assets", f"{ASSET_NAME}.jpg")) * 255
+        tp = tp.load(check_file_with_remote_fallback(SERIALISED_TENSOR_PREDS))
+        image_path = os.path.join(os.path.dirname(__file__), "assets", f"{ASSET_NAME}.jpg")
+        check_file_with_remote_fallback(image_path)
+        tp.image = read_image(image_path) * 255
         with tempfile.TemporaryDirectory() as tmp_directory:
             save_dir = tp.save(tmp_directory, mask_crops=True)
             self.assertTrue(os.path.exists(os.path.join(save_dir, "crops")))
@@ -58,7 +90,7 @@ def cast_nested(obj, new_dtype):
         return obj
     return obj.to(new_dtype)
 
-class DummyModel:
+class DummyModel(torch.nn.Module):
     def __init__(self, type : str, asset_dir : str):
         if type not in ["single_scale", "pyramid"]:
             raise ValueError(f"Invalid type {type}")
@@ -66,9 +98,26 @@ class DummyModel:
         self.asset_dir = asset_dir
         self.index = 1
 
+    def to(self, *args, **kwargs):
+        return self
+
+    def cpu(self):
+        return self
+
+    def cuda(self, *args, **kwargs):
+        return self
+    
+    def eval(self):
+        return self
+
+    def train(self, mode=True):
+        return self
+
     def __call__(self, image):
         try:
-            out = cast_nested(torch.load(os.path.join(self.asset_dir, f'{self.type}_tps_{self.index}.pt'), map_location=image.device), image.dtype)
+            this_asset = os.path.join(self.asset_dir, f'{self.type}_tps_{self.index}.pt')
+            check_file_with_remote_fallback(this_asset)
+            out = cast_nested(torch.load(this_asset, map_location=image.device), image.dtype)
         except Exception as e:
             print(f'Failed to load test file "{self.type}_tps_{self.index}.pt" - consider generating the test files with `python3 src/flat_bug/tests/generate_model_outputs.py --model model_snapshots/fb_2024-03-18_large_best.pt --image src/flat_bug/tests/assets/ALUS_Non-miteArachnids_Unknown_2020_11_03_4545.jpg --type both`')
             raise e
@@ -77,7 +126,7 @@ class DummyModel:
 
     def generate_single_scale_files(self, weights, image):
         dtype, device = image.dtype, image.device
-        model = Predictor(model=weights, device=device, dtype=dtype)
+        model = Predictor(model=weights, device=device, dtype=dtype, cfg=TEST_CFG)
         model.DEBUG = True
         model.TIME = True
         model.total_detection_time = 0
@@ -91,7 +140,7 @@ class DummyModel:
 
     def generate_pyramid_files(self, weights, image, image_path):
         dtype, device = image.dtype, image.device
-        model = Predictor(model=weights, device=device, dtype=dtype)
+        model = Predictor(model=weights, device=device, dtype=dtype, cfg=TEST_CFG)
         model.DEBUG = True
         model.TIME = True
         output = model.pyramid_predictions(image, image_path, scale_increment=1/2, scale_before=1, single_scale=False)
@@ -102,27 +151,33 @@ class DummyModel:
             f.write(str(len(output)))
 
 class TestPredictor(unittest.TestCase):
+    TOLERANCE = 0.1
+
     def test_single_scale(self):
         dtype = torch.float32
-        predictor = Predictor(model=None, dtype=dtype)
-        predictor._model = DummyModel("single_scale", ASSET_DIR)
+        predictor = Predictor(model=DummyModel("single_scale", ASSET_DIR), dtype=dtype, cfg=TEST_CFG)
         image_path = os.path.join(ASSET_DIR, ASSET_NAME + ".jpg")
+        check_file_with_remote_fallback(image_path)
         image = read_image(image_path).to(torch.device("cpu"), dtype=dtype)
         output = predictor._detect_instances(image, scale=1, max_scale=False)
         output_length = len(output)
-        reference_length = int(open(os.path.join(ASSET_DIR, "single_scale_output_length.txt")).read())
-        self.assertTrue(abs(1 - output_length/reference_length) < 0.1, msg=f"Output length ({output_length}) does not match the reference length ({reference_length})")
+        with open(check_file_with_remote_fallback(os.path.join(ASSET_DIR, "single_scale_output_length.txt"))) as f:
+            reference_length = int(f.read())
+        # Check that the output length is within tolerance of the reference length
+        self.assertTrue(abs(1 - output_length/reference_length) < self.TOLERANCE, msg=f"Output length ({output_length}) does not match the reference length ({reference_length})")
     
     def test_pyramid(self):
         dtype = torch.float32
-        predictor = Predictor(model=None, dtype=dtype)
-        predictor._model = DummyModel("pyramid", ASSET_DIR)
+        predictor = Predictor(model=DummyModel("pyramid", ASSET_DIR), dtype=dtype, cfg=TEST_CFG)
         image_path = os.path.join(ASSET_DIR, ASSET_NAME + ".jpg")
+        check_file_with_remote_fallback(image_path)
         image = read_image(image_path).to(torch.device("cpu"), dtype=dtype)
         output = predictor.pyramid_predictions(image, image_path, scale_increment=1/2, scale_before=1, single_scale=False)
         output_length = len(output)
-        reference_length = int(open(os.path.join(ASSET_DIR, "pyramid_output_length.txt")).read())
-        self.assertTrue(abs(1 - output_length/reference_length) < 0.1, msg=f"Output length ({output_length}) does not match the reference length ({reference_length})")
+        with open(check_file_with_remote_fallback(os.path.join(ASSET_DIR, "pyramid_output_length.txt"))) as f:
+            reference_length = int(f.read())
+        # Check that the output length is within tolerance of the reference length
+        self.assertTrue(abs(1 - output_length/reference_length) < self.TOLERANCE, msg=f"Output length ({output_length}) does not match the reference length ({reference_length})")
 
 if __name__ == '__main__':
     unittest.main()
