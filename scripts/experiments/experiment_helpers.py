@@ -1,7 +1,8 @@
-import os, sys, subprocess, glob, tempfile, argparse
+import os, sys, subprocess, glob, tempfile, argparse, time
 import yaml, re
 
-from typing import Optional, Union, List, Dict, Any, Callable, Iterable
+from argparse import Namespace
+from typing import Self, Optional, Union, List, Dict, Any, Callable, Iterable
 
 import queue, threading, submitit
 
@@ -34,7 +35,7 @@ def set_default_config(config : str):
     DEFAULT_CONFIG = config
     assert os.path.exists(DEFAULT_CONFIG), f"Default config file not found: {DEFAULT_CONFIG}"
 
-def get_config():
+def get_config() -> Dict[str, Any]:
     if DEFAULT_CONFIG == "<UNSET>":
         raise RuntimeError("The default config file has not been set. Use `experiment__helpers.set_default_config()` to set it.")
     with open(DEFAULT_CONFIG, "r") as conf:
@@ -45,13 +46,20 @@ def get_config():
 TQDM_DETECT_PATTERN = re.compile(r"([\d\.]+\s*|\s\?)\w+\/\w+(\]|, )")
 TQDM_FINISHED_PATTERN = re.compile(r"(\| (\d+)\/\2 \[)")
 
-def custom_print(s):
-    if re.search(TQDM_DETECT_PATTERN, s) and not ("100%" in s and re.search(TQDM_FINISHED_PATTERN, s)):
-            s = s.removeprefix("\n").removesuffix("\n") + "\r"
-    sys.stdout.write(s)
+def custom_print(line : str):
+    if re.search(TQDM_DETECT_PATTERN, line) and not ("100%" in line and re.search(TQDM_FINISHED_PATTERN, line)):
+            line = line.removeprefix("\n").removesuffix("\n") + "\r"
+    sys.stdout.write(line)
     sys.stdout.flush()
 
-def run_command(command, python_binary=None):
+def print_and_sleep(text : str):
+    custom_print(text)
+    time.sleep(3)
+
+def run_command(
+        command : str, 
+        python_binary : Optional[str]=None
+    ):
     environment = os.environ.copy()
     environment['PYTHONUNBUFFERED'] = '1'
     if python_binary is not None:
@@ -70,7 +78,10 @@ def run_command(command, python_binary=None):
                     output_buffer = ""
         process.wait()
 
-def remove_directory(directory, recursive=False):
+def remove_directory(
+        directory : str, 
+        recursive : bool=False
+    ):
     """
     Safely removes a directory containing files, no nested directories.
     """
@@ -93,7 +104,7 @@ def remove_directory(directory, recursive=False):
 
 SAMPLE_SANITIZE_PATTERN = re.compile(r"^[^_]+_(.+)(_heatmap|_matches|\.csv)")
 
-def split_by_sample(files):
+def split_by_sample(files : List[str]) -> Dict[str, List[str]]:
     """
     Splits the files by sample.
     """
@@ -109,13 +120,13 @@ def split_by_sample(files):
 
 TMP_DIR = "<UNSET>"
 
-def get_temp_config_dir():
+def get_temp_config_dir() -> str:
     global TMP_DIR
     if TMP_DIR == "<UNSET>":
         TMP_DIR = tempfile.mkdtemp(prefix="fb_tmp_experiment_configs_", dir=os.environ["HOME"])
     return TMP_DIR
 
-def get_temp_config_path():
+def get_temp_config_path() -> str:
     return tempfile.NamedTemporaryFile(dir=get_temp_config_dir(), mode="w", delete=False).name
 
 def clean_temporary_dir():
@@ -128,11 +139,11 @@ def clean_temporary_dir():
         TMP_DIR = "<UNSET>"
 
 class HelpfulArgumentParser(argparse.ArgumentParser):
-    def error(self, message):
+    def error(self, message : str):
         self.print_help(sys.stderr)
         self.exit(2, f"\n\n{self.prog}: error: {message}\n")
 
-def get_cmd_args():
+def get_cmd_args() -> Namespace:
     """
     A simple wrapper for shared command line arguments and parsing between experiment orchestration scripts.
 
@@ -160,7 +171,11 @@ def get_cmd_args():
     set_datadir(args.datadir)
     return args
 
-def read_slurm_params(partition : str, path : Optional[str] = None):
+def read_slurm_params(
+        partition : str, 
+        path : Optional[str] = os.path.join(os.path.dirname(__file__), "default_slurm_params.yaml"),
+        **kwargs
+    ) -> Dict[str, Any]:
     """
     Simple wrapper to read SLURM parameters from a YAML file, or use the default SLURM parameters if not supplied.
 
@@ -168,7 +183,8 @@ def read_slurm_params(partition : str, path : Optional[str] = None):
 
     Args:
         partition (str): The SLURM partition to use.
-        path (Optional[str]): The path to the SLURM parameters YAML file. Defaults to None.
+        path (Optional[str]): The path to the SLURM parameters YAML file. Default and None is "default_slurm_params.yaml" in the same directory as this script.
+        **kwargs: Additional keyword arguments to pass to the SLURM parameters. These will override the parameters in the YAML file if they are also present.
 
     Returns:
         Dict[str, Any]: The SLURM parameters. The keys are prefixed with 'slurm_', necessary for the submitit executor.
@@ -176,8 +192,9 @@ def read_slurm_params(partition : str, path : Optional[str] = None):
     if path is None:
         path = os.path.join(os.path.dirname(__file__), "default_slurm_params.yaml")
     with open(path, "r") as f:
-        params = yaml.safe_load(f)
+        params : Dict = yaml.safe_load(f)
     params["partition"] = partition
+    params.update(kwargs)
     # As a reminder, shared/generic (non-prefixed) parameters are: {'name': <class 'str'>, 'timeout_min': <class 'int'>, 'mem_gb': <class 'float'>, 'nodes': <class 'int'>, 'cpus_per_task': <class 'int'>, 'gpus_per_node': <class 'int'>, 'tasks_per_node': <class 'int'>, 'stderr_to_stdout': <class 'bool'>}.
     # Change all non-shared parameters to have the 'slurm_' prefix
     shared_params = ['name', 'timeout_min', 'mem_gb', 'nodes', 'cpus_per_task', 'gpus_per_node', 'tasks_per_node', 'stderr_to_stdout']
@@ -186,9 +203,23 @@ def read_slurm_params(partition : str, path : Optional[str] = None):
             params[f"slurm_{key}"] = params.pop(key)
     return params
 
-def do_yolo_train_run(config, dry_run : bool=False, execute : bool=True, device : Optional[Union[int, str]]=None):
+def do_yolo_train_run(
+        config : Dict, 
+        dry_run : bool=False, 
+        execute : bool=True, 
+        device : Optional[Union[int, str]]=None
+    ) -> str:
     """
-    Wrapper for conducting a Flat-Bug YOLO training run, with 
+    Wrapper for conducting a Flat-Bug YOLO training run, with `fb_train`.
+
+    Args:
+        config (Dict): The configuration dictionary.
+        dry_run (bool): Whether to print the command without running it. Defaults to False.
+        execute (bool): Whether to run the command. Defaults to True.
+        device (Optional[Union[int, str]]): The GPU to use for the experiment. Defaults to None.
+
+    Returns:
+        str: The (executed) command (to run).
     """
     global DATADIR
     if DATADIR == "<UNSET>":
@@ -215,7 +246,15 @@ def do_yolo_train_run(config, dry_run : bool=False, execute : bool=True, device 
 
 
 class ExperimentRunner:
-    def __init__(self, experiment_fn : Callable = do_yolo_train_run, inputs : Iterable = [], devices : Optional[Union[List[Union[int, str]], int, str]] = None, slurm : bool=False, slurm_params : Optional[Dict[str, Any]] = None, **kwargs):
+    def __init__(
+            self : Self, 
+            experiment_fn : Callable = do_yolo_train_run, 
+            inputs : Iterable = [], 
+            devices : Optional[Union[List[Union[int, str]], int, str]] = None, 
+            slurm : bool=False, 
+            slurm_params : Optional[Dict[str, Any]] = None, 
+            **kwargs
+        ):
         """
         A class to handle running multiple experiments, either sequentially, in parallel on multiple GPUs, or on a SLURM cluster.
 
@@ -270,7 +309,11 @@ class ExperimentRunner:
         return self._length
 
     @staticmethod
-    def consumer_thread(fn : Callable, queue : queue.Queue, **kwargs):
+    def consumer_thread(
+            fn : Callable, 
+            queue : queue.Queue, 
+            **kwargs
+        ):
         while not queue.empty():
             input = queue.get()
             fn(input, **kwargs)
@@ -290,9 +333,25 @@ class ExperimentRunner:
             lines = lines[:max_lines]
             lines.append(f"... {len(lines) - max_lines} more lines ...")
         return "\n".join([line[:max_char_per_line] for line in lines])
-        
 
-    def run(self):
+    @property
+    def slurm_job_ids(self : Self) -> List[str]:
+        if not self.slurm:
+            return [""]
+        else:
+            return [job.job_id for job in self.slurm_jobs]
+    
+    @property
+    def slurm_job_id(self : Self) -> str:
+        if not self.slurm:
+            return self.slurm_job_ids[0]
+        else:
+            ids = list(set([re.search(r"^(\d+)", job.job_id).group(1) for job in self.slurm_jobs]))
+            if len(ids) != 1:
+                raise ValueError(f"Multiple job IDs found: {ids}")
+            return ids[0]
+
+    def run(self : Self) -> Self:
         # Check that the consumer threads and slurm jobs are empty
         assert not self.consumer_threads, "Consumer threads list is not empty."
         assert not self.slurm_jobs, "Slurm jobs list is not empty."
@@ -324,17 +383,21 @@ class ExperimentRunner:
                     self.experiment_fn(input, execute=True, device=self.devices, **self.kwargs)
             if self.slurm:
                 if self.kwargs.get("dry_run", False):
-                    self.slurm_jobs = self.executor.map_array(print, cmds)
+                    self.slurm_jobs = self.executor.map_array(print_and_sleep, cmds)
                 else:
                     self.slurm_jobs = self.executor.map_array(run_command, cmds)
+        
+        return self
 
-    def wait(self):
+    def wait(self : Self) -> Self:
         # Wait for the consumer threads to finish
         [self.consumer_threads.pop().join() for _ in range(len(self.consumer_threads))]
         # Wait for the slurm jobs to finish
         [print(f'Job {i} finished with:', self.pretty_parse_slurm_results(self.slurm_jobs.pop())) for i in range(len(self.slurm_jobs))]
 
-    def complete(self):
+        return self
+
+    def complete(self : Self) -> Self:
         if self.slurm:
             # When using SLURM, the experiments are submitted as an array job and the script exits immediately, so we don't need to have a process alive for the duration of the experiments
             print(f"All (n={len(self)}) experiments submitted as SLURM array job.")
@@ -347,3 +410,5 @@ class ExperimentRunner:
             clean_temporary_dir()
             
             print(f"All (n={len(self)}) experiments completed successfully.")
+
+        return self

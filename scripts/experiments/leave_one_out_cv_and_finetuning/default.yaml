@@ -5,7 +5,7 @@ device: 0
 patience: 9999
 lr0: 0.001
 lrf: 0.00001
-optimizer: 'AdamW'
+optimizer: 'SGD'
 workers: 80
 fb_max_instances: 9999
 fb_max_images: -1

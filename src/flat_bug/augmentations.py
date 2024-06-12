@@ -2,7 +2,7 @@ import os
 import math
 import random
 
-from typing import List, Tuple, Union, Optional
+from typing import Self, List, Tuple, Dict, Union, Optional
 
 import cv2
 import numpy as np
@@ -17,14 +17,18 @@ from ultralytics.utils.instance import Instances
 from flat_bug.config import check_types
 
 ### From Ultralytics reposity, remove clipping from `RandomPerspective` and add `apply_segments` function
-def segment2box(segment, width=640, height=640):
+def segment2box(
+        segment : torch.Tensor, 
+        width : int=640, 
+        height : int=640
+    ) -> np.ndarray:
     """
     Convert 1 segment label to 1 box label, applying inside-image constraint, i.e. (xy1, xy2, ...) to (xyxy).
 
     Args:
         segment (torch.Tensor): the segment label
-        width (int): the width of the image. Defaults to 640
-        height (int): The height of the image. Defaults to 640
+        width (int): OBS: Unused. The width of the image. Defaults to 640.
+        height (int): OBS: Unused. The height of the image. Defaults to 640. 
 
     Returns:
         (np.ndarray): the minimum and maximum x and y values of the segment.
@@ -32,17 +36,20 @@ def segment2box(segment, width=640, height=640):
     x, y = segment.T  # segment xy
     return np.array([x.min(), y.min(), x.max(), y.max()], dtype=segment.dtype)  # xyxy
 
-def apply_segments(segments, M):
+def apply_segments(
+        segments : np.ndarray, 
+        M : np.ndarray
+    ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Apply affine to segments and generate new bboxes from segments.
 
     Args:
-        segments (ndarray): list of segments, [num_samples, 500, 2].
-        M (ndarray): affine matrix.
+        segments (np.ndarray): list of segments, [num_samples, 500, 2].
+        M (np.ndarray): affine matrix.
 
     Returns:
-        new_segments (ndarray): list of segments after affine, [num_samples, 500, 2].
-        new_bboxes (ndarray): bboxes after affine, [N, 4].
+        new_segments (np.ndarray): list of segments after affine, [num_samples, 500, 2].
+        new_bboxes (np.ndarray): bboxes after affine, [N, 4].
     """
     n, num = segments.shape[:2]
     if n == 0:
@@ -60,9 +67,13 @@ def apply_segments(segments, M):
     return bboxes, segments
 ###
 
-def low_res_inpaint(img : np.ndarray, mask : np.ndarray, scale : int=6):
+def low_res_inpaint(
+        img : np.ndarray, 
+        mask : np.ndarray, 
+        scale : int=6
+    ) -> np.ndarray:
     """
-    Performs inpainting on a low-resulution version of the image, and then copies the upsampled inpainted image back into the original image.
+    Performs inpainting on a low-resolution version of the image, and then copies the upsampled inpainted image back into the original image.
     """
     # Create a low-res version of the image and mask
     lr_img = cv2.resize(img, (img.shape[1] // scale, img.shape[0] // scale))
@@ -76,7 +87,13 @@ def low_res_inpaint(img : np.ndarray, mask : np.ndarray, scale : int=6):
 
     return img
 
-def telea_inpaint_polys(img : np.ndarray, polys : List[np.ndarray], exclude_polys : Optional[List[np.ndarray]]=None, downscale_factor : Union[int, float] = 6, **kwargs) -> np.ndarray:
+def telea_inpaint_polys(
+        img : np.ndarray, 
+        polys : List[np.ndarray], 
+        exclude_polys : Optional[List[np.ndarray]]=None, 
+        downscale_factor : Union[int, float] = 6, 
+        **kwargs
+    ) -> np.ndarray:
     """
     Mutably inpaints the polygons in an image using the Fast Marching method by Alexandru Telea.
 
@@ -155,7 +172,10 @@ def telea_inpaint_polys(img : np.ndarray, polys : List[np.ndarray], exclude_poly
     # Return the inpainted image (not necessary, as the inpainting is done in-place)
     return img
 
-def inpaint_pad(array : Union[torch.Tensor, np.ndarray], padding : Union[int, Tuple[int, int], Tuple[int, int, int, int]]) -> Union[torch.Tensor, np.ndarray]:
+def inpaint_pad(
+        array : Union[torch.Tensor, np.ndarray], 
+        padding : Union[int, Tuple[int, int], Tuple[int, int, int, int]]
+    ) -> Union[torch.Tensor, np.ndarray]:
     # Ensure padding is a tuple (pad_top, pad_bottom, pad_left, pad_right)
     if isinstance(padding, int):
         padding = (padding, padding, padding, padding)
@@ -225,7 +245,12 @@ class InpaintPad:
     def __call__(self, tensor : torch.Tensor) -> torch.Tensor:
         return inpaint_pad(tensor, self.padding)
     
-def remove_instances(labels : dict, area_thr : Union[float, int]=1, max_targets : Optional[int]=1000, min_size : int=0):
+def remove_instances(
+        labels : Dict, 
+        area_thr : Union[float, int]=1, 
+        max_targets : Optional[int]=1000, 
+        min_size : int=0
+    ) -> Dict:
     instances : Instances = labels.pop("instances")
     imsize = labels["img"].shape[:2][::-1]
 
@@ -331,7 +356,10 @@ def remove_instances(labels : dict, area_thr : Union[float, int]=1, max_targets 
     # print(labels)
     return labels
 
-def scale_labels(labels : dict, scale : float):
+def scale_labels(
+        labels : Dict, 
+        scale : float
+    ) -> Dict:
     orig_shape = labels["img"].shape[:2]
     # Scale the image
     labels["img"] = cv2.resize(labels["img"], (0, 0), fx=scale, fy=scale)
@@ -346,11 +374,15 @@ def scale_labels(labels : dict, scale : float):
 class MyRandomPerspective(RandomPerspective):
     fill_value = (0, 0, 0)
 
-    def __init__(self, imgsz, *args, **kwargs):
+    def __init__(self, imgsz : int, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.imgsz = imgsz
 
-    def affine_transform(self, img, border):
+    def affine_transform(
+            self : Self, 
+            img : np.ndarray, 
+            border : Tuple[int, int]
+        ) -> Tuple[np.ndarray, np.ndarray, float]:
         """Center."""
 
         self.scale = self.imgsz / max(img.shape), 1  # fime hardcoded
@@ -476,7 +508,14 @@ class Crop:
         self._imsize = tuple([int(i) for i in self._imsize])
         self.xsize, self.ysize = self._imsize
 
-    def crop_image(self, labels, start_x, start_y, size_x, size_y):
+    def crop_image(
+            self : Self, 
+            labels : Dict, 
+            start_x : int, 
+            start_y : int, 
+            size_x : int, 
+            size_y : int
+        ) -> Dict:
         img = labels["img"]
         orig_shape = img.shape
         h, w = img.shape[:2]
@@ -536,7 +575,7 @@ class Crop:
         raise NotImplementedError("This method should be implemented in a subclass")
 
 class CenterCrop(Crop):
-    def __call__(self, labels):
+    def __call__(self, labels : Dict) -> Dict:
         h, w = labels["img"].shape[:2]
 
         if w <= self.xsize:
@@ -555,7 +594,7 @@ class RandomCrop(Crop):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def __call__(self, labels):
+    def __call__(self, labels : Dict) -> Dict:
         # Get the initial image to target crop size ratio
         h, w = labels["img"].shape[:2]
         target_source_ratio_h = self.ysize / h
@@ -601,7 +640,12 @@ class RandomCrop(Crop):
         return labels
 
 class FixInstances:
-    def __init__(self, area_thr : Union[float, int], max_targets : Optional[int], min_size : int):
+    def __init__(
+            self, 
+            area_thr : Union[float, int], 
+            max_targets : Optional[int], 
+            min_size : int
+        ):
         """"
         A callable class that removes instances that are too small or which overlap less than a certain threshold with the image.
 
@@ -617,14 +661,11 @@ class FixInstances:
         self.max_targets = max_targets if max_targets is None or max_targets > 0 else None
         self.min_size = min_size
     
-    def __call__(self, labels):
+    def __call__(self, labels : Dict) -> Dict:
         return remove_instances(labels, area_thr=self.area_thr, max_targets=self.max_targets, min_size=self.min_size)
-
-
 
 class MyCrop(RandomCrop):
     pass
-
 
 class RandomColorInv(object):
     """
@@ -643,7 +684,7 @@ class RandomColorInv(object):
             p = 1
         self.p = 1 - p
 
-    def __call__(self, labels):
+    def __call__(self, labels : Dict) -> Dict:
         img = labels['img']
         if random.uniform(0, 1) > self.p:
             assert img.dtype == np.uint8

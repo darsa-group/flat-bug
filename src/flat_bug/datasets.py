@@ -6,7 +6,7 @@ import cv2
 import numpy as np
 
 
-from typing import List, Dict, Optional
+from typing import Union, List, Tuple, Dict, Optional, Self
 
 from ultralytics.utils import IterableSimpleNamespace
 from ultralytics.data import YOLODataset
@@ -17,7 +17,7 @@ from flat_bug.augmentations import CenterCrop, RandomCrop, MyRandomPerspective, 
 HELP_URL = 'See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
 IMG_FORMATS = 'bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 'pfm'  # include image suffixes
 
-def calculate_image_weights(image_paths) -> List[float]:
+def calculate_image_weights(image_paths : List[str]) -> List[float]:
     """
     Calculate normalized weights for each image based on the sqrt of the file sizes,
     normalized by the minimum file size, so that the values are between 1 and infinity.
@@ -32,7 +32,10 @@ def calculate_image_weights(image_paths) -> List[float]:
     min_size = min(file_sizes)
     return [(size / min_size) for size in file_sizes]
 
-def reweight(weights, target_sum) -> List[float]:
+def reweight(
+        weights : List[float], 
+        target_sum : Union[float, int]
+    ) -> List[float]:
     """
     Reweights the provided list of weights so that their sum equals the target sum.
     
@@ -46,7 +49,10 @@ def reweight(weights, target_sum) -> List[float]:
     sum_weights = sum(weights)
     return [max(round(w * target_sum / sum_weights), 1) for w in weights]
 
-def generate_indices(weights, target_size : Optional[int]=None) -> List[int]:
+def generate_indices(
+        weights : List[float], 
+        target_size : Optional[int]=None
+    ) -> List[int]:
     """
     Deterministically generates a list of indices based on the provided weights to oversample the items.
     
@@ -81,7 +87,11 @@ def get_datasets(files : List[str]) -> Dict[str, List[str]]:
     return datasets
 
 
-def subset(self, n : Optional[int]=None, pattern : Optional[str]=None):
+def subset(
+        self : Self, 
+        n : Optional[int]=None, 
+        pattern : Optional[str]=None
+    ):
     """
     Subsets the dataset to the first 'n' elements that match the pattern.
 
@@ -103,7 +113,10 @@ def subset(self, n : Optional[int]=None, pattern : Optional[str]=None):
     # Subset the images
     self.im_files = [f for i, f in enumerate(self.im_files) if i in indices]
 
-def hook_get_labels_with_subset(obj, args):
+def hook_get_labels_with_subset(
+        obj : "MyYOLODataset", 
+        args : Dict
+    ):
     if not isinstance(args, dict):
         raise ValueError("args must be a dictionary")
     if not isinstance(obj, MyYOLODataset):
@@ -114,7 +127,14 @@ def hook_get_labels_with_subset(obj, args):
         return obj.get_labels()
     obj.get_labels = subset_then_get
 
-def train_augmentation_pipeline(hyperparameters : IterableSimpleNamespace, image_size : int, max_instances : Optional[int], min_size : int, use_segments : bool, use_keypoints : bool) -> Compose:
+def train_augmentation_pipeline(
+        hyperparameters : IterableSimpleNamespace, 
+        image_size : int, 
+        max_instances : Optional[int], 
+        min_size : int, 
+        use_segments : bool, 
+        use_keypoints : bool
+    ) -> Compose:
     return Compose([
         RandomCrop(imsize=int(image_size * 1.5)),
         RandomHSV(hgain=hyperparameters.hsv_h, sgain=hyperparameters.hsv_s, vgain=hyperparameters.hsv_v),
@@ -137,7 +157,12 @@ def train_augmentation_pipeline(hyperparameters : IterableSimpleNamespace, image
         )
     ])
 
-def validation_augmentation_pipeline(image_size : int, min_size : int, use_segments : bool, use_keypoints : bool) -> Compose:
+def validation_augmentation_pipeline(
+        image_size : int, 
+        min_size : int, 
+        use_segments : bool, 
+        use_keypoints : bool
+    ) -> Compose:
     return Compose([
         RandomCrop(imsize=image_size),
         FixInstances(area_thr=0.99, max_targets=None, min_size=min_size),
@@ -157,7 +182,14 @@ class MyYOLODataset(YOLODataset):
     _min_size : int=4 # What is the minimum size of an instance to be considered (width or height in pixels after augmentations)
     _oversample_factor : int=2 # How much do we allow the dataset to grow when oversampling - this is done to ensure larger images are not underrepresented
 
-    def __init__(self, max_instances : Optional[int], classes=None, subset_args=None, *args, **kwargs):
+    def __init__(
+            self : Self, 
+            max_instances : Optional[int], 
+            classes : None=None, 
+            subset_args : Optional[Dict]=None, 
+            *args, 
+            **kwargs
+        ):
         self._max_instances = max_instances
         self._include_classes = classes # Only used so the class list is visible in the subset method
         if subset_args is not None:
@@ -177,7 +209,10 @@ class MyYOLODataset(YOLODataset):
             n = cv2.rectangle(n, (x - w // 2, y - w // 2), (x + w // 2, y + h // 2), 255, 3)
         cv2.imwrite("/tmp/test/%i-img.jpg" % index, n + m / 3)
 
-    def load_image(self, i):
+    def load_image(
+            self : Self, 
+            i : Union[int, slice]
+        ) -> Tuple[np.ndarray, Tuple[int, int], Tuple[int, int]]:
         # Loads 1 image from dataset index 'i', returns (im, resized hw)
         im, f, fn = self.ims[i], self.im_files[i], self.npy_files[i]
 
@@ -196,7 +231,10 @@ class MyYOLODataset(YOLODataset):
         # print("cached", f, self.im_hw0[i], self.im_hw[i])
         return self.ims[i], self.im_hw0[i], self.im_hw[i]  # im, hw_original, hw_resized
 
-    def build_transforms(self, hyp : IterableSimpleNamespace) -> Compose:
+    def build_transforms(
+            self : Self, 
+            hyp : IterableSimpleNamespace
+        ) -> Compose:
         return train_augmentation_pipeline(
             hyperparameters=hyp, 
             image_size=self.imgsz, 
@@ -206,7 +244,13 @@ class MyYOLODataset(YOLODataset):
             use_keypoints=self.use_keypoints
         )
 
-    def cache_labels(self, path=Path("./labels.cache")):
+    def cache_labels(
+            self : Self, 
+            path : Path=Path("./labels.cache")
+        ):
+        """
+        OBS: DO NOT USE THIS FUNCTION MANUALLY.
+        """
         LOGGER.warning("!! OBS !! ==>>== Flat-bug doesn't use the .cache-file! ==<<== !! OBS !!")
 
         # To bypass the creation of .cache files we use a temporary dummy file, which is set to read-only, causing a check in ultralytics to bail on creating the file
@@ -238,15 +282,16 @@ class MyYOLODataset(YOLODataset):
         return len(self.__indices)
 
     def __getitem__(self, index):
-        index = self.__indices[index]
-        out = self.transforms(self.get_image_and_label(index))
-        return out
+        return self.transforms(self.get_image_and_label(self.__indices[index]))
 
 
 class MyYOLOValidationDataset(MyYOLODataset):
     _resample_n : int= 5
 
-    def build_transforms(self, hyp : IterableSimpleNamespace) -> Compose:
+    def build_transforms(
+            self : Self, 
+            hyp : IterableSimpleNamespace
+        ) -> Compose:
         return validation_augmentation_pipeline(
             image_size=self.imgsz, 
             min_size=self._min_size, 

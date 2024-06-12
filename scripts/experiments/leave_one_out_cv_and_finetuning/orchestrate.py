@@ -1,5 +1,5 @@
 
-import os, sys, re, argparse
+import os, sys
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 from scripts.experiments.experiment_helpers import DATASETS, set_default_config, get_config, get_cmd_args, read_slurm_params, ExperimentRunner
 
@@ -42,20 +42,9 @@ if __name__ == "__main__":
         fine_tuning_configs[name] = fine_tune_config
 
     # First run the full training
-    experiment_runner = ExperimentRunner(inputs=experiment_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition))
-    experiment_runner.run()
-    experiment_runner.complete()
-    experiment_runner.wait() # Here we must wait for the full training to complete before starting the fine-tuning
-    
-    #### FIXME ####
-    # Finetuning doesn't work properly at the moment, when multiple runs have used the same name, the save folder names are appended with incrementing numbers (e.g. "runs/segment/01-partial-AMI-traps"/"runs/segment/01-partial-AMI-traps1"/"runs/segment/01-partial-AMI-traps2")
-    # This causes the fine-tuning to be invalid as it tries to load the weights from the original folder, but the weights are saved in the new folder
+    main_experiment_runner = ExperimentRunner(inputs=experiment_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition))
+    main_experiment_runner.run().complete()
 
-    # ## FIXME ##
-    # # This is **NOT** a good way to do this for SLURM, we should somehow schedule the fine-tuning jobs to wait for the full training to complete using SLURM instead of keeping this process alive
-    # #  - For non-SLURM systems, this is fine, but we should still find a better way to do this
-
-    # # Then run the fine-tuning training 
-    # experiment_runner = ExperimentRunner(inputs=fine_tuning_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition))
-    # experiment_runner.run()
-    # experiment_runner.complete()
+    # Then run the fine-tuning training 
+    finetune_experiment_runner = ExperimentRunner(inputs=fine_tuning_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition, dependency=f'afterok:{main_experiment_runner.slurm_job_id}'))
+    finetune_experiment_runner.run().complete()

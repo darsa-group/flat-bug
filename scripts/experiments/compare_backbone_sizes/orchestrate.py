@@ -1,4 +1,4 @@
-import os, sys, argparse
+import os, sys
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 from scripts.experiments.experiment_helpers import set_default_config, get_config, get_cmd_args, read_slurm_params, ExperimentRunner
 
@@ -27,6 +27,5 @@ if __name__ == "__main__":
         experiment_configs.append(this_config)
 
     experiment_runner = ExperimentRunner(inputs=experiment_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition))
-    experiment_runner.run()
-    experiment_runner.complete()
+    experiment_runner.run().complete()
     
