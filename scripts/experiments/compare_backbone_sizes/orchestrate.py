@@ -9,7 +9,7 @@ DEFAULT_CONFIG = os.path.join(BASE_PATH, "default.yaml")
 set_default_config(DEFAULT_CONFIG)
 
 if __name__ == "__main__":
-    args = get_cmd_args()
+    args, extra = get_cmd_args()
 
     backbone_sizes = ["L", "M", "S", "N"]
     backbone_paths = {
@@ -26,6 +26,6 @@ if __name__ == "__main__":
         this_config["model"] = backbone_paths[size]
         experiment_configs.append(this_config)
 
-    experiment_runner = ExperimentRunner(inputs=experiment_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition))
+    experiment_runner = ExperimentRunner(inputs=experiment_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition, **extra))
     experiment_runner.run().complete()
     

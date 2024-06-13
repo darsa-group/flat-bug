@@ -23,7 +23,7 @@ def parse_include_datasets(path : str) -> List[str]:
     return [dataset for dataset in datasets if dataset]
 
 if __name__ == "__main__":
-    args = get_cmd_args()
+    args, extra = get_cmd_args()
 
     # Filter out the prospective datasets
     relevant_datasets = parse_include_datasets(os.path.join(BASE_PATH, "include_datasets"))
@@ -44,5 +44,5 @@ if __name__ == "__main__":
             this_config["fb_exclude_datasets"].extend(list(set(this_excluded_datasets)))
             experiment_configs[this_config["name"]] = this_config
 
-    experiment_runner = ExperimentRunner(inputs=experiment_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition))
+    experiment_runner = ExperimentRunner(inputs=experiment_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition, **extra))
     experiment_runner.run().complete()

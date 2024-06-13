@@ -2,7 +2,7 @@ import os, sys, subprocess, glob, tempfile, argparse, time
 import yaml, re
 
 from argparse import Namespace
-from typing import Self, Optional, Union, List, Dict, Any, Callable, Iterable
+from typing import Self, Optional, Union, List, Tuple, Dict, Any, Callable, Iterable
 
 import queue, threading, submitit
 
@@ -57,26 +57,33 @@ def print_and_sleep(text : str):
     time.sleep(3)
 
 def run_command(
-        command : str, 
+        command : Union[str | Callable], 
         python_binary : Optional[str]=None
     ):
-    environment = os.environ.copy()
-    environment['PYTHONUNBUFFERED'] = '1'
-    if python_binary is not None:
-        environment["PATH"] = python_binary + ":" + environment["PATH"]
-        environment["PYTHONPATH"] = python_binary
-    output_buffer = ""
-    with subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=environment) as process:
-        while True:
-            output = process.stdout.read(1)
-            if not output and process.poll() is not None:
-                break
-            if output:
-                output_buffer += output
-                if output == "\n":
-                    custom_print(output_buffer)
-                    output_buffer = ""
-        process.wait()
+    if callable(command):
+        command = command()
+    elif isinstance(command, str):
+        environment = os.environ.copy()
+        environment['PYTHONUNBUFFERED'] = '1'
+        if python_binary is not None:
+            environment["PATH"] = python_binary + ":" + environment["PATH"]
+            environment["PYTHONPATH"] = python_binary
+        output_buffer = ""
+        with subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=environment) as process:
+            while True:
+                output = process.stdout.read(1)
+                if not output and process.poll() is not None:
+                    break
+                if output:
+                    output_buffer += output
+                    if output == "\n":
+                        custom_print(output_buffer)
+                        output_buffer = ""
+            process.wait()
+        if process.returncode != 0:
+            raise subprocess.CalledProcessError(process.returncode, command)
+    else:
+        raise ValueError("Command must be a string or callable.")
 
 def remove_directory(
         directory : str, 
@@ -143,7 +150,40 @@ class HelpfulArgumentParser(argparse.ArgumentParser):
         self.print_help(sys.stderr)
         self.exit(2, f"\n\n{self.prog}: error: {message}\n")
 
-def get_cmd_args() -> Namespace:
+def parse_unknown_arguments(extra : List[str]) -> Dict[str, Any]:
+    """
+    Parses unknown arguments from the command line.
+
+    Unknown arguments must be named arguments in the form `--key value`, `-key value` or `key=value`.
+
+    Args:
+        extra (List[str]): The list of extra arguments.
+
+    Returns:
+        Dict[str, Any]: The parsed unknown arguments.
+    """
+    unknown_args = {}
+    i = 0
+    while i < len(extra):
+        arg = extra[i]
+        if arg.startswith("--"):
+            key = arg.removeprefix("--")
+            value = extra[i+1]
+            i += 1
+        elif arg.startswith("-"):
+            key = arg.removeprefix("-")
+            value = extra[i+1]
+            i += 1
+        elif "=" in arg:
+            key, value = arg.split("=")
+        else:
+            position = sum([len(arg) for arg in extra[:i]]) + i
+            raise ValueError(f"Unable to parse extra misspecified or unnamed argument: `{arg}` at position {position}:{position + len(arg)}.")
+        unknown_args[key] = value
+        i += 1
+    return unknown_args
+
+def get_cmd_args() -> Tuple[Namespace, Dict[str, str]]:
     """
     A simple wrapper for shared command line arguments and parsing between experiment orchestration scripts.
 
@@ -154,22 +194,50 @@ def get_cmd_args() -> Namespace:
         --slurm: Use SLURM for the experiments.
         -p, --partition: The SLURM partition to use. Must be specified when using SLURM.
 
+
+
     Returns:
         argparse.Namespace: The parsed command line arguments.
     """
-    args_parse = HelpfulArgumentParser()
+    args_parse = HelpfulArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     args_parse.add_argument("-i", "--datadir", help="The directory containing the data.", required=True)
     args_parse.add_argument("--devices", "--device", nargs="+", help="The GPU(s) to use for the experiments.", default=0)
     args_parse.add_argument("--slurm", action="store_true", help="Use SLURM for the experiments.")
-    args_parse.add_argument("-p", "--partition", help="The SLURM partition to use.")
+    args_parse.add_argument("-p", "--partition", help="The SLURM partition to use. MUST be specified when using --slurm.")
     args_parse.add_argument("--dry-run", "--dry_run", dest="dry_run", action="store_true", help="Print the experiment configurations without running them.")
-    args = args_parse.parse_args()
+    args_parse.add_argument(
+        "--do-not-specify-extra",
+        dest="extra",
+        nargs=argparse.REMAINDER, 
+        help=\
+            "Extra arguments to pass to the experiments. DO NOT ACTUALLY SPECIFY --do-not-specify-extra, just pass the arguments after the other arguments.\n"
+            "Extra must be passed as named arguments in the form `--key value`, `-key value` or `key=value`.\n"
+            "For most experiments these will be passed as SLURM parameter overrides, for example you could specify:\n"
+            "`python <some_script.py> -i <DIR> --slurm -p <PARTITION> --dependency afterok:<JOB_ID>`."
+    )
+    args, extra = args_parse.parse_known_args()
+    try:
+        extra = parse_unknown_arguments(extra)
+    except ValueError as e:
+        raise ValueError(
+                f"Error parsing extra arguments: `{' '.join(extra)}`. {e}\n\n"
+                f"{args_parse.format_help()}"
+            )
+    if not args.extra is None:
+        probable_desired_command = sys.executable + " " + " ".join([arg for arg in sys.argv if arg != "--do-not-specify-extra"])
+        raise ValueError(
+                f"DO NOT ACTUALLY SPECIFY --do-not-specify-extra, just pass the extra arguments after known.\n\n"
+                "You probably meant to use:\n"
+                f"\t{probable_desired_command}\n\n"
+                f"{args_parse.format_help()}"
+            )
     if args.slurm and args.partition is None:
-        args_parse.print_help()
-        print()
-        raise ValueError("SLURM partition must be specified when using SLURM.")
+        raise ValueError(
+                "SLURM partition must be specified when using SLURM.\n\n"
+                f"{args_parse.format_help()}"
+            )
     set_datadir(args.datadir)
-    return args
+    return args, extra
 
 def read_slurm_params(
         partition : str, 
@@ -302,11 +370,15 @@ class ExperimentRunner:
         self.consumer_threads : List[threading.Thread] = []
         self.slurm_jobs : List[submitit.Job] = []
 
-        if self.slurm and self.devices:
-            raise ValueError("Cannot use both slurm and GPUs for the experiments.")
+        if self.slurm and self.multi_gpu:
+            raise ValueError("Cannot use both slurm and multiple GPUs for the experiments.")
         
     def __len__(self):
         return self._length
+    
+    @property
+    def multi_gpu(self):
+        return isinstance(self.devices, list) and len(self.devices) > 1
 
     @staticmethod
     def consumer_thread(
@@ -355,7 +427,7 @@ class ExperimentRunner:
         # Check that the consumer threads and slurm jobs are empty
         assert not self.consumer_threads, "Consumer threads list is not empty."
         assert not self.slurm_jobs, "Slurm jobs list is not empty."
-        if isinstance(self.devices, list) and len(self.devices) > 1:
+        if self.multi_gpu:
             # For multiple GPUs, we use a producer-consumer model, with one consumer per GPU
             for device in self.devices:
                 this_kwargs = self.kwargs.copy()

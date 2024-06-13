@@ -3,17 +3,28 @@ import glob, argparse, re
 import subprocess
 import csv, yaml
 
-from typing import Optional, List
+from typing import Union, Optional, List, Tuple, Dict, Any
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from scripts.experiments.experiment_helpers import run_command, remove_directory, split_by_sample, read_slurm_params, ExperimentRunner
+from scripts.experiments.experiment_helpers import run_command, remove_directory, split_by_sample, parse_unknown_arguments, read_slurm_params, ExperimentRunner
 from flat_bug.datasets import get_datasets
 from flat_bug.eval_utils import pretty_print_csv
 
 RESULT_DIR = os.path.join(os.path.dirname(__file__), "results")
 
-def eval_model(weights : str, config : str, directory : str, output_directory : str, local_directory : str=None, device : Optional[str]=None, pattern : Optional[str]=None, store_all : bool=False, dry_run : bool = False, execute : bool=True):
+def eval_model(
+        weights : str, 
+        config : Optional[str], 
+        directory : str, 
+        output_directory : str, 
+        local_directory : str=None, 
+        device : Optional[str]=None, 
+        pattern : Optional[str]=None, 
+        store_all : bool=False, 
+        dry_run : bool = False, 
+        execute : bool=True
+    ) -> str:
     """
     Evaluate a model on a dataset.
 
@@ -28,12 +39,16 @@ def eval_model(weights : str, config : str, directory : str, output_directory : 
         store_all (bool, optional): If set, all results will be saved. Defaults to False.
         dry_run (bool, optional): If set, the evaluation will not be run. If the command would be executed it is printed instead. Defaults to False.
         execute (bool, optional): If set, the evaluation will be run, otherwise the command will be returned. Defaults to True.
+
+    Returns:
+        str: The (executed) command (to run).
     """
 
     # Check if the weights file exists
     assert os.path.exists(weights), f"Weights file not found: {weights}"
-    # Check if the config file exists
-    assert os.path.exists(config), f"Config file not found: {config}"
+    if config is not None:
+        # Check if the config file exists
+        assert os.path.exists(config), f"Config file not found: {config}"
     # Check if the directory exists
     assert os.path.exists(directory) and os.path.isdir(directory), f"Data directory not found: {directory}"
     # Check if the output directory exists
@@ -89,16 +104,22 @@ def eval_model(weights : str, config : str, directory : str, output_directory : 
                         if os.path.basename(file) == "combined_results.csv":
                             continue
                         os.remove(file)
-    else:
-        return command
+    return command
     
-def eval_model_wrapper(params : dict, execute : bool=True, device : Optional[str]=None):
+def eval_model_wrapper(
+        params : dict, 
+        execute : bool=True, 
+        device : Optional[str]=None, 
+        dry_run : Optional[bool]=None
+    ) -> str:
     if device is not None:
         params.pop("device", None)
     params.pop("execute", None)
+    if dry_run is not None and dry_run:
+        print("Executing evaluation as dry run.")
     return eval_model(**params, execute=execute, device=device)
 
-def get_weights_in_directory(directory):
+def get_weights_in_directory(directory : str) -> List[str]:
     """
     Get the weights file in the directory. The weights may be stored in arbitrarily nested subdirectories.
 
@@ -121,7 +142,7 @@ def get_weights_in_directory(directory):
     
     return sorted(weight_files, key=os.path.getmtime)
 
-def get_gpus():
+def get_gpus() -> List[str]:
     """
     Get the available GPUs.
 
@@ -134,7 +155,11 @@ def get_gpus():
     gpus = [f"cuda:{int(gpu)}" for gpu in gpu_info.split("\n") if gpu != ""]
     return gpus
 
-def combine_result_csvs(result_directories, new_directory, dry_run=False):
+def combine_result_csvs(
+        result_directories : List[str], 
+        new_directory : str, 
+        dry_run : bool=False
+    ) -> str:
     """
     Combines the result CSVs in the result directories. The result CSVs are assumed to be in the 'results' subdirectory of the result directories and named 'results.csv'.
 
@@ -143,7 +168,7 @@ def combine_result_csvs(result_directories, new_directory, dry_run=False):
     The 'model' column is populated with the name of the model directory.
     
     Args:
-        result_directories (list): A list of result directories.
+        result_directories (list of str): A list of result directories.
         new_directory (str): The directory where the combined results will be saved.
 
     Returns:
@@ -183,7 +208,7 @@ def combine_result_csvs(result_directories, new_directory, dry_run=False):
                 for column in new_column_names:
                     if column not in metadata:
                         raise ValueError(f"Metadata file does not contain the '{column}' key: {metadata_path}")
-                columns = [metadata[column] for column in new_column_names]
+                new_column_data = [metadata[column] for column in new_column_names]
             
             with open(result_csv_path, 'r') as file:
                 csv_reader = csv.reader(file)
@@ -193,16 +218,46 @@ def combine_result_csvs(result_directories, new_directory, dry_run=False):
                     csv_writer.writerow(new_column_names + headers)
                 
                 for row in csv_reader:
-                    csv_writer.writerow(columns + row)
+                    csv_writer.writerow(new_column_data + row)
     # Return the path to the new result CSV
     return new_result_csv
+
+class DeferredCall:
+    def __init__(self, func, *args, **kwargs):
+        self.func = func
+        self.args = args
+        self.kwargs = kwargs
+
+    def __call__(self):
+        return self.func(*self.args, **self.kwargs)
+
+    def __str__(self):
+        args_repr = [repr(arg) for arg in self.args]
+        kwargs_repr = [f"{k}={repr(v)}" for k, v in self.kwargs.items()]
+        return f"{self.__class__.__name__}: `{self.func.__name__}({', '.join(args_repr + kwargs_repr)})`"
+
+    def __repr__(self):
+        return str(self)
+
+def combine_result_csvs_wrapper(args : Union[List, Tuple, Dict], execute : bool=True, device : Any=None, **kwargs) -> str:
+    if isinstance(args, (list, tuple)):
+        deferred_call = DeferredCall(combine_result_csvs, *args)
+    elif isinstance(args, dict):
+        deferred_call = DeferredCall(combine_result_csvs, **args)
+    else:
+        raise TypeError(f"Expected args to be a list, tuple or dict, not {type(args)}.")
+    if execute:
+        return deferred_call()
+    else:
+        return deferred_call
 
 if __name__ == "__main__":
     
     arg_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-    arg_parse.add_argument("-d", "--directory", dest="directory", help="A directory or glob to directories containing separate subdirectories for each model to evaluate.", type=str)
-    arg_parse.add_argument("-g", "--ground_truth", dest="ground_truth", help="The path to the ground truth file.", type=str)
-    arg_parse.add_argument("-i", "--input", dest="input", help="A directory containing the data to evaluate the models on.", type=str)
+    arg_parse.add_argument("-d", "--directory", dest="directory", help="A directory or glob to directories containing separate subdirectories for each model to evaluate.", type=str, required=True)
+    arg_parse.add_argument("-g", "--ground_truth", dest="ground_truth", help="The path to the ground truth file.", type=str, required=True)
+    arg_parse.add_argument("-i", "--input", dest="input", help="A directory containing the data to evaluate the models on.", type=str, required=True)
+    arg_parse.add_argument("-o", "--output", dest="output", help="Override the directory where the results will be saved.", type=str, required=False)
     arg_parse.add_argument("--input_pattern", dest="input_pattern", help="The pattern to use for selecting the input files. Defaults to selecting all files.", type=str)
     arg_parse.add_argument("--weight_pattern", dest="weight_pattern", help="The pattern to use for selecting the weight files. Defaults to 'best' when all_weights is not set, otherwise all files are selected.", type=str)
     arg_parse.add_argument("--config", dest="config", help="The path to the config file.", type=str, required=False)
@@ -214,9 +269,20 @@ if __name__ == "__main__":
     arg_parse.add_argument("--name", dest="name", help="The name of comparison.", type=str, default="")
     arg_parse.add_argument("--slurm", dest="slurm", help="If set, the evaluation will be run on a SLURM cluster.", action="store_true")
     arg_parse.add_argument("--partition", dest="partition", help="The SLURM partition to use for the evaluation.", type=str)
-    args = arg_parse.parse_args()
+    args, extra = arg_parse.parse_known_args()
+    try:
+        extra = parse_unknown_arguments(extra)
+    except ValueError as e:
+        raise ValueError(
+                f"Error parsing extra arguments: `{' '.join(extra)}`. {e}\n\n"
+                f"{arg_parse.format_help()}"
+        )
     if args.slurm and args.partition is None:
         raise ValueError("SLURM partition must be set when using SLURM.")
+    
+    if not args.output is None:
+        assert os.path.exists(args.output) and os.path.isdir(args.output), f'Output directory not found: {args.output}'
+        RESULT_DIR = args.output 
 
     # Get the model director(y/ies)
     model_directories = glob.glob(args.directory)
@@ -257,8 +323,8 @@ if __name__ == "__main__":
             if args.weight_pattern is None:
                 args.weight_pattern = "best"
             all_weight_files = [file for file in all_weight_files if re.search(args.weight_pattern, file)]
-            assert len(all_weight_files) == 1, f'Exactly one best weight file should be found. Found: {len(all_weight_files)}.'
-            weight_ids = [""]
+            # assert len(all_weight_files) == 1, f'Exactly one best weight file should be found. Found: {len(all_weight_files)}.'
+            weight_ids = ["" for file in all_weight_files]
 
         for weight_file, id in zip(all_weight_files, weight_ids):
             # Get the result directory path for the current model and weight file
@@ -281,7 +347,7 @@ if __name__ == "__main__":
                 "weights" : os.path.abspath(weight_file), 
                 "directory" : os.path.abspath(data_directory), 
                 "output_directory" : os.path.abspath(this_result_dir),
-                "config" : os.path.abspath(config_file),
+                "config" : os.path.abspath(config_file) if config_file is not None else config_file,
                 "local_directory" : os.path.abspath(args.ground_truth),
                 "pattern" : args.input_pattern,
                 "dry_run" : args.dry_run,
@@ -290,6 +356,12 @@ if __name__ == "__main__":
             # Add the evaluation parameters to the producer-consumer queue for asynchronous evaluation
             all_eval_params.append(eval_params)
     
-    runner = ExperimentRunner(eval_model_wrapper, all_eval_params, devices=args.device, slurm=args.slurm, slurm_params=read_slurm_params(args.partition))
-    runner.run()
-    runner.complete()
+    all_result_directories = []
+    [all_result_directories.extend(dirs) for dirs in result_directories.values()]
+
+    runner = ExperimentRunner(eval_model_wrapper, all_eval_params, devices=args.device, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition, **extra))
+    runner.run().complete()
+
+    extra.update({"dependency" : f'afterok:{runner.slurm_job_id}', "cpus_per_task" : 1})
+    finalizer = ExperimentRunner(combine_result_csvs_wrapper, [[all_result_directories, os.path.join(RESULT_DIR, args.name), args.dry_run]], devices=args.device, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition, **extra))
+    finalizer.run().complete()

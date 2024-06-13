@@ -12,7 +12,10 @@ DEFAULT_CONFIG = os.path.join(BASE_PATH, "default.yaml")
 set_default_config(DEFAULT_CONFIG)
 
 if __name__ == "__main__":
-    args = get_cmd_args()
+    args, extra = get_cmd_args()
+
+    if "dependency" in extra:
+        print("WARNING: Use of the --dependency flag for this script is slightly non-standard. The initial training array job will be run with the dependency, but the fine-tuning jobs will not, although they will themselves depend on the training array job.")
 
     # Filter out the prospective datasets
     relevant_datasets = [] # ["01-partial-AMI-traps"] # [d for d in DATASETS if not re.search("00-prospective", d)]
@@ -42,9 +45,10 @@ if __name__ == "__main__":
         fine_tuning_configs[name] = fine_tune_config
 
     # First run the full training
-    main_experiment_runner = ExperimentRunner(inputs=experiment_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition))
+    main_experiment_runner = ExperimentRunner(inputs=experiment_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition, **extra))
     main_experiment_runner.run().complete()
 
     # Then run the fine-tuning training 
-    finetune_experiment_runner = ExperimentRunner(inputs=fine_tuning_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition, dependency=f'afterok:{main_experiment_runner.slurm_job_id}'))
+    extra.update({"dependency" : f'afterok:{main_experiment_runner.slurm_job_id}'})
+    finetune_experiment_runner = ExperimentRunner(inputs=fine_tuning_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition, **extra))
     finetune_experiment_runner.run().complete()

@@ -1,4 +1,4 @@
 nodes: 1 # Number of nodes
-cpus_per_task: 32 # Number of CPU cores per task/job
-mem_gb: 32 # Memory in gb
+cpus_per_task: 20 # Number of CPU cores per task/job
+mem_gb: 32 # CPU memory
 timeout_min: 1440 # Timelimit in minutes
