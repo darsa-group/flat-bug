@@ -38,11 +38,22 @@ if __name__ == "__main__":
     for name, config in experiment_configs.items():
         fine_tune_config = config.copy()
         fine_tune_config["name"] = f"{BASE_NAME}_fine_tune_{name}"
-        fine_tune_config["model"] = f"./runs/segment/{name}/weights/best.pt"
+        fine_tune_config["model"] = os.path.join(fine_tune_config["project"], name, "weights", "best.pt")
         fine_tune_config["fb_exclude_datasets"] = [d for d in fine_tune_config["fb_exclude_datasets"] if d != name]
         fine_tune_config["epochs"] = 10
         fine_tune_config["resume"] = True
         fine_tuning_configs[name] = fine_tune_config
+
+    if "cpus_per_task" in extra and extra["cpus_per_task"] >= full_config["workers"] + 1:
+        n_workers = extra["cpus_per_task"]
+    else:
+        n_workers = full_config["workers"] + 1
+        if "cpus_per_task" in extra:
+            print(f"WARNING: Requested cpus_per_task ({extra['cpus_per_task']}) is less than the required number of workers ({n_workers}). Ignoring the cpus_per_task parameter and continuing with {n_workers} workers.")
+    
+    extra.update({"cpus_per_task" : n_workers})
+    if not "job_name" in extra:
+        extra.update({"job_name" : BASE_NAME})
 
     # First run the full training
     main_experiment_runner = ExperimentRunner(inputs=experiment_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition, **extra))

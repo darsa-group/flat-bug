@@ -1,12 +1,12 @@
-batch: 8
+batch: 16
 model: "./yolov8m-seg.pt"
-epochs: 1000
+epochs: 5000
 device: "cuda:0"
-patience: 9999
+patience: 50
 lr0: 0.001
 lrf: 0.00001
 optimizer: 'SGD'
-workers: 32
+workers: 64
 fb_max_instances: 9999
 fb_max_images: -1
 fb_custom_eval: false

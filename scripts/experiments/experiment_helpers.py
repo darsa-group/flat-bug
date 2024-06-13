@@ -6,6 +6,8 @@ from typing import Self, Optional, Union, List, Tuple, Dict, Any, Callable, Iter
 
 import queue, threading, submitit
 
+from submitit.slurm.slurm import _get_default_parameters as _default_submitit_slurm_params
+
 DATADIR = "<UNSET>"
 DATASETS = [
     '00-prospective-ALUS-mixed', '00-prospective-InsectCV', '00-prospective-chavez2024', '00-prospective-crall2023', 
@@ -21,6 +23,8 @@ DATASETS = [
     'ubc-pitfall-traps', 'ubc-scanned-sticky-cards'
 ]
 DEFAULT_CONFIG = "<UNSET>"
+PROJECTDIR = "<UNSET>"
+OUTPUTDIR = "<UNSET>"
 
 def set_datadir(datadir : str):
     global DATADIR
@@ -29,6 +33,10 @@ def set_datadir(datadir : str):
     if not os.path.exists(datadir):
         raise ValueError(f"Data directory {datadir} does not exist.")
     DATADIR = datadir
+
+def set_projectdir(projectdir : str):
+    global PROJECTDIR
+    PROJECTDIR = projectdir
 
 def set_default_config(config : str):
     global DEFAULT_CONFIG
@@ -40,6 +48,8 @@ def get_config() -> Dict[str, Any]:
         raise RuntimeError("The default config file has not been set. Use `experiment__helpers.set_default_config()` to set it.")
     with open(DEFAULT_CONFIG, "r") as conf:
         config = yaml.load(conf, Loader=yaml.FullLoader)
+    if PROJECTDIR != "<UNSET>":
+        config["project"] = PROJECTDIR
 
     return config
 
@@ -127,14 +137,33 @@ def split_by_sample(files : List[str]) -> Dict[str, List[str]]:
 
 TMP_DIR = "<UNSET>"
 
+def set_temp_config_dir(**kwargs):
+    global TMP_DIR
+    TMP_DIR = tempfile.mkdtemp(**kwargs)
+
 def get_temp_config_dir() -> str:
     global TMP_DIR
     if TMP_DIR == "<UNSET>":
-        TMP_DIR = tempfile.mkdtemp(prefix="fb_tmp_experiment_configs_", dir=os.environ["HOME"])
+        set_temp_config_dir(dir=os.environ["HOME"], prefix="fb_tmp_experiment_configs_")
     return TMP_DIR
 
 def get_temp_config_path() -> str:
     return tempfile.NamedTemporaryFile(dir=get_temp_config_dir(), mode="w", delete=False).name
+
+def set_outputdir(outputdir : str):
+    global OUTPUTDIR
+    OUTPUTDIR = outputdir
+    set_projectdir(outputdir)
+    set_temp_config_dir(dir=outputdir, prefix="fb_tmp_experiment_configs_")
+
+def get_outputdir(strict : bool=True) -> str:
+    global OUTPUTDIR
+    if OUTPUTDIR == "<UNSET>":
+        if strict:
+            raise RuntimeError("The output directory has not been set. Use `experiment_helpers.set_outputdir(<path>)` to set it.")
+        else:
+            return False
+    return OUTPUTDIR
 
 def clean_temporary_dir():
     global TMP_DIR
@@ -201,6 +230,7 @@ def get_cmd_args() -> Tuple[Namespace, Dict[str, str]]:
     """
     args_parse = HelpfulArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     args_parse.add_argument("-i", "--datadir", help="The directory containing the data.", required=True)
+    args_parse.add_argument("-o", "--output", dest="output", help="The directory to save the output.", required=False)
     args_parse.add_argument("--devices", "--device", nargs="+", help="The GPU(s) to use for the experiments.", default=0)
     args_parse.add_argument("--slurm", action="store_true", help="Use SLURM for the experiments.")
     args_parse.add_argument("-p", "--partition", help="The SLURM partition to use. MUST be specified when using --slurm.")
@@ -236,7 +266,14 @@ def get_cmd_args() -> Tuple[Namespace, Dict[str, str]]:
                 "SLURM partition must be specified when using SLURM.\n\n"
                 f"{args_parse.format_help()}"
             )
-    set_datadir(args.datadir)
+    if not args.output is None:
+        args.output = os.path.abspath(args.output)
+    if not args.output is None:
+        project_dir = args.output
+    else:
+        project_dir = os.path.abspath("./runs/segment")
+    set_projectdir(project_dir)
+    set_outputdir(args.datadir)
     return args, extra
 
 def read_slurm_params(
@@ -263,12 +300,24 @@ def read_slurm_params(
         params : Dict = yaml.safe_load(f)
     params["partition"] = partition
     params.update(kwargs)
+
+    ## THIS IS NOT NECESSARY AFTER SWITCHING FROM `submitit.AutoExecutor` TO `submitit.SlurmExecutor`
     # As a reminder, shared/generic (non-prefixed) parameters are: {'name': <class 'str'>, 'timeout_min': <class 'int'>, 'mem_gb': <class 'float'>, 'nodes': <class 'int'>, 'cpus_per_task': <class 'int'>, 'gpus_per_node': <class 'int'>, 'tasks_per_node': <class 'int'>, 'stderr_to_stdout': <class 'bool'>}.
     # Change all non-shared parameters to have the 'slurm_' prefix
-    shared_params = ['name', 'timeout_min', 'mem_gb', 'nodes', 'cpus_per_task', 'gpus_per_node', 'tasks_per_node', 'stderr_to_stdout']
+    # shared_params = ['name', 'timeout_min', 'mem_gb', 'nodes', 'cpus_per_task', 'gpus_per_node', 'tasks_per_node', 'stderr_to_stdout']
+    # for key in list(params.keys()):
+    #     if key not in shared_params:
+    #         params[f"slurm_{key}"] = params.pop(key)
+    #### END OF NOT NECESSARY
+
+    available_params = _default_submitit_slurm_params().keys()
+    additional_params = dict()
     for key in list(params.keys()):
-        if key not in shared_params:
-            params[f"slurm_{key}"] = params.pop(key)
+        if key not in available_params:
+            additional_params[key] = params.pop(key)
+    if additional_params:
+        params["additional_parameters"] = additional_params
+
     return params
 
 def do_yolo_train_run(
@@ -363,7 +412,8 @@ class ExperimentRunner:
         self.slurm = slurm
         self.slurm_params = slurm_params
         if slurm:
-            self.executor = submitit.AutoExecutor(folder=os.path.join(os.getcwd(), "slurm_logs"), slurm_max_num_timeout=0)
+            slurm_folder = os.path.join(os.getcwd(), "slurm_logs") if get_outputdir(strict=False) is False else os.path.join(get_outputdir(), "slurm_logs")
+            self.executor = submitit.SlurmExecutor(folder=slurm_folder, max_num_timeout=0)
             self.executor.update_parameters(**slurm_params)
 
         # Initialize consumer/job lists

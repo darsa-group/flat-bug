@@ -18,14 +18,16 @@ if __name__ == "__main__":
     config["model"] = backbone_path
     config["name"] = f"{BASE_NAME}_{backbone_size}"
 
-    if "cpus_per_task" in extra and extra["cpus_per_task"] > config["workers"] + 1:
+    if "cpus_per_task" in extra and extra["cpus_per_task"] >= config["workers"]:
         n_workers = extra["cpus_per_task"]
     else:
-        n_workers = config["workers"] + 1
+        n_workers = config["workers"]
         if "cpus_per_task" in extra:
             print(f"WARNING: Requested cpus_per_task ({extra['cpus_per_task']}) is less than the required number of workers ({n_workers}). Ignoring the cpus_per_task parameter and continuing with {n_workers} workers.")
     
     extra.update({"cpus_per_task" : n_workers})
+    if not "job_name" in extra:
+        extra.update({"job_name" : BASE_NAME})
     experiment_runner = ExperimentRunner(inputs=[config], devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition, **extra))
     experiment_runner.run().complete()
     

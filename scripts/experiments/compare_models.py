@@ -359,6 +359,9 @@ if __name__ == "__main__":
     all_result_directories = []
     [all_result_directories.extend(dirs) for dirs in result_directories.values()]
 
+    if not "job_name" in extra:
+        extra.update({"job_name" : f'compare_models{"_" if args.name else ""}{args.name}'})
+
     runner = ExperimentRunner(eval_model_wrapper, all_eval_params, devices=args.device, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition, **extra))
     runner.run().complete()
 
