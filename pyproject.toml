@@ -20,7 +20,7 @@ dependencies = [
     "torch>=2.2.0",
     "torchvision>=0.17.0",
     "ultralytics>=8.2.16",
-    "shapely>=2.0.4",
+    "shapely>=2.0.2",
     "scikit-optimize>=0.10.1",
     "pyexiftool>=0.5.6"
 ]
