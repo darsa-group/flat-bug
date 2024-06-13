@@ -19,6 +19,8 @@ from ultralytics.utils.ops import resample_segments
 
 from flat_bug.datasets import train_augmentation_pipeline, validation_augmentation_pipeline
 
+from .remote_lfs_fallback import check_file_with_remote_fallback
+
 TEST_HYP = {
     "hsv_h": 0.5,
     "hsv_s": 0.5,
@@ -39,6 +41,8 @@ ASSET_NAME = "ALUS_Non-miteArachnids_Unknown_2020_11_03_4545"
 
 TEST_IMG = os.path.join(ASSET_DIR, ASSET_NAME + ".jpg")
 TEST_LABEL = os.path.join(ASSET_DIR, ASSET_NAME + ".txt")
+check_file_with_remote_fallback(TEST_IMG)
+check_file_with_remote_fallback(TEST_LABEL)
 
 def generate_train_augmentation_pipeline(hyp):
     hyp = IterableSimpleNamespace(**hyp)

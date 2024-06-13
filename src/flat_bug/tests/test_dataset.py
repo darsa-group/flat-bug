@@ -16,12 +16,16 @@ from ultralytics.utils.plotting import plot_images
 
 from flat_bug.datasets import MyYOLODataset, MyYOLOValidationDataset
 
+from .remote_lfs_fallback import check_file_with_remote_fallback
+
 TEST_DIR = os.path.dirname(__file__)
 ASSET_DIR = os.path.join(TEST_DIR, "assets")
 ASSET_NAME = "ALUS_Non-miteArachnids_Unknown_2020_11_03_4545"
 
 IMAGE_ASSET = os.path.join(ASSET_DIR, ASSET_NAME + ".jpg")
 LABEL_ASSET = os.path.join(ASSET_DIR, ASSET_NAME + ".txt")
+check_file_with_remote_fallback(IMAGE_ASSET)
+check_file_with_remote_fallback(LABEL_ASSET)
 
 ASSET_DATA = {
     "names": ["insect"],
