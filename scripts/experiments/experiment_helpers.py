@@ -39,7 +39,7 @@ def set_projectdir(projectdir : str):
     if projectdir == "<UNSET>":
         raise ValueError("Project directory must be set to other than '<UNSET>'.")
     if not os.path.exists(projectdir):
-        os.makedirs(projectdir, exists_ok=True)
+        os.makedirs(projectdir, exist_ok=True)
     PROJECT_DIR = projectdir
 
 def set_default_config(config : str):
@@ -145,7 +145,7 @@ def set_temp_config_dir(**kwargs):
     global TMP_DIR
     if "dir" in kwargs:
         if not os.path.exists(kwargs["dir"]):
-            os.makedirs(kwargs["dir"], exists_ok=True)
+            os.makedirs(kwargs["dir"], exist_ok=True)
     TMP_DIR = tempfile.mkdtemp(**kwargs)
 
 def get_temp_config_dir() -> str:
@@ -162,7 +162,7 @@ def set_outputdir(outputdir : str):
     if outputdir == "<UNSET>":
         raise ValueError("Output directory must be set to other than '<UNSET>'.")
     if not os.path.exists(outputdir):
-        os.makedirs(outputdir, exists_ok=True)
+        os.makedirs(outputdir, exist_ok=True)
     OUTPUT_DIR = outputdir
     set_projectdir(outputdir)
     set_temp_config_dir(dir=outputdir, prefix="fb_tmp_experiment_configs_")
