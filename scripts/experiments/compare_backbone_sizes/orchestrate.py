@@ -26,10 +26,10 @@ if __name__ == "__main__":
         this_config["model"] = backbone_paths[size]
         experiment_configs.append(this_config)
 
-    if "cpus_per_task" in extra and extra["cpus_per_task"] >= experiment_configs[0]["workers"] + 1:
+    if "cpus_per_task" in extra and extra["cpus_per_task"] >= experiment_configs[0]["workers"]:
         n_workers = extra["cpus_per_task"]
     else:
-        n_workers = experiment_configs[0]["workers"] + 1
+        n_workers = experiment_configs[0]["workers"]
         if "cpus_per_task" in extra:
             print(f"WARNING: Requested cpus_per_task ({extra['cpus_per_task']}) is less than the required number of workers ({n_workers}). Ignoring the cpus_per_task parameter and continuing with {n_workers} workers.")
     
