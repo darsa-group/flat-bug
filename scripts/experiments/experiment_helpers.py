@@ -8,7 +8,7 @@ import queue, threading, submitit
 
 from submitit.slurm.slurm import _get_default_parameters as _default_submitit_slurm_params
 
-DATADIR = "<UNSET>"
+DATA_DIR = "<UNSET>"
 DATASETS = [
     '00-prospective-ALUS-mixed', '00-prospective-InsectCV', '00-prospective-chavez2024', '00-prospective-crall2023', 
     '01-partial-AMI-traps', '01-partial-Diopsis', '01-partial-NHM-beetles-crops', '01-partial-abram2023', '01-partial-gernat2018', 
@@ -23,20 +23,20 @@ DATASETS = [
     'ubc-pitfall-traps', 'ubc-scanned-sticky-cards'
 ]
 DEFAULT_CONFIG = "<UNSET>"
-PROJECTDIR = "<UNSET>"
-OUTPUTDIR = "<UNSET>"
+PROJECT_DIR = "<UNSET>"
+OUTPUT_DIR = "<UNSET>"
 
 def set_datadir(datadir : str):
-    global DATADIR
+    global DATA_DIR
     if datadir == "<UNSET>":
         raise ValueError("Data directory cannot must be set to other than '<UNSET>'.")
     if not os.path.exists(datadir):
         raise ValueError(f"Data directory {datadir} does not exist.")
-    DATADIR = datadir
+    DATA_DIR = datadir
 
 def set_projectdir(projectdir : str):
-    global PROJECTDIR
-    PROJECTDIR = projectdir
+    global PROJECT_DIR
+    PROJECT_DIR = projectdir
 
 def set_default_config(config : str):
     global DEFAULT_CONFIG
@@ -48,8 +48,8 @@ def get_config() -> Dict[str, Any]:
         raise RuntimeError("The default config file has not been set. Use `experiment__helpers.set_default_config()` to set it.")
     with open(DEFAULT_CONFIG, "r") as conf:
         config = yaml.load(conf, Loader=yaml.FullLoader)
-    if PROJECTDIR != "<UNSET>":
-        config["project"] = PROJECTDIR
+    if PROJECT_DIR != "<UNSET>":
+        config["project"] = PROJECT_DIR
 
     return config
 
@@ -151,19 +151,19 @@ def get_temp_config_path() -> str:
     return tempfile.NamedTemporaryFile(dir=get_temp_config_dir(), mode="w", delete=False).name
 
 def set_outputdir(outputdir : str):
-    global OUTPUTDIR
-    OUTPUTDIR = outputdir
+    global OUTPUT_DIR
+    OUTPUT_DIR = outputdir
     set_projectdir(outputdir)
     set_temp_config_dir(dir=outputdir, prefix="fb_tmp_experiment_configs_")
 
 def get_outputdir(strict : bool=True) -> str:
-    global OUTPUTDIR
-    if OUTPUTDIR == "<UNSET>":
+    global OUTPUT_DIR
+    if OUTPUT_DIR == "<UNSET>":
         if strict:
-            raise RuntimeError("The output directory has not been set. Use `experiment_helpers.set_outputdir(<path>)` to set it.")
+            raise RuntimeError("The output directory has not been set. Use `experiment_helpers.set_OUTPUT_DIR(<path>)` to set it.")
         else:
             return False
-    return OUTPUTDIR
+    return OUTPUT_DIR
 
 def clean_temporary_dir():
     global TMP_DIR
@@ -272,8 +272,8 @@ def get_cmd_args() -> Tuple[Namespace, Dict[str, str]]:
         project_dir = args.output
     else:
         project_dir = os.path.abspath("./runs/segment")
-    set_projectdir(project_dir)
-    set_outputdir(args.datadir)
+    set_outputdir(project_dir)
+    set_datadir(args.datadir)
     return args, extra
 
 def read_slurm_params(
@@ -338,8 +338,8 @@ def do_yolo_train_run(
     Returns:
         str: The (executed) command (to run).
     """
-    global DATADIR
-    if DATADIR == "<UNSET>":
+    global DATA_DIR
+    if DATA_DIR == "<UNSET>":
         raise RuntimeError("The data directory has not been set. Use `experiment_helpers.set_datadir(<path>)` to set it.")
     ITEMIZE = '\n  - '
 
@@ -353,7 +353,7 @@ def do_yolo_train_run(
         yaml.dump(config, conf, default_flow_style=False, sort_keys=False)
     
     print(f"Running experiment: {config['name']} with config:{ITEMIZE + ITEMIZE.join([f'{k}: {v}' for k, v in config.items()])}")
-    command = f'fb_train -c "{config_path}" -d "{DATADIR}"'
+    command = f'fb_train -c "{config_path}" -d "{DATA_DIR}"'
     if execute:
         if dry_run:
             print(command)
