@@ -2,6 +2,7 @@ batch: 16
 model: "./yolov8n-seg.pt"
 epochs: 100
 device: 0
+save_period: 25
 patience: 9999
 lr0: 0.001
 lrf: 0.00001

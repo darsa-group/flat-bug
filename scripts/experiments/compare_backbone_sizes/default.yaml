@@ -1,7 +1,8 @@
 batch: 16
 model: "./yolov8m-seg.pt"
 epochs: 200
-device: "cuda:0"
+device: 0
+save_period: 25
 patience: 9999
 lr0: 0.001
 lrf: 0.00001
