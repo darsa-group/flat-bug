@@ -268,7 +268,6 @@ if __name__ == "__main__":
     arg_parse.add_argument("--ignore_existing", dest="ignore_existing", help="If set, existing result directories will be ignored.", action="store_true")
     arg_parse.add_argument("--name", dest="name", help="The name of comparison.", type=str, default="")
     arg_parse.add_argument("--slurm", dest="slurm", help="If set, the evaluation will be run on a SLURM cluster.", action="store_true")
-    arg_parse.add_argument("--partition", dest="partition", help="The SLURM partition to use for the evaluation.", type=str)
     args, extra = arg_parse.parse_known_args()
     try:
         extra = parse_unknown_arguments(extra)
@@ -277,9 +276,6 @@ if __name__ == "__main__":
                 f"Error parsing extra arguments: `{' '.join(extra)}`. {e}\n\n"
                 f"{arg_parse.format_help()}"
         )
-    if args.slurm and args.partition is None:
-        raise ValueError("SLURM partition must be set when using SLURM.")
-    
     if not args.output is None:
         assert os.path.exists(args.output) and os.path.isdir(args.output), f'Output directory not found: {args.output}'
         RESULT_DIR = args.output 
@@ -362,9 +358,9 @@ if __name__ == "__main__":
     if not "job_name" in extra:
         extra.update({"job_name" : f'compare_models{"_" if args.name else ""}{args.name}'})
 
-    runner = ExperimentRunner(eval_model_wrapper, all_eval_params, devices=args.device, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition, **extra))
+    runner = ExperimentRunner(eval_model_wrapper, all_eval_params, devices=args.device, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(**extra))
     runner.run().complete()
 
     extra.update({"dependency" : f'afterok:{runner.slurm_job_id}', "cpus_per_task" : 1})
-    finalizer = ExperimentRunner(combine_result_csvs_wrapper, [[all_result_directories, os.path.join(RESULT_DIR, args.name), args.dry_run]], devices=args.device, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition, **extra))
+    finalizer = ExperimentRunner(combine_result_csvs_wrapper, [[all_result_directories, os.path.join(RESULT_DIR, args.name), args.dry_run]], devices=args.device, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(**extra))
     finalizer.run().complete()

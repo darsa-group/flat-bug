@@ -232,9 +232,7 @@ def get_cmd_args() -> Tuple[Namespace, Dict[str, str]]:
         --dry-run: Print the experiment configurations without running them.
         --devices: The GPU(s) to use for the experiments.
         --slurm: Use SLURM for the experiments.
-        -p, --partition: The SLURM partition to use. Must be specified when using SLURM.
-
-
+        ... and any additional SBATCH arguments to pass to the experiments. Only relevant if using --slurm.
 
     Returns:
         argparse.Namespace: The parsed command line arguments.
@@ -244,17 +242,16 @@ def get_cmd_args() -> Tuple[Namespace, Dict[str, str]]:
     args_parse.add_argument("-o", "--output", dest="output", help="The directory to save the output.", required=False)
     args_parse.add_argument("--devices", "--device", nargs="+", help="The GPU(s) to use for the experiments.", default=0)
     args_parse.add_argument("--slurm", action="store_true", help="Use SLURM for the experiments.")
-    args_parse.add_argument("-p", "--partition", help="The SLURM partition to use. MUST be specified when using --slurm.")
     args_parse.add_argument("--dry-run", "--dry_run", dest="dry_run", action="store_true", help="Print the experiment configurations without running them.")
     args_parse.add_argument(
         "--do-not-specify-extra",
         dest="extra",
         nargs=argparse.REMAINDER, 
         help=\
-            "Extra arguments to pass to the experiments. DO NOT ACTUALLY SPECIFY --do-not-specify-extra, just pass the arguments after the other arguments.\n"
+            "Extra SBATCH arguments to pass to the experiments. DO NOT ACTUALLY SPECIFY --do-not-specify-extra, just pass the arguments after the other arguments.\n"
             "Extra must be passed as named arguments in the form `--key value`, `-key value` or `key=value`.\n"
             "For most experiments these will be passed as SLURM parameter overrides, for example you could specify:\n"
-            "`python <some_script.py> -i <DIR> --slurm -p <PARTITION> --dependency afterok:<JOB_ID>`."
+            "`python <some_script.py> -i <DIR> --slurm --partition <PARTITION> --dependency afterok:<JOB_ID>`."
     )
     args, extra = args_parse.parse_known_args()
     try:
@@ -272,11 +269,6 @@ def get_cmd_args() -> Tuple[Namespace, Dict[str, str]]:
                 f"\t{probable_desired_command}\n\n"
                 f"{args_parse.format_help()}"
             )
-    if args.slurm and args.partition is None:
-        raise ValueError(
-                "SLURM partition must be specified when using SLURM.\n\n"
-                f"{args_parse.format_help()}"
-            )
     if not args.output is None:
         args.output = os.path.abspath(args.output)
     if not args.output is None:
@@ -288,19 +280,15 @@ def get_cmd_args() -> Tuple[Namespace, Dict[str, str]]:
     return args, extra
 
 def read_slurm_params(
-        partition : str, 
         path : Optional[str] = os.path.join(os.path.dirname(__file__), "default_slurm_params.yaml"),
         **kwargs
     ) -> Dict[str, Any]:
     """
     Simple wrapper to read SLURM parameters from a YAML file, or use the default SLURM parameters if not supplied.
 
-    The partition must be specified, as it is not included in the default SLURM parameters due to it being cluster-specific.
-
     Args:
-        partition (str): The SLURM partition to use.
         path (Optional[str]): The path to the SLURM parameters YAML file. Default and None is "default_slurm_params.yaml" in the same directory as this script.
-        **kwargs: Additional keyword arguments to pass to the SLURM parameters. These will override the parameters in the YAML file if they are also present.
+        **kwargs: Additional keyword arguments to pass to the SLURM parameters (e.g. partition). These will override the parameters in the YAML file if they are also present.
 
     Returns:
         Dict[str, Any]: The SLURM parameters. The keys are prefixed with 'slurm_', necessary for the submitit executor.
@@ -309,7 +297,6 @@ def read_slurm_params(
         path = os.path.join(os.path.dirname(__file__), "default_slurm_params.yaml")
     with open(path, "r") as f:
         params : Dict = yaml.safe_load(f)
-    params["partition"] = partition
     params.update(kwargs)
 
     ## THIS IS NOT NECESSARY AFTER SWITCHING FROM `submitit.AutoExecutor` TO `submitit.SlurmExecutor`

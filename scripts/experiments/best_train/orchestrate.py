@@ -28,6 +28,6 @@ if __name__ == "__main__":
     extra.update({"cpus_per_task" : n_workers})
     if not "job_name" in extra:
         extra.update({"job_name" : BASE_NAME})
-    experiment_runner = ExperimentRunner(inputs=[config], devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(args.partition, **extra))
+    experiment_runner = ExperimentRunner(inputs=[config], devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(**extra))
     experiment_runner.run().complete()
     
