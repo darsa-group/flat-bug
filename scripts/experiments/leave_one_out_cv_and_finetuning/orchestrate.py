@@ -1,5 +1,5 @@
 
-import os, sys
+import os, sys, re
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 from scripts.experiments.experiment_helpers import DATASETS, set_default_config, get_config, get_cmd_args, read_slurm_params, ExperimentRunner
 
@@ -18,7 +18,7 @@ if __name__ == "__main__":
         print("WARNING: Use of the --dependency flag for this script is slightly non-standard. The initial training array job will be run with the dependency, but the fine-tuning jobs will not, although they will themselves depend on the training array job.")
 
     # Filter out the prospective datasets
-    relevant_datasets = [] # ["01-partial-AMI-traps"] # [d for d in DATASETS if not re.search("00-prospective", d)]
+    relevant_datasets = [d for d in DATASETS if not re.search("00-prospective", d)]
 
     # Create the base configs for the full and leave-one-out experiments
     full_config = get_config()
