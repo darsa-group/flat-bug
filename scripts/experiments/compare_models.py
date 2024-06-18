@@ -317,7 +317,7 @@ if __name__ == "__main__":
             weight_ids = [os.path.basename(file).split(".")[0] for file in all_weight_files]
         else:
             if args.weight_pattern is None:
-                args.weight_pattern = "best"
+                args.weight_pattern = "best\.pt"
             all_weight_files = [file for file in all_weight_files if re.search(args.weight_pattern, file)]
             # assert len(all_weight_files) == 1, f'Exactly one best weight file should be found. Found: {len(all_weight_files)}.'
             weight_ids = ["" for file in all_weight_files]

@@ -32,7 +32,6 @@ def main():
         "cache": "ram"
     }
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-
     args_parse.add_argument("-d", "--data-dir", dest="data_dir",
                             help="The directory containing the prepared data (i.e., the output of  `fb_prepare.py`",
                             type=str)
@@ -45,7 +44,24 @@ def main():
                             action='store_true')
 
 
-    args = args_parse.parse_args()
+    args, extra = args_parse.parse_known_args()
+    cli_overrides = {}
+    for key, value in zip(extra[::2], extra[1::2]):
+        if not key.startswith("--"):
+            raise ValueError(f"Unknown argument: {key}\n" + args_parse.format_help())
+        key = key.removeprefix("--")
+        if not key in DEFAULT_CONF:
+            raise ValueError(f"Unknown argument: {key}\n" + args_parse.format_help())
+        if key.startswith("fb_"):
+            raise ValueError(f"Options starting with 'fb_' should be specified in the config file, not as command line arguments")
+        # fixme: probably unsafe...
+        try:
+            value = eval(value)
+        except:
+            pass
+
+        cli_overrides[key] = value
+        
     option_dict = vars(args)
 
     assert os.path.isdir(option_dict["data_dir"])

@@ -239,7 +239,10 @@ class MySegmentationTrainer(SegmentationTrainer):
         ckpt = None
         if str(model).endswith('.pt'):
             weights, ckpt = attempt_load_one_weight(model)
-            cfg = ckpt['model'].yaml
+            if hasattr(ckpt['model'], 'yaml'):
+                cfg = ckpt['model'].yaml
+            else:
+                cfg = weights.yaml
         else:
             cfg = model
         self.model = self.get_model(cfg=cfg, weights=weights, verbose=RANK == -1)  # calls Model(cfg, weights)
