@@ -651,26 +651,29 @@ class TensorPredictions:
 
     def save_crops(
             self, 
-            outdir : str=None, 
-            basename : str=None, 
+            outdir : Optional[str]=None, 
+            basename : Optional[str]=None, 
             mask : bool=False, 
             identifier : str=None
-        ):
-        if basename is None:
-            assert self.image_path is not None, RuntimeError("Cannot save crops without image_path")
-            basename, _ = os.path.splitext(os.path.basename(self.image_path))
-        assert outdir is not None, RuntimeError("Cannot save crops without outpath")
-        assert os.path.isdir(outdir), RuntimeError(f"outpath {outdir} is not a directory")
-        _, image_ext = os.path.splitext(os.path.basename(self.image_path))
-        if mask:
-            image_ext = ".png"
+        ) -> List[Union[str, torch.Tensor]]:
+        do_save = outdir is not None
+        if do_save:
+            if basename is None:
+                assert self.image_path is not None, RuntimeError("Cannot save crops without image_path")
+                basename, _ = os.path.splitext(os.path.basename(self.image_path))
+            assert outdir is not None, RuntimeError("Cannot save crops without outpath")
+            assert os.path.isdir(outdir), RuntimeError(f"outpath {outdir} is not a directory")
+            _, image_ext = os.path.splitext(os.path.basename(self.image_path))
+            if mask:
+                image_ext = ".png"
+
+        crops = []
 
         contours = self.contours
         # For each bounding box, save the corresponding crop
         for i, (_box, _mask) in enumerate(zip(self.boxes, self.masks)):
             # Define name of the crop 
             x1, y1, x2, y2 = _box.long().cpu().tolist()
-            crop_name = f"crop_{basename}_CROPNUMBER_{i}_UUID_{identifier}{image_ext}"
             # Extract the crop from the image tensor
             crop = self.image[:, y1:y2, x1:x2] / 255.0
             # Optionally add the mask as an alpha channel
@@ -685,8 +688,18 @@ class TensorPredictions:
                 else:
                     scaled_mask = resize_mask(_mask.data, self.image.shape[1:])[:, y1:y2, x1:x2]
                 crop = torch.cat((crop, scaled_mask.to(self.dtype)), dim=0)
-            # Save the crop
-            torchvision.utils.save_image(crop, os.path.join(outdir, crop_name))
+
+            if do_save:
+                # Save the crop
+                crop_name = f"crop_{basename}_CROPNUMBER_{i}_UUID_{identifier}{image_ext}"
+                this_crop_path = os.path.join(outdir, crop_name)
+                torchvision.utils.save_image(crop, this_crop_path)
+                crops.append(this_crop_path)
+            else:
+                # Add the crop to the list
+                crops.append(crop)
+        
+        return crops
 
     @property
     def json_data(self):
