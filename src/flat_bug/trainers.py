@@ -252,7 +252,7 @@ class MySegmentationTrainer(SegmentationTrainer):
     
     @property
     def exclude_pattern(self : Self) -> str:
-        return f'^(?!({"|".join([d + "_" for d in self._exclude_datasets])}))'
+        return f'^(?!({"|".join(self._exclude_datasets)}))' if self._exclude_datasets else ""
 
     def build_dataset(
             self : Self, 
@@ -260,7 +260,7 @@ class MySegmentationTrainer(SegmentationTrainer):
             mode : str='train', 
             batch : Optional[int]=None
         ) -> Union[MyYOLODataset, MyYOLOValidationDataset]:
-        print(f"Building dataset with max instances {self._max_instances}, max images {self._max_images} and exclude pattern {self.exclude_pattern}")
+        print(f"Building dataset with max instances ({self._max_instances}), max images ({self._max_images}) and exclude pattern ({self.exclude_pattern}).")
         if mode == "train":
             dataset = MyYOLODataset(
                 data=yaml_load(self.args.data),

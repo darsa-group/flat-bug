@@ -88,7 +88,7 @@ def get_datasets(files : List[str]) -> Dict[str, List[str]]:
 
 
 def subset(
-        self : Self, 
+        self : "MyYOLODataset", 
         n : Optional[int]=None, 
         pattern : Optional[str]=None
     ):
@@ -103,7 +103,7 @@ def subset(
         return self
     # Compile the regex pattern
     pattern = re.compile(pattern) if pattern else None
-    # Create a match function that returns True if the filename matches the pattern or the pattern is None
+    # Create a match function that returns Truthy if the filename matches the pattern or the pattern is None
     match_fn = (lambda x: pattern.search(os.path.basename(x))) if pattern else (lambda x: True)
     # Get the indices of the elements that match the pattern
     indices = [i for i, f in enumerate(self.im_files) if match_fn(f)]
