@@ -275,6 +275,7 @@ def main():
         init_cfg["MIN_OBJ_SIZE"] = init_cfg["MIN_MAX_OBJ_SIZE"][0]
 
     # Get the verbosity
+    global verbose
     verbose = option_dict["verbose"]
 
     # Create a progress bar
@@ -329,6 +330,7 @@ def main():
         return cfg
     
     # Initialize the parameter scaler - scales parameters to be 0 when at the lower bound and 1 when at the upper bound, and supplies a unscale function
+    global scaler
     scaler = Scaler(PARAMETER_RANGES)
 
     # Define the objective function for the optimization algorithm    
