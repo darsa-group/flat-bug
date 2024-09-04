@@ -72,10 +72,10 @@ def main():
         device = device.split(";")
     if isinstance(device, list):
         device = [f"cuda:{d}" if d.isdigit() else d for d in device]
-        device = [torch.device(d) for d in device]
+        device = [torch.ones(1).to(torch.device(d)).device for d in device]
     else:
         device = f"cuda:{device}" if device.isdigit() else device
-        device = torch.device(device)
+        device = torch.ones(1).to(torch.device(device)).device
 
     dtype = getattr(torch, option_dict["dtype"])
     if dtype not in [torch.float16, torch.float32, torch.bfloat16]:

@@ -54,7 +54,7 @@ def get_latest_weight(weight_dir : str) -> Union[str, None]:
         return None
     return max(weights, key=os.path.getctime)
 
-def _custom_end_to_end_validation(self : Self):
+def _custom_end_to_end_validation(self : "MySegmentationTrainer"):
         if not self._do_custom_eval:
             return
         self._do_custom_eval = False
@@ -72,7 +72,8 @@ def _custom_end_to_end_validation(self : Self):
         weight_dir = self.wdir
         latest_weights = get_latest_weight(weight_dir)
         # Construct end-to-end evaluation command
-        command = f'bash "scripts{os.sep}eval{os.sep}end_to_end_eval.sh" -w "{latest_weights}" -d "{val_data}" -l "{val_labels}" -o "{self.save_dir}{os.sep}e2e_val{os.sep}{self.epoch}" -g "{self.args.device}" -p "{val_pattern}"'
+        custom_eval_path = os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "eval", "end_to_end_eval.sh")
+        command = f'bash "{custom_eval_path}" -w "{latest_weights}" -d "{val_data}" -l "{val_labels}" -o "{self.save_dir}{os.sep}e2e_val{os.sep}{self.epoch}" -g "{self.args.device}" -p "{val_pattern}"'
         LOGGER.info(f"Running custom end-to-end validation command: `{command}`")
         # Run command
         os.system(command)

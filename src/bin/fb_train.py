@@ -71,13 +71,16 @@ def main():
     #fixme issue when providing new dataset path, sill using old one?! see when i used pollen data
     settings.update({'datasets_dir': option_dict["data_dir"]})
 
+    # Load default training parameters
     overrides = DEFAULT_CONF
 
+    # Update with parameters from the config file
     if option_dict["config_file"]:
         with open(option_dict["config_file"]) as f:
             yaml_config = yaml.safe_load(f)
             overrides.update(yaml_config)
 
+    # Update data directory and resume flag from the command line
     overrides["data"] = data
     if option_dict["resume"]:
         assert os.path.isfile(overrides["model"]), f"Trying to resume from a model that does not seem to be a valid file: {overrides['model']}"
@@ -96,11 +99,12 @@ def main():
         os.environ['MKL_THREADING_LAYER'] = 'GNU'
         os.environ['OMP_NUM_THREADS'] = str(overrides["workers"])
 
-    t = MySegmentationTrainer(overrides=overrides)
+    # Instantiate trainer
+    trainer = MySegmentationTrainer(overrides=overrides)
 
     if not option_dict["resume"]:
-        t.start_epoch = 0
-    t.train()
+        trainer.start_epoch = 0
+    trainer.train()
 
 if __name__ == "__main__":
     main()
