@@ -1,0 +1,6 @@
+batch: 8
+epochs: 5000
+device: "cuda"
+patience: 9999
+workers: 4
+resume: true
