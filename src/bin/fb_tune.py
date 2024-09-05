@@ -8,7 +8,7 @@ import re
 import json
 import random
 
-from typing import Union, Optional
+from typing import Union, Optional, Tuple, Dict, List
 
 from tqdm import tqdm
 
@@ -35,29 +35,43 @@ PARAMETER_RANGES = {
 
 # Class for scaling and unscaling the parameters - ensures that the parameters visible to the optimizer have equal dynamic ranges [0, 1]
 class Scaler:
-    def __init__(self, ranges):
+    def __init__(self, ranges : Dict[str, Tuple[int, Union[int, float]]]):
         self.ranges = ranges
         self.scales = [(r[1] - r[0]) for r in ranges.values()]
         self.offsets = [r[0] for r in ranges.values()]
 
-    def scale(self, params):
+    def scale(self, params : Union[list, np.ndarray]) -> list:
         """
-        Scales the parameters
+        Scales the parameters between 0 and 1. 
+
+        scale(x) = (x - x_min) / (x_max - x_min)
+
+        Args:
+            params (Union[list, np.ndarray]): The parameters to scale
+
+        Returns:
+            list: The scaled parameters
         """
-        orig = params
         if not isinstance(params, list):
             params = params.tolist()
         value = [(p - o) / s for p, o, s in zip(params, self.offsets, self.scales)]
         return value
     
-    def unscale(self, params):
+    def unscale(self, params : Union[list, np.ndarray]) -> list:
         """
-        Unscales the parameters
+        Unscales values between 0 and 1 to the original parameter ranges.
+
+        unscale(x) = x * (x_max - x_min) + x_min
+
+        Args:
+            params (Union[list, np.ndarray]): The scaled parameters, i.e. values between 0 and 1
+
+        Returns:
+            list: The unscaled parameters
         """
-        orig = params
         if not isinstance(params, list):
             params = params.tolist()
-        value = [p * s + o for p, o, s in zip(params, self.offsets, self.scales)]
+        value = [p * s + o for p, s, o in zip(params, self.scales, self.offsets)]
         return value
 
 class Tuner(Predictor):
@@ -84,12 +98,36 @@ class Tuner(Predictor):
         self.set_hyperparameters(**self.default_cfg)
 
     def evaluate(self) -> float:
-        costs = []
-        weights = []
+        """
+        Evaluates the model on the dataset(s) and returns the cost.
+
+        Cost is defined as the average of one minus the intersection over union (IoU) for all matches between labels and predicted instances. This includes both matched predictions, unmatched predictions (false positives), and unmatched labels (false negatives).
+        Including false positives and negatives ensures that the model is penalized for missing instances as well as for predicting instances that are not present in the ground truth.
+        
+        Mathematically the cost can be expressed as follows:
+        
+        :math:`C(L, P, M) = \frac{\sum\limits_{i=1}^N\sum\limits_{p, q \in M_i}^{\lvert M_i\rvert} 1 - IoU\left(L_{i,p};\;P_{i,q}\right)}{\sum\limits_{i=1}^N \lvert M_i\rvert},\quad C: x \rightarrow [0,\; 1]$`
+
+        where:
+        - :math:`L` is a list of the ground truth ***L***abels for each image
+        - :math:`P` is a list of the ***P***redictions for each image
+        - :math:`M` is a list of the set of ***M***atching pairs of indices between the ground truth and the predictions for each image
+        - :math:`N` is the number of images, and the length of :math:`L`, :math:`P` and :math:`M`
+        - :math:`IoU : (x, y) \rightarrow [0, 1]` is the intersection over union function between two instances (e.g. polygons or bounding boxes)
+
+        False positives or negatives lead to either :math:`L_{i,p}` or :math:`P_{i,q}` being empty, which will result in a cost of 1 for that instance.
+        A prediction perfectly matching a ground truth label will result in a cost of 0 for that instance.
+
+        In reality, the cost is calculated as 1 minus the average IoU for each instance, this is equivalent to the above formula, but the code is a bit cleaner.
+
+        Returns:
+            float: The cost of the model on the dataset(s), where 0 corresponds to exactly finding and matching all ground truth instances, and 1 corresponds to not finding any instances.
+        """
+        total_cost, total_instances = 0, 0
         for data in tqdm(self.loader, dynamic_ncols=True, leave=False, desc="Evaluating model "):
             image, labels = data
             prediction = list(split_annotations(fb_to_coco(self.pyramid_predictions(image, scale_before=self.scale_before).json_data, {}), True).values())[0]
-            IoUs = compare_groups(
+            eval_results : dict = compare_groups(
                 group1              = labels, 
                 group2              = prediction, 
                 group_labels        = ["Ground Truth", "Predictions"],
@@ -100,13 +138,13 @@ class Tuner(Predictor):
                 plot_boxes          = False,
                 output_directory    = None,
                 threshold           = self.IOU_THRESHOLD
-            )["IoU"]
-            if len(IoUs) == 0:
-                costs.append(1)
-            else:
-                costs.append(1 - sum(IoUs) / len(IoUs))
-            weights.append(len(IoUs))
-        return sum([c * w for c, w in zip(costs, weights)]) / sum(weights)
+            )
+            total_cost += sum(eval_results["IoU"]) 
+            total_instances += len(eval_results["IoU"])
+        if total_instances == 0:
+            print("WARNING: No instances found in the dataset, returning a cost of 0.")
+            return 0
+        return 1 - total_cost / total_instances
 
     def cost(self, cfg : dict) -> float:
         self.set_hyperparameters(**cfg)
@@ -164,13 +202,19 @@ class AnnotatedDataset(torch.utils.data.IterableDataset):
     FILES_PER_DATASET_PER_ITER = 1
 
     def __init__(self, files : list, annotations : dict, datasets_per_iter : Optional[int] = None, files_per_iter : Optional[int] = None):
-        self.files = files
-        self.datasets = get_datasets(files)
-        self.file_dataset_idx = [i for f in files for i, v in enumerate(self.datasets.values()) if f in v]
+        self.files = []
+        # Create a dictionary with the base name of the images as keys and the annotations as values
+        self.annotations = split_annotations(filter_coco(json.load(open(annotations, "r")), area=32**2), strip_directories=True)
+        # Add the files to the dataset if they are found in the annotations
+        [self.files.append(file) if os.path.basename(file) in self.annotations else logging.warning(f"File {file} not found in the annotations!") for file in files]
+        del files
+
+        # Determine which files belong to which dataset
+        self.datasets = get_datasets(self.files)
+        self.file_dataset_idx = [i for f in self.files for i, v in enumerate(self.datasets.values()) if f in v]
         self.dataset_file_idx = {i : [] for i in range(len(self.datasets))}
         for i, v in enumerate(self.file_dataset_idx):
             self.dataset_file_idx[v].append(i)
-        self.annotations = split_annotations(filter_coco(json.load(open(annotations, "r")), area=32**2), strip_directories=True)
 
         if datasets_per_iter is None:
             self.DATASETS_PER_ITER = len(self.datasets)
@@ -188,27 +232,30 @@ class AnnotatedDataset(torch.utils.data.IterableDataset):
         return self.DATASETS_PER_ITER * self.FILES_PER_DATASET_PER_ITER
     
     def __iter__(self):
+        # Sample `DATASETS_PER_ITER` datasets
         this_iter_dataset_idxs = random.sample(range(len(self.datasets)), k=self.DATASETS_PER_ITER)
+        # For each sampled dataset, sample `FILES_PER_DATASET_PER_ITER` files
         this_iter_idx = []
         [this_iter_idx.extend(random.sample(self.dataset_file_idx[i], k=min(self.FILES_PER_DATASET_PER_ITER, len(self.dataset_file_idx[i])))) for i in this_iter_dataset_idxs]
 
+        # Yield the sampled files
         for i in this_iter_idx:
             yield self[i]
 
 def main():
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
-    args_parse.add_argument("-i", "--input-data", dest="input_dir",
-                            help="A directory that contains subdirectories for each COCO sub-datasets."
-                                 "Each sub-dataset contains a single json file named 'instances_default.json' "
-                                 "and the associated images", required=True)
-    args_parse.add_argument("-a", "--annotations", dest="annotations", required=True)
+    args_parse.add_argument("-i", "--input-data", dest="input_dir", required=True,
+                            help="A directory that contains the images used for tuning.")
+    args_parse.add_argument("-a", "--annotations", dest="annotations", required=True,
+                            help="Path to a COCO-style JSON with annotations for the images in the input directory."
+                            "The file will most likely have the base name 'instances_defaults.json'.")
     args_parse.add_argument("-p", "--input-pattern", dest="input_pattern", default=r"[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$",
                             help=r"The pattern to match the images. Default is '[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$' i.e. jpg/jpeg/png case-insensitive.")
-    args_parse.add_argument("-o", "--output-dir", dest="results_dir",
-                            help="The result directory", required=True)
-    args_parse.add_argument("-w", "--model-weights", dest="model_weights",
-                            help="The .pt file", required=True)
+    args_parse.add_argument("-o", "--output-dir", dest="results_dir", required=True,
+                            help="The result directory to store the final hyperparameters and the tuning log.")
+    args_parse.add_argument("-w", "--model-weights", dest="model_weights", required=True,
+                            help="The path of the .pt file which contains the weights of the model to tune.")
     args_parse.add_argument("-s", "--scale-before", dest="scale_before", default=1.0, type=float,
                             help="Scale the image before inference."
                                   "Default is 1.0, i.e. no downscaling."
@@ -221,6 +268,8 @@ def main():
     args_parse.add_argument("--init-cfg", type=str, default=None,
                             help="Path to a YAML containing the initial configuration guess or the string 'default' which will set the initial configuration guess to the default config."
                                  "Default is None, which is 1/3 of the range for each parameter.")
+    ## TODO: I think these 4 parameters are quite confusing and not user-friendly. 
+    ## It would be much easier to understand one parameter for the accuracy of the cost estimate and one for the number of iterations to run the optimization algorithm.
     args_parse.add_argument("-n", "--images-per-iter", type=int, default=1, 
                             help="Number of images per dataset used to estimate the cost. Default is 1.")
     args_parse.add_argument("--datasets-per-iter", type=int, default=None,
@@ -229,6 +278,7 @@ def main():
                             help="Maximum number of iterations for the evolutionary optimization algorithm. Default is 2.")
     args_parse.add_argument("--pop-size", type=int, default=5,
                             help="Population size for the evolutionary optimization algorithm. Default is 5.")
+    ## END TODO
     args_parse.add_argument("--method", type=str, default="bayesian",
                             help="Optimization algorithm to use. Default is 'bayesian'."
                                  "Options are 'evolutionary' or 'genetic' for differential evolution and 'bayesian'/'gaussian process'/'gp' for gaussian process optimization."
@@ -363,7 +413,7 @@ def main():
                 print(f"Cost={cost} for true cost={true_cost}")
             return cost
     
-    # Define the arguments for the optimization algorithm
+    # Define the arguments for the optimization algorithm - 
     if init_cfg is None:
         initial = [1/3 for _ in range(len(PARAMETER_RANGES))]
     else:
@@ -376,13 +426,17 @@ def main():
     upper_bound = scaler.scale([r[1] for r in PARAMETER_RANGES.values()])
     bounds = [(l, u) for l, u in zip(lower_bound, upper_bound)]
 
+    # Create output directory if it doesn't exist
+    os.makedirs(results_dir, exist_ok=True)
+
+    # Run the optimization algorithm
     if optimization_algorithm in "evolutionary" or optimization_algorithm in "genetic":
         result = differential_evolution(objective, bounds, x0=initial, strategy="best1bin",
                                         maxiter=max_iter, popsize=pop_size,
                                         disp=True, polish=False, updating="immediate") 
     elif optimization_algorithm in "bayesian" or optimization_algorithm in "gaussian process" or optimization_algorithm in "gp":
         # Fixme: Initial guess seems to lead to worse convergence, perhaps this optimization algorithm isn't suited for providing an initial guess? For now we just ignore the initial guess
-        result = gp_minimize(objective, bounds, x0=None, n_calls=max_fun, n_random_starts=min(10, max_fun), verbose=False)
+        result = gp_minimize(objective, bounds, x0=None, n_calls=max_fun, n_initial_points=min(10, max_fun), verbose=False)
 
     if mock:
         final_cost = mock_metric(result.x)

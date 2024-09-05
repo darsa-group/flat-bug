@@ -918,9 +918,7 @@ def compare_groups(
         output_directory (str, None): Output directory. Defaults to None.
 
     Returns:
-        str: Path to the CSV file.
-            or
-        dict: The data that would have been saved to the CSV file as a dictionary, where the keys are the column names and the values are the column values.
+        (str, dict): Path to the CSV file or the data that would have been saved to the CSV file as a dictionary, where the keys are the column names and the values are the column values.
     """
     # Type check the input
     if not isinstance(group1, list) or not isinstance(group2, list):
