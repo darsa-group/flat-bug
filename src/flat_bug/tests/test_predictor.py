@@ -10,7 +10,7 @@ import torch
 
 from flat_bug.predictor import TensorPredictions, Predictor
 
-from .remote_lfs_fallback import check_file_with_remote_fallback
+from flat_bug.tests.remote_lfs_fallback import check_file_with_remote_fallback
 
 ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")
 ASSET_NAME = "ALUS_Non-miteArachnids_Unknown_2020_11_03_4545"

@@ -19,7 +19,7 @@ from ultralytics.utils.ops import resample_segments
 
 from flat_bug.datasets import train_augmentation_pipeline, validation_augmentation_pipeline
 
-from .remote_lfs_fallback import check_file_with_remote_fallback
+from flat_bug.tests.remote_lfs_fallback import check_file_with_remote_fallback
 
 TEST_HYP = {
     "hsv_h": 0.5,
