@@ -32,7 +32,6 @@ def main():
         "cache": "ram"
     }
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-
     args_parse.add_argument("-d", "--data-dir", dest="data_dir",
                             help="The directory containing the prepared data (i.e., the output of  `fb_prepare.py`",
                             type=str)
@@ -45,7 +44,24 @@ def main():
                             action='store_true')
 
 
-    args = args_parse.parse_args()
+    args, extra = args_parse.parse_known_args()
+    cli_overrides = {}
+    for key, value in zip(extra[::2], extra[1::2]):
+        if not key.startswith("--"):
+            raise ValueError(f"Unknown argument: {key}\n" + args_parse.format_help())
+        key = key.removeprefix("--")
+        if not key in DEFAULT_CONF:
+            raise ValueError(f"Unknown argument: {key}\n" + args_parse.format_help())
+        if key.startswith("fb_"):
+            raise ValueError(f"Options starting with 'fb_' should be specified in the config file, not as command line arguments")
+        # fixme: probably unsafe...
+        try:
+            value = eval(value)
+        except:
+            pass
+
+        cli_overrides[key] = value
+        
     option_dict = vars(args)
 
     assert os.path.isdir(option_dict["data_dir"])
@@ -55,13 +71,16 @@ def main():
     #fixme issue when providing new dataset path, sill using old one?! see when i used pollen data
     settings.update({'datasets_dir': option_dict["data_dir"]})
 
+    # Load default training parameters
     overrides = DEFAULT_CONF
 
+    # Update with parameters from the config file
     if option_dict["config_file"]:
         with open(option_dict["config_file"]) as f:
             yaml_config = yaml.safe_load(f)
             overrides.update(yaml_config)
 
+    # Update data directory and resume flag from the command line
     overrides["data"] = data
     if option_dict["resume"]:
         assert os.path.isfile(overrides["model"]), f"Trying to resume from a model that does not seem to be a valid file: {overrides['model']}"
@@ -80,11 +99,12 @@ def main():
         os.environ['MKL_THREADING_LAYER'] = 'GNU'
         os.environ['OMP_NUM_THREADS'] = str(overrides["workers"])
 
-    t = MySegmentationTrainer(overrides=overrides)
+    # Instantiate trainer
+    trainer = MySegmentationTrainer(overrides=overrides)
 
     if not option_dict["resume"]:
-        t.start_epoch = 0
-    t.train()
+        trainer.start_epoch = 0
+    trainer.train()
 
 if __name__ == "__main__":
     main()

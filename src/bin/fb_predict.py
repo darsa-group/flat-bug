@@ -8,6 +8,7 @@ import re
 
 from flat_bug.coco_utils import fb_to_coco
 from flat_bug.predictor import Predictor
+from flat_bug.config import read_cfg, DEFAULT_CFG
 import torch
 from tqdm import tqdm
 
@@ -57,7 +58,8 @@ def main():
         _, ext = os.path.splitext(option_dict["input_dir"])
         isVideo = ext in [".mp4", ".avi"]
         if not isVideo:
-            assert os.path.isdir(option_dict["input_dir"])
+            if not os.path.isdir(option_dict["input_dir"]):
+                raise FileNotFoundError(f"Directory '{option_dict['input_dir']}' not found.")
     assert os.path.isfile(option_dict["model_weights"])
 
     device = option_dict["gpu"]
@@ -70,16 +72,20 @@ def main():
         device = device.split(";")
     if isinstance(device, list):
         device = [f"cuda:{d}" if d.isdigit() else d for d in device]
-        device = [torch.device(d) for d in device]
+        device = [torch.ones(1).to(torch.device(d)).device for d in device]
     else:
         device = f"cuda:{device}" if device.isdigit() else device
-        device = torch.device(device)
+        device = torch.ones(1).to(torch.device(device)).device
 
     dtype = getattr(torch, option_dict["dtype"])
     if dtype not in [torch.float16, torch.float32, torch.bfloat16]:
         raise ValueError(f"Dtype '{option_dict['dtype']}' is not supported.")
     
     config = option_dict["config"]
+    if config:
+        config = read_cfg(config)
+    else:
+        config = DEFAULT_CFG
     
     crops = not option_dict["no_crops"]
     metadata = not option_dict["no_metadata"]

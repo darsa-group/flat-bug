@@ -11,16 +11,16 @@ ALUS # Large scan, medium
 amarathunga2022 # Single animal
 / AMI-traps # EMPTY? 
 AMT # Light trap
-/ anTraX # Ants, easy
+anTraX # Ants, easy
 ArTaxOr # Very dissimilar, hard
-biodiscover-arm
-/ biodiversa-arm # Empty?
+biodiscover-arm # Large scan, medium
+biodiversa-arm # Empty?
 BIOSCAN # Single animal
-/ cao2022 # Ants, easy
-/ CollembolAI # Collombola (spring tails), relatively hard
-/ DIRT # Messy complex background
+cao2022 # Ants, easy
+CollembolAI # Collombola (spring tails), relatively hard
+DIRT # Messy complex background
 DiversityScanner # Single animal
-/ Mothitor # Too small
+Mothitor # Too small
 PeMaToEuroPep # Large scan, hard
 pinoy2023 # Large scan, hard
 / pitfall # Empty? 

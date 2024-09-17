@@ -1,17 +1,17 @@
 
-import os, sys, re, argparse
+import os, sys
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-from scripts.experiments.experiment_helpers import EXEC_DIR, DATADIR, DATASETS, set_default_config, get_config, do_yolo_train_run, clean_temporary_dir
+from scripts.experiments.experiment_helpers import set_default_config, get_config, get_cmd_args, read_slurm_params, ExperimentRunner
 
 from typing import List
 
 from collections import OrderedDict
 
-BASE_NAME = "leave_two_out"
-BASE_PATH = os.path.join(EXEC_DIR, "scripts", "experiments", "leave_two_out_dataset_mapping")
+BASE_NAME = "fb_leave_two_out"
+BASE_PATH = os.path.dirname(__file__)
 DEFAULT_CONFIG = os.path.join(BASE_PATH, "default.yaml")
 
-set_default_config(os.path.join(BASE_PATH, "default.yaml"))
+set_default_config(DEFAULT_CONFIG)
 
 def parse_include_datasets(path : str) -> List[str]:
     """
@@ -23,15 +23,7 @@ def parse_include_datasets(path : str) -> List[str]:
     return [dataset for dataset in datasets if dataset]
 
 if __name__ == "__main__":
-    args_parse = argparse.ArgumentParser()
-    args_parse.add_argument("--dry-run", action="store_true", help="Print the experiment configurations without running them.")
-    args = args_parse.parse_args()
-    dry_run = args.dry_run
-
-    # Check for the existence of the necessary files and directories, and the correct execution directory
-    assert os.path.exists(DEFAULT_CONFIG), f"Default config file not found: {DEFAULT_CONFIG}"
-    assert os.path.exists(DATADIR) and os.path.isdir(DATADIR), f"Data directory not found: {DATADIR}"
-    assert os.getcwd() == EXEC_DIR, f"Current working directory ({os.getcwd()}) is not the execution directory: {EXEC_DIR}"
+    args, extra = get_cmd_args()
 
     # Filter out the prospective datasets
     relevant_datasets = parse_include_datasets(os.path.join(BASE_PATH, "include_datasets"))
@@ -49,15 +41,19 @@ if __name__ == "__main__":
             this_config["name"] = "{}_{}_{}".format(BASE_NAME, *this_excluded_datasets)
             if this_config["name"] in experiment_configs:
                 continue
-            this_config["fb_exclude_datasets"].extend(this_excluded_datasets)
+            this_config["fb_exclude_datasets"].extend(list(set(this_excluded_datasets)))
             experiment_configs[this_config["name"]] = this_config
 
-    # Run the experiments
-    for name, config in experiment_configs.items():
-        print(f"Running experiment: {name}")
-        print("Experiment config:", config)
-        do_yolo_train_run(config, dry_run=dry_run)
+    if "cpus_per_task" in extra and extra["cpus_per_task"] >= full_config["workers"]:
+        n_workers = extra["cpus_per_task"]
+    else:
+        n_workers = full_config["workers"]
+        if "cpus_per_task" in extra:
+            print(f"WARNING: Requested cpus_per_task ({extra['cpus_per_task']}) is less than the required number of workers ({n_workers}). Ignoring the cpus_per_task parameter and continuing with {n_workers} workers.")
 
-    clean_temporary_dir()
+    extra.update({"cpus_per_task" : n_workers})
+    if not "job_name" in extra:
+        extra.update({"job_name" : BASE_NAME})
 
-    print(f"All (n={len(experiment_configs)}) experiments completed successfully.")
+    experiment_runner = ExperimentRunner(inputs=experiment_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(**extra))
+    experiment_runner.run().complete()

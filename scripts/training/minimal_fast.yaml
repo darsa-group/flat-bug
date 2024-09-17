@@ -1,0 +1,10 @@
+model: "./yolov8n-seg.pt"
+batch: 8
+epochs: 1
+device: "cuda"
+patience: 9999
+workers: 16
+resume: true
+fb_custom_eval: true
+fb_exclude_datasets: ["ALUS", "amarathunga2022", "00-prospective-ALUS-mixed", "01-partial-Diopsis", "biodiscover-arm", "01-partial-gernat2018", "sticky-pi", "sittinger2023", "ubc-pitfall-traps", "Mothitor", "anTraX", "AMT", "01-partial-abram2023", "AMI-traps", "cao2022", "00-prospective-InsectCV", "01-partial-AMI-traps", "ubc-scanned-sticky-cards", "PeMaToEuroPep", "DIRT", "01-partial-NHM-beetles-crops", "pinoy2023", "00-prospective-crall2023", "DiversityScanner", "00-prospective-chavez2024", "BIOSCAN", "biodiversa-arm", "pitfall", "CollembolAI", "scanned-sticky-cards"]
+name: "test_minimal_fast"

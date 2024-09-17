@@ -1,6 +1,6 @@
 import os, yaml
 from collections import OrderedDict
-from typing import Union, Any
+from typing import List, Iterable,Union, Any
 
 # Add support for OrderedDict in PyYAML
 yaml.add_representer(OrderedDict, lambda dumper, data: dumper.represent_dict(data.items()), Dumper=yaml.SafeDumper)
@@ -24,7 +24,7 @@ CFG_DESCRIPTION = {
     "IOU_THRESHOLD": "Minimum IOU for a prediction to be considered a duplicate.",
     "MINIMUM_TILE_OVERLAP": "Minimum overlap between tiles when splitting the image.",
     "EDGE_CASE_MARGIN": "Margin for edge cases. How far from the edge of the image a prediction can be.",
-    "MIN_MAX_OBJ_SIZE": "Minimum and maximum size of an object. Size is measured as the square root of the area, i.e. the average of the width and height.",
+    "MIN_MAX_OBJ_SIZE": "Minimum and maximum size of a bounding box. Size is measured as the square root of the area, i.e. the side-length if the bounding box was a square.",
     "MAX_MASK_SIZE": "Loss of precision may occur if the mask is larger than this, but all shapes are possible. No effect if PREFER_POLYGONS is enabled.",
     "PREFER_POLYGONS": "Convert masks to polygons as soon as possible, and only use the polygons for further processing - no loss of precision, but only single polygons without holes can be represented, performance impact may depend on hardware and use-case.",
     "EXPERIMENTAL_NMS_OPTIMIZATION": "Experimental optimization for NMS. Improves performance significantly when there are many predictions.",
@@ -61,7 +61,28 @@ LEGACY_CFG = {
     "BATCH_SIZE": 16
 }
 
-def get_type_def(obj, tuple_list_interchangeable=False):
+def get_type_def(
+        obj : Any, 
+        tuple_list_interchangeable : bool=False
+    ) -> Union[Any, List[Any]]:
+    """
+    Generates a dynamic type definition for an object.
+
+    The type definition schema is defined like this:
+    - If the object is a tuple or a list, the first element is the type of the object, and the second element is a list of type definitions for the elements of the object.
+    - If the object is not a tuple or a list, the type definition is the type of the object.
+
+    For example;
+        - the type definition for the object `(1, "A", True)` would be `[tuple, [int, str, bool]]`.
+        - the type definition for the object `[[2, "B"], [3, "C"]]` would be `[list, [[list, [int, str]], [list, [int, str]]]]`.
+
+    Parameters:
+        obj (Any): The object to generate a type definition for.
+        tuple_list_interchangeable (bool): If True, tuples and lists are considered interchangeable.
+
+    Returns:
+        Union[Any, List[Any]]: The type definition for the object.
+    """
     if isinstance(obj, (tuple, list)):
         otype = type(obj)
         if tuple_list_interchangeable and otype in (tuple, list):
@@ -71,7 +92,12 @@ def get_type_def(obj, tuple_list_interchangeable=False):
 
 CFG_TYPES = {k : get_type_def(DEFAULT_CFG[k], tuple_list_interchangeable=True) for k in DEFAULT_CFG}
 
-def check_types(value : Any, expected_type : Union[type, tuple, set, list], key : str="<Not specified>", strict : bool=True) -> bool:
+def check_types(
+        value : Any, 
+        expected_type : Union[List[Any], Iterable[type], type], 
+        key : str="<Not specified>", 
+        strict : bool=True
+    ) -> bool:
     """
     Recursively check if the type of a value matches the expected type.
 
@@ -81,49 +107,84 @@ def check_types(value : Any, expected_type : Union[type, tuple, set, list], key 
         value: The value to check.
         expected_type: The expected type of the value.
         key: Name of the value to use in error messages.
+        strict: If True, raise an error if the check fails.
 
     Returns:
         bool: True if the check passes, and False if strict is False and the check fails. Raises an error otherwise.
-    """
-    # If expected type is a list, recursively check the types of the elements
-    if isinstance(expected_type, list):
-        # Check that an expected type has been supplied for both the value and its elements
-        if len(expected_type) != 2:
-            raise ValueError(f"Expected type list must have exactly 2 elements, got {len(expected_type)} for key: {key}.")
-        # Check that the value matches the expected type
-        check_types(value, expected_type[0], key)
-        # If the expected type of the elements is a list, each element of the value should match the corresponding element of the expected type list
-        if isinstance(expected_type[1], list):
-            # Check that the number of types in the list matches the number of items in the value
-            if len(value) != len(expected_type[1]):
-                raise ValueError(f"Expected number of types ({len(expected_type[1])}) does not match number of items in value ({len(value)}) for key: {key}.")
-            # Check that each item in the value matches the corresponding type in the expected type list
-            for item, et in zip(value, expected_type[1]):
-                check_types(item, et, key)
-        # If the expected type of the elements is a single type (or a tuple/set of types), each element of the value should match the expected type
-        elif isinstance(expected_type[1], (type, tuple, set)):
-            for item in value:
-                check_types(item, expected_type[1], key)
-        else:
-            raise TypeError(f"Invalid expected type. Expected 'type', 'tuple', 'set' or 'list', got {type(expected_type[1])} for key: {key}.")
-    # If the expected type is a tuple/set, check if the value is an instance of any of the types in the tuple/set
-    elif isinstance(expected_type, (tuple, set)):
-        if not any([check_types(value, e, key, False) for e in expected_type]):
-            raise TypeError(f"Expected one of {et}, got {type(value)} for key: {key}.")
-    # If the expected type is a 'type' object, check if the value is an instance of the type
-    elif isinstance(expected_type, type):
-        if not isinstance(value, expected_type):
-            if strict:
-                raise TypeError(f"Expected {expected_type}, got {type(value)} for key {key}.")
-            else:
-                return False
-    # If the expected type is not a list, a tuple/set or a 'type' object raise an error
-    else:
-        raise TypeError(f"Invalid expected type. Expected 'type', 'tuple', 'set' or 'list', got {type(expected_type)} for key: {key}.")
-    # If no errors are raised, return True
-    return True
 
-def check_cfg_types(cfg : dict, strict : bool = False) -> bool:
+    Raises:
+        ValueError: If the expected type list does not have exactly 2 elements.
+        TypeError: If the expected type is not a list, an iterable or a 'type' object.
+        TypeError: If the number of types in the list does not match the number of items in the value.
+        TypeError: If the value does not match the expected type.
+    """
+    try:
+        # If expected type is a list, recursively check the types of the elements
+        if isinstance(expected_type, list):
+            # Check that an expected type has been supplied for both the value and its elements
+            if len(expected_type) != 2:
+                raise ValueError(f"Expected type list must have exactly 2 elements, got {len(expected_type)} for key: {key}.")
+            # Check that the value matches the expected type
+            check_types(value, expected_type[0], key, strict)
+            # If the expected type of the elements is a list, each element of the value should match the corresponding element of the expected type list
+            if isinstance(expected_type[1], list):
+                # Check that the number of types in the list matches the number of items in the value
+                if len(value) != len(expected_type[1]):
+                    raise TypeError(f"Expected number of types ({len(expected_type[1])}) does not match number of items in value ({len(value)}) for key: {key}.")
+                # Check that each item in the value matches the corresponding type in the expected type list
+                for item, et in zip(value, expected_type[1]):
+                    check_types(item, et, key, strict)
+            # If the expected type of the elements is a single type, each element of the value should match the expected type
+            elif isinstance(expected_type[1], type):
+                for item in value:
+                    check_types(item, expected_type[1], key, strict)
+            # If the expected type of the elements is a tuple, each element of the value should match any of the types in the tuple
+            elif isinstance(expected_type[1], tuple):
+                check_types(value, expected_type[1], key, strict)
+            # If the expected type of the elements is an iterable, the value should be an iterable and each element of the value should match the corresponding type in the expected type iterable
+            elif hasattr(expected_type[1], "__iter__") and hasattr(expected_type[1], "__len__"):
+                assert len(expected_type[1]) == len(value), f"Expected number of types ({len(expected_type[1])}) does not match number of items in value ({len(value)}) for key: {key}."
+                errors = []
+                for item, et in zip(value, expected_type[1]):
+                    try:
+                        check_types(item, et, key, strict)
+                    except TypeError as e:
+                        errors.append(str(e))
+                if len(errors) != 0:
+                    raise TypeError("\n  - ".join(errors))
+            else:
+                raise TypeError(f"Invalid expected type. Expected 'list', 'type', 'tuple' or an iterable got {type(expected_type[1])} for key: {key}.")
+        # If the expected type is an iterable, check if the value is an instance of any of the types in the iterable
+        elif hasattr(expected_type, "__iter__") and not isinstance(expected_type, type):
+            if not any([check_types(value, e, key, False) for e in expected_type]):
+                raise TypeError(f"Expected one of {et}, got {type(value)} for key: {key}.")
+        # If the expected type is a 'type' object, check if the value is an instance of the type
+        elif isinstance(expected_type, type):
+            if not isinstance(value, expected_type):
+                raise TypeError(f"Expected {expected_type}, got {type(value)} for key {key}.")
+        # If the expected type is None, check if the value is None
+        elif expected_type is None:
+            if not value is None:
+                raise TypeError(f"Expected None, got {type(value)} for key: {key}.")
+        # If the expected type is typing.Any, pass everything
+        elif expected_type is Any:
+            pass
+        # If the expected type is not a list, a iterable or a 'type' object raise an error
+        else:
+            raise TypeError(f"Invalid expected type. Expected 'list', an iterable, 'type' or 'typing.Any' got {type(expected_type)} for key: {key}.")
+        # If no errors are raised, return True
+        return True
+    # If an error is raised, return False if strict is False, otherwise raise the error
+    except Exception as e:
+        if strict:
+            raise e
+        else:
+            return False
+
+def check_cfg_types(
+        cfg : dict, 
+        strict : bool = False
+    ) -> bool:
     """
     Check if the config is a dictionary and that the types of the values in the config dictionary are correct.
 
@@ -149,7 +210,10 @@ def check_cfg_types(cfg : dict, strict : bool = False) -> bool:
     # If no errors are raised, return True
     return True
 
-def read_cfg(config : Union[str, os.PathLike], strict : bool=False) -> dict:
+def read_cfg(
+        path : Union[str, os.PathLike], 
+        strict : bool=False
+    ) -> dict:
     """
     Load and validate the config file.
 
@@ -163,16 +227,16 @@ def read_cfg(config : Union[str, os.PathLike], strict : bool=False) -> dict:
         dict: The config dictionary.
     """
     # Check if config is a string or path-like object
-    if not isinstance(config, (str, os.PathLike)):
-        raise TypeError(f"Invalid config location. Expected str or os.PathLike, got {type(config)}.")
+    if not isinstance(path, (str, os.PathLike)):
+        raise TypeError(f"Invalid config location. Expected str or os.PathLike, got {type(path)}.")
     # Check if the config file is a YAML file
-    if not config.endswith(".yaml"):
-        raise ValueError(f"Cannot read config. Expected YAML file, got {config}.")
+    if not (path.endswith(".yaml") or path.endswith(".yml")):
+        raise ValueError(f"Cannot read config. Expected YAML file, got {path}.")
     # Check if config file exists
-    if not os.path.exists(config):
-        raise FileNotFoundError(f"Config file {config} not found.")
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Config file {path} not found.")
     # Load config file
-    with open(config, "r") as f:
+    with open(path, "r") as f:
         cfg = yaml.safe_load(f)
     # Type check config
     check_cfg_types(cfg, strict)
@@ -183,7 +247,11 @@ def read_cfg(config : Union[str, os.PathLike], strict : bool=False) -> dict:
     # Return config
     return cfg
 
-def write_cfg(cfg : dict, path : Union[str, os.PathLike], overwrite : bool=False) -> Union[str, os.PathLike]:
+def write_cfg(
+        cfg : dict, 
+        path : Union[str, os.PathLike], 
+        overwrite : bool=False
+    ) -> Union[str, os.PathLike]:
     """
     Save the config dictionary to a YAML file.
 
@@ -199,7 +267,7 @@ def write_cfg(cfg : dict, path : Union[str, os.PathLike], overwrite : bool=False
     if not isinstance(path, (str, os.PathLike)):
         raise TypeError(f"Invalid config location. Expected str or os.PathLike, got {type(path)}.")
     # Check if path is a YAML file
-    if not path.endswith(".yaml"):
+    if not (path.endswith(".yaml") or path.endswith(".yml")):
         raise ValueError(f"Cannot save config. Expected YAML file, got {path}.")
     # Check if path exists
     if not overwrite and os.path.exists(path):
@@ -225,3 +293,17 @@ def write_cfg(cfg : dict, path : Union[str, os.PathLike], overwrite : bool=False
         yaml.safe_dump(sorted_cfg, f, sort_keys=False, default_flow_style=None)
     # Return the path to the saved config YAML file
     return path
+
+if __name__ == "__main__":
+    # Print a helpful message:
+    print("####################################################################")
+    print("###################### Flat-Bug Configuration ######################")
+    print("####################################################################")
+    print("\nConfigurable parameters:")
+    for key in CFG_PARAMS:
+        print(f"\t- {key} ({CFG_TYPES[key]}): {CFG_DESCRIPTION[key]}")
+    print("\nParameters can either be specified with a YAML file or manually:")
+    print("\t* `fb_predict --config <YML_PATH>`")
+    print("\t* `flat_bug.predictor.Predictor.__init__(..., cfg=<YML_PATH>, ...)`")
+    print("\t* `flat_bug.predictor.Predictor.set_hyperparameters(<PARAM_i>=<VALUE_i>, <PARAM_j>=<VALUE_j>, ...)`")
+    print("\nAny parameters not specified will be set to default values.")

@@ -1,33 +1,54 @@
 import os, sys
 import glob, argparse, re
-import queue, threading, subprocess
+import subprocess
 import csv, yaml
 
-# todo: remove pandas dependency
-import pandas as pd
+from typing import Union, Optional, List, Tuple, Dict, Any
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from scripts.experiments.experiment_helpers import EXEC_DIR, run_command, remove_directory, split_by_sample
+from scripts.experiments.experiment_helpers import run_command, remove_directory, split_by_sample, parse_unknown_arguments, read_slurm_params, ExperimentRunner
 from flat_bug.datasets import get_datasets
+from flat_bug.eval_utils import pretty_print_csv
 
-RESULT_DIR = os.path.join(EXEC_DIR, "scripts", "experiments", "results")
+RESULT_DIR = os.path.join(os.path.dirname(__file__), "results")
 
-def eval_model(weights, directory, output_directory, local_directory=None, device=None, pattern=None, dry_run=False, store_all=False):
+def eval_model(
+        weights : str, 
+        config : Optional[str], 
+        directory : str, 
+        output_directory : str, 
+        local_directory : str=None, 
+        device : Optional[str]=None, 
+        pattern : Optional[str]=None, 
+        store_all : bool=False, 
+        dry_run : bool = False, 
+        execute : bool=True
+    ) -> str:
     """
     Evaluate a model on a dataset.
 
     Args:
         weights (str): The path to the weights file.
+        config (str): The path to the config file. Should be a YAML file either ending in '.yaml' or '.yml'.
         directory (str): The directory where the data is located and where the results will be saved the directory should have a 'reference' directory with the ground truth json in 'instances_default.json' and the matching images'.
         output_directory (str): The path to the output directory where the results will be saved. If not supplied, it is assumed to be the same as the directory. Defaults to None.
         local_directory (str, optional): The path to the local directory where the ground truth json is located. If not supplied, it is assumed to be the same as the directory. Defaults to None.
         device (str, optional): The PyTorch device string to use for inference. If not supplied, it is assumed to be cuda:0. Defaults to None.
         pattern (str, optional): The regex pattern to use for selecting the inference files. If not supplied, it is assumed to be the default pattern. Defaults to None.
+        store_all (bool, optional): If set, all results will be saved. Defaults to False.
+        dry_run (bool, optional): If set, the evaluation will not be run. If the command would be executed it is printed instead. Defaults to False.
+        execute (bool, optional): If set, the evaluation will be run, otherwise the command will be returned. Defaults to True.
+
+    Returns:
+        str: The (executed) command (to run).
     """
 
     # Check if the weights file exists
     assert os.path.exists(weights), f"Weights file not found: {weights}"
+    if config is not None:
+        # Check if the config file exists
+        assert os.path.exists(config), f"Config file not found: {config}"
     # Check if the directory exists
     assert os.path.exists(directory) and os.path.isdir(directory), f"Data directory not found: {directory}"
     # Check if the output directory exists
@@ -38,7 +59,9 @@ def eval_model(weights, directory, output_directory, local_directory=None, devic
         assert os.path.exists(local_directory), f"Local directory not found: {local_directory}"
 
     # Create the command
-    command = f'bash {os.path.join(EXEC_DIR, "scripts", "eval", "end_to_end_eval.sh")} -w "{weights}" -d "{directory}" -o "{output_directory}"'
+    command = f'bash {os.path.join(os.path.dirname(os.path.dirname(__file__)), "eval","end_to_end_eval.sh")} -w "{weights}" -d "{directory}" -o "{output_directory}"'
+    if config is not None:
+        command += f' -c "{config}"'
     if local_directory is not None:
         command += f' -l "{local_directory}"'
     if device is not None:
@@ -47,47 +70,56 @@ def eval_model(weights, directory, output_directory, local_directory=None, devic
         command += f' -p "{pattern}"'
     
     # Run the command
-    if dry_run:
-        print(command)
-    else:
-        run_command(command, "/home/altair/.conda/envs/test/bin/python")
-
-    # Get the result CSV
-    result_csv = os.path.join(output_directory, "results", "results.csv")
-    # Pretty print the result CSV
-    if dry_run:
-        print(f'Summary results would be saved to: {result_csv}')
-    else:
-        df = pd.read_csv(result_csv)
-        print(result_csv, ":\n", df)
-
-    if not store_all:
-        # Remove the "<OUTPUT_DIR>/preds"
-        pred_directory = os.path.join(output_directory, "preds")
+    if execute:
         if dry_run:
-            print("Removing directory: ", pred_directory)
+            print(command)
         else:
-            remove_directory(pred_directory, recursive=True)
-        # Save the first evaluation result for each dataset and remove the rest
-        eval_files = glob.glob(os.path.join(output_directory, "eval", "*"))
-        eval_datasets = get_datasets(eval_files)
-        for dataset, files in eval_datasets.items():
-            files = split_by_sample(files)
-            for i, (sample, sample_files) in enumerate(files.items()):
-                if i == 0:
-                    # Keep the plots and CSV for the first sample of each dataset
-                    if dry_run:
-                        print(f"Keeping <{sample}>: ", sample_files)
-                    continue
-                if dry_run:
-                    break
-                for file in sample_files:
-                    # Keep the combined results CSV
-                    if os.path.basename(file) == "combined_results.csv":
+            run_command(command)
+        result_csv = os.path.join(output_directory, "results", "results.csv")
+        if dry_run:
+            print(f"Results would be saved to: {result_csv}")
+        else:
+            pretty_print_csv(result_csv, delimiter=",")
+        if not store_all:
+            # Remove the "<OUTPUT_DIR>/preds"
+            pred_directory = os.path.join(output_directory, "preds")
+            if dry_run:
+                print(f"Would remove directory: {pred_directory}")
+            else:
+                remove_directory(pred_directory, recursive=True)
+            # Save the first evaluation result for each dataset and remove the rest
+            eval_files = glob.glob(os.path.join(output_directory, "eval", "*"))
+            eval_datasets = get_datasets(eval_files)
+            for dataset, files in eval_datasets.items():
+                files = split_by_sample(files)
+                for i, (sample, sample_files) in enumerate(files.items()):
+                    if i == 0:
+                        # Keep the plots and CSV for the first sample of each dataset
+                        if dry_run:
+                            print(f"Would keep the following files for dataset {dataset} and sample {sample}: {sample_files[0]}")
+                            break
                         continue
-                    os.remove(file)
+                    for file in sample_files:
+                        # Keep the combined results CSV
+                        if os.path.basename(file) == "combined_results.csv":
+                            continue
+                        os.remove(file)
+    return command
+    
+def eval_model_wrapper(
+        params : dict, 
+        execute : bool=True, 
+        device : Optional[str]=None, 
+        dry_run : Optional[bool]=None
+    ) -> str:
+    if device is not None:
+        params.pop("device", None)
+    params.pop("execute", None)
+    if dry_run is not None and dry_run:
+        print("Executing evaluation as dry run.")
+    return eval_model(**params, execute=execute, device=device)
 
-def get_weights_in_directory(directory):
+def get_weights_in_directory(directory : str) -> List[str]:
     """
     Get the weights file in the directory. The weights may be stored in arbitrarily nested subdirectories.
 
@@ -104,13 +136,13 @@ def get_weights_in_directory(directory):
     weight_dir = os.path.join(directory, "weights")
     if not os.path.exists(weight_dir):
         weight_dir = directory
-    weight_files = glob.glob(os.path.join(weight_dir, "*.pt"), recursive=True)
+    weight_files = glob.glob(os.path.join(weight_dir, "**", "*.pt"), recursive=True)
     # Check if there are any weight files
     assert len(weight_files) > 0, f"No weight files found in the directory: {weight_dir}"
     
     return sorted(weight_files, key=os.path.getmtime)
 
-def get_gpus():
+def get_gpus() -> List[str]:
     """
     Get the available GPUs.
 
@@ -123,7 +155,11 @@ def get_gpus():
     gpus = [f"cuda:{int(gpu)}" for gpu in gpu_info.split("\n") if gpu != ""]
     return gpus
 
-def combine_result_csvs(result_directories, new_directory, dry_run=False):
+def combine_result_csvs(
+        result_directories : List[str], 
+        new_directory : str, 
+        dry_run : bool=False
+    ) -> str:
     """
     Combines the result CSVs in the result directories. The result CSVs are assumed to be in the 'results' subdirectory of the result directories and named 'results.csv'.
 
@@ -132,7 +168,7 @@ def combine_result_csvs(result_directories, new_directory, dry_run=False):
     The 'model' column is populated with the name of the model directory.
     
     Args:
-        result_directories (list): A list of result directories.
+        result_directories (list of str): A list of result directories.
         new_directory (str): The directory where the combined results will be saved.
 
     Returns:
@@ -172,7 +208,7 @@ def combine_result_csvs(result_directories, new_directory, dry_run=False):
                 for column in new_column_names:
                     if column not in metadata:
                         raise ValueError(f"Metadata file does not contain the '{column}' key: {metadata_path}")
-                columns = [metadata[column] for column in new_column_names]
+                new_column_data = [metadata[column] for column in new_column_names]
             
             with open(result_csv_path, 'r') as file:
                 csv_reader = csv.reader(file)
@@ -182,57 +218,67 @@ def combine_result_csvs(result_directories, new_directory, dry_run=False):
                     csv_writer.writerow(new_column_names + headers)
                 
                 for row in csv_reader:
-                    csv_writer.writerow(columns + row)
+                    csv_writer.writerow(new_column_data + row)
     # Return the path to the new result CSV
     return new_result_csv
 
+class DeferredCall:
+    def __init__(self, func, *args, **kwargs):
+        self.func = func
+        self.args = args
+        self.kwargs = kwargs
 
-def process_queue_item(queue : "queue.Queue", device, eval_function):
-    while True:
-        if queue:
-            # Retrieve the next item from the queue
-            item = queue.get()
-            if item is None:
-                queue.put(None)
-                break
-            # Add the 'device' key with the GPU value
-            item['device'] = device
-            # Call the evaluation function with the modified item
-            eval_function(**item)
+    def __call__(self):
+        return self.func(*self.args, **self.kwargs)
+
+    def __str__(self):
+        args_repr = [repr(arg) for arg in self.args]
+        kwargs_repr = [f"{k}={repr(v)}" for k, v in self.kwargs.items()]
+        return f"{self.__class__.__name__}: `{self.func.__name__}({', '.join(args_repr + kwargs_repr)})`"
+
+    def __repr__(self):
+        return str(self)
+
+def combine_result_csvs_wrapper(args : Union[List, Tuple, Dict], execute : bool=True, device : Any=None, **kwargs) -> str:
+    if isinstance(args, (list, tuple)):
+        deferred_call = DeferredCall(combine_result_csvs, *args)
+    elif isinstance(args, dict):
+        deferred_call = DeferredCall(combine_result_csvs, **args)
+    else:
+        raise TypeError(f"Expected args to be a list, tuple or dict, not {type(args)}.")
+    if execute:
+        return deferred_call()
+    else:
+        return deferred_call
 
 if __name__ == "__main__":
     
     arg_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-    arg_parse.add_argument("-d", "--directory", dest="directory", help="A directory or glob to directories containing separate subdirectories for each model to evaluate.", type=str)
-    arg_parse.add_argument("-g", "--ground_truth", dest="ground_truth", help="The path to the ground truth file.", type=str)
-    arg_parse.add_argument("-i", "--input", dest="input", help="A directory containing the data to evaluate the models on.", type=str)
+    arg_parse.add_argument("-d", "--directory", dest="directory", help="A directory or glob to directories containing separate subdirectories for each model to evaluate.", type=str, required=True)
+    arg_parse.add_argument("-g", "--ground_truth", dest="ground_truth", help="The path to the ground truth file.", type=str, required=True)
+    arg_parse.add_argument("-i", "--input", dest="input", help="A directory containing the data to evaluate the models on.", type=str, required=True)
+    arg_parse.add_argument("-o", "--output", dest="output", help="Override the directory where the results will be saved.", type=str, required=False)
     arg_parse.add_argument("--input_pattern", dest="input_pattern", help="The pattern to use for selecting the input files. Defaults to selecting all files.", type=str)
     arg_parse.add_argument("--weight_pattern", dest="weight_pattern", help="The pattern to use for selecting the weight files. Defaults to 'best' when all_weights is not set, otherwise all files are selected.", type=str)
+    arg_parse.add_argument("--config", dest="config", help="The path to the config file.", type=str, required=False)
     arg_parse.add_argument("--all_weights", dest="all_weights", help="If set, all weights in the directory will be evaluated.", action="store_true")
-    arg_parse.add_argument("--multi_gpu", dest="multi_gpu", help="If set, the evaluation will be done on multiple GPUs.", action="store_true")
-    arg_parse.add_argument("--device", dest="device", help="The device to use for inference. If not set, the default device is used. Cannot be used with --multi_gpu.", type=str)
+    arg_parse.add_argument("--device", dest="device", help="The device to use for inference. If not set, the default device is used.", type=str, nargs="+", default="0")
     arg_parse.add_argument("--dry_run", dest="dry_run", help="If set, the evaluation will not be run.", action="store_true")
     arg_parse.add_argument("--save_all", dest="save_all", help="If set, all results will be saved.", action="store_true")
     arg_parse.add_argument("--ignore_existing", dest="ignore_existing", help="If set, existing result directories will be ignored.", action="store_true")
-    arg_parse.add_argument("--no_compile", dest="no_compile", help="If set, the results will not be compiled into a single CSV.", action="store_true")
     arg_parse.add_argument("--name", dest="name", help="The name of comparison.", type=str, default="")
-
-    args = arg_parse.parse_args()
-
-    if args.device is not None:
-        if args.device == "cpu":
-            pass
-        else:
-            EXTRACT_DEVICE_NUMS_PATTERN = re.compile(r"(?<!\d)(\d+)(?!\d)")
-            device_nums = EXTRACT_DEVICE_NUMS_PATTERN.findall(args.device)
-            if len(device_nums) == 0:
-                raise ValueError(f"Invalid device string: {args.device}, no device number(s) found.")
-            if len(device_nums) == 1:
-                args.device = f"cuda:{device_nums[0]}"
-            else:
-                args.multi_gpu = True
-                args.device = [f"cuda:{num}" for num in device_nums]
-
+    arg_parse.add_argument("--slurm", dest="slurm", help="If set, the evaluation will be run on a SLURM cluster.", action="store_true")
+    args, extra = arg_parse.parse_known_args()
+    try:
+        extra = parse_unknown_arguments(extra)
+    except ValueError as e:
+        raise ValueError(
+                f"Error parsing extra arguments: `{' '.join(extra)}`. {e}\n\n"
+                f"{arg_parse.format_help()}"
+        )
+    if not args.output is None:
+        assert os.path.exists(args.output) and os.path.isdir(args.output), f'Output directory not found: {args.output}'
+        RESULT_DIR = args.output 
 
     # Get the model director(y/ies)
     model_directories = glob.glob(args.directory)
@@ -243,25 +289,15 @@ if __name__ == "__main__":
     # Check if the data directory exists
     assert os.path.exists(data_directory) and os.path.isdir(data_directory), f'Data directory not found: {data_directory}'
 
-    if args.multi_gpu:
-        # Initialize a producer-consumer queue
-        eval_queue = queue.Queue()
-        # Get the available GPUs
-        if args.device is not None:
-            gpus = args.device
-        else:
-            gpus = get_gpus()
-        # Check if there are any GPUs
-        assert len(gpus) > 0, "No GPUs found."
-        # Initialize the evaluation consumer threads
-        eval_threads = []
-        for gpu in gpus:
-            # Create a new thread targeting the process_queue_item function
-            eval_thread = threading.Thread(target=process_queue_item, args=(eval_queue, gpu, eval_model), daemon=True)
-            eval_threads.append(eval_thread)
-            eval_thread.start()
+    # Get the config file
+    config_file = args.config
+    # Check if the config file exists
+    if config_file is not None:
+        assert os.path.exists(config_file), f'Config file not found: {config_file}'
 
     result_directories = {d : [] for d in model_directories}
+
+    all_eval_params = []
 
     # Evaluate each model
     for model_directory in model_directories:
@@ -281,18 +317,18 @@ if __name__ == "__main__":
             weight_ids = [os.path.basename(file).split(".")[0] for file in all_weight_files]
         else:
             if args.weight_pattern is None:
-                args.weight_pattern = "best"
+                args.weight_pattern = "best\.pt"
             all_weight_files = [file for file in all_weight_files if re.search(args.weight_pattern, file)]
-            assert len(all_weight_files) == 1, f'Exactly one best weight file should be found. Found: {len(all_weight_files)}.'
-            weight_ids = [""]
+            # assert len(all_weight_files) == 1, f'Exactly one best weight file should be found. Found: {len(all_weight_files)}.'
+            weight_ids = ["" for file in all_weight_files]
 
         for weight_file, id in zip(all_weight_files, weight_ids):
             # Get the result directory path for the current model and weight file
-            this_result_dir = os.path.join(RESULT_DIR, os.path.basename(model_directory), args.name, id)
+            this_result_dir = os.path.join(RESULT_DIR, args.name, os.path.basename(model_directory), id)
             # Remember the result directory for each model
             result_directories[model_directory].append(this_result_dir)
-            # Check if the result directory exists
-            if os.path.exists(this_result_dir):
+            # Check if the result directory exists and is not empty
+            if os.path.exists(this_result_dir) and len(os.listdir(this_result_dir)) > 0:
                 # If the ignore_existing flag is set, ignore the existing result directory and skip the evaluation
                 if args.ignore_existing:
                     print(f'Ignoring existing result directory: {this_result_dir}')
@@ -301,55 +337,30 @@ if __name__ == "__main__":
                     raise ValueError(f'Result directory already exists: {this_result_dir}')
             if not args.dry_run:
                 # Create the result directory
-                os.makedirs(this_result_dir)
+                os.makedirs(this_result_dir, exist_ok=True)
             # Set the shared evaluation parameters
             eval_params = {
-                "weights" : weight_file, 
-                "directory" : data_directory, 
-                "output_directory" : this_result_dir,
-                "local_directory" : args.ground_truth,
+                "weights" : os.path.abspath(weight_file), 
+                "directory" : os.path.abspath(data_directory), 
+                "output_directory" : os.path.abspath(this_result_dir),
+                "config" : os.path.abspath(config_file) if config_file is not None else config_file,
+                "local_directory" : os.path.abspath(args.ground_truth),
                 "pattern" : args.input_pattern,
                 "dry_run" : args.dry_run,
                 "store_all" : args.save_all
             }
-            if not args.multi_gpu:
-                # For single GPU evaluation, set the device parameter
-                eval_params["device"] = "cuda:0" if args.device is None else args.device
-                # Evaluate synchronously
-                eval_model(**eval_params)
-            else:
-                # Add the evaluation parameters to the producer-consumer queue for asynchronous evaluation
-                eval_queue.put(eval_params)
+            # Add the evaluation parameters to the producer-consumer queue for asynchronous evaluation
+            all_eval_params.append(eval_params)
     
-    # Wait for the evaluation threads to finish
-    if args.multi_gpu:
-        eval_queue.put(None)
-        for eval_thread in eval_threads:
-            eval_thread.join()
+    all_result_directories = []
+    [all_result_directories.extend(dirs) for dirs in result_directories.values()]
 
-    if not args.no_compile:
-        per_weight_combined_results = []
-        # Combine the results
-        for model_directory in model_directories:
-            this_result_dirs = result_directories[model_directory]
-            if len(this_result_dirs) == 0:
-                print(f'No results found for model: {model_directory}')
-                continue
-            new_result_csv = combine_result_csvs(this_result_dirs, os.path.join(RESULT_DIR, os.path.basename(model_directory), args.name), dry_run=args.dry_run)
-            per_weight_combined_results.append(new_result_csv)
-            print(f'Combined results saved to: {new_result_csv}')
-        # Combine the results for all models
-        if len(per_weight_combined_results) > 0:
-            all_combined_csv_path = os.path.join(RESULT_DIR, args.name, "all_results.csv")
-            with open(all_combined_csv_path, 'w', newline='') as new_file:
-                csv_writer = None
-                for result_csv in per_weight_combined_results:
-                    with open(result_csv, 'r') as file:
-                        csv_reader = csv.reader(file)
-                        headers = next(csv_reader)
-                        if csv_writer is None:
-                            csv_writer = csv.writer(new_file)
-                            csv_writer.writerow(headers)
-                        for row in csv_reader:
-                            csv_writer.writerow(row)
-            print(f'Combined results saved to: {new_result_csv}')
+    if not "job_name" in extra:
+        extra.update({"job_name" : f'compare_models{"_" if args.name else ""}{args.name}'})
+
+    runner = ExperimentRunner(eval_model_wrapper, all_eval_params, devices=args.device, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(**extra))
+    runner.run().complete()
+
+    extra.update({"dependency" : f'afterok:{runner.slurm_job_id}', "cpus_per_task" : 1})
+    finalizer = ExperimentRunner(combine_result_csvs_wrapper, [[all_result_directories, os.path.join(RESULT_DIR, args.name), args.dry_run]], devices=args.device, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(**extra))
+    finalizer.run().complete()
