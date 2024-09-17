@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=68.2.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flat-bug"
+version = "0.2.0"
+authors = [
+  {name="Asger Svenning", email="asgersvenning@ecos.au.dk"},
+  {name="Quentin Geissman"},
+]
+description = "Universal Arthropod Localization and Instance Segmentation"
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "torch>=2.2.0",
+    "torchvision>=0.17.0",
+    "ultralytics>=8.2.16",
+    "shapely>=2.0.2",
+    "scikit-optimize>=0.10.1",
+    "pyexiftool>=0.5.6"
+]
+keywords=['deep learning', 'object detection', 'instance segmentation', 'arthropods']
+
+[project.optional-dependencies]
+erda = [
+    "pyremotedata>=0.0.16"
+]
+
+jupyter = [
+    "jupyter>=1.0.0"
+]
+
+
+[project.urls]
+"Homepage" = "https://github.com/darsa-group/flat-bug"
+"Bug Tracker" = "https://github.com/darsa-group/flat-bug/issues"
+
+[project.scripts]
+fb_predict = "bin.fb_predict:main"
+fb_train = "bin.fb_train:main"
+fb_evaluate = "bin.fb_eval:main"
+fb_tune = "bin.fb_tune:main"
+fb_prepare_data = "bin.fb_prepare_data:main"

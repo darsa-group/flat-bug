@@ -3,7 +3,7 @@ Evaluation functions for FlatBug datasets.
 """
 
 import os
-from typing import Union, List, Tuple, Dict
+from typing import Union, List, Tuple, Dict, Optional
 import cv2
 import numpy as np
 
@@ -78,7 +78,10 @@ import numpy as np
 
 
 
-def fb_to_coco(d: dict, coco: dict) -> dict:
+def fb_to_coco(
+        d: Dict, 
+        coco: Dict
+    ) -> Dict:
     """
     Converts a FlatBug dataset to a COCO dataset.
 
@@ -138,7 +141,7 @@ def fb_to_coco(d: dict, coco: dict) -> dict:
         "id": image_id,
         "width": image_width,
         "height": image_height,
-        "file_name": image_path,
+        "file_name": os.path.basename(image_path),
         "license": 0,
         "flickr_url": "",
         "coco_url": "",
@@ -149,6 +152,9 @@ def fb_to_coco(d: dict, coco: dict) -> dict:
     # Boxes, contours, confs, classes, scales
     for i in range(len(boxes)):
         box, contour, conf, class_, scale = boxes[i], contours[i], confs[i], classes[i], scales[i]
+        x1, y1, x2, y2 = box
+        x,y,w,h = x1, y1, x2 - x1, y2 - y1
+        box=[x,y,w,h]
 
         # Scale and restructure the contour
         m2i = [(mask_width - 1) / (image_width - 1), (mask_height - 1) / (image_height - 1)]  # Mask to image ratio
@@ -171,7 +177,7 @@ def fb_to_coco(d: dict, coco: dict) -> dict:
     return coco
 
 
-def format_contour(c) -> np.array:
+def format_contour(c : List) -> np.array:
     """
     Formats a contour to the OpenCV format.
 
@@ -198,7 +204,10 @@ def contour_bbox(c: np.array) -> np.array:
     return np.array([c[:, 0].min(), c[:, 1].min(), c[:, 0].max(), c[:, 1].max()])
 
 
-def split_annotations(coco: Dict, strip_directories: bool = True) -> Dict[str, dict]:
+def split_annotations(
+        coco: Dict, 
+        strip_directories: bool = True
+    ) -> Dict[str, dict]:
     """
     Splits COCO annotations by image ID.
 
@@ -209,14 +218,22 @@ def split_annotations(coco: Dict, strip_directories: bool = True) -> Dict[str, d
         Dict[Dict]: Dict of COCO datasets, split by image ID and keyed by image name.
     """
     img_id = np.array([i["image_id"] for i in coco["annotations"]])
-    ids = np.unique(img_id)
+    ids = np.unique(np.array([i["id"] for i in coco["images"]]))
     groups = [np.where(img_id == i)[0] for i in ids]
 
     if strip_directories:
         for i in range(len(coco["images"])):
             coco["images"][i]["file_name"] = os.path.basename(coco["images"][i]["file_name"])
 
-    return {coco["images"][id - 1]["file_name"]: [coco["annotations"][i] for i in g] for id, g in zip(ids, groups)}
+    result = {coco["images"][id - 1]["file_name"]: [coco["annotations"][i] for i in g] for id, g in zip(ids, groups)}
+    
+    # Ensure that all images are included in the result, even if they have no annotations/predictions
+    for i in range(len(coco["images"])):
+        image_name = coco["images"][i]["file_name"]
+        if image_name not in result:
+            result[image_name] = []
+    
+    return result
 
 
 def annotations_2_contours(annotations: Dict[str, dict]) -> Dict[str, List[np.array]]:
@@ -251,7 +268,6 @@ def contour_area(c: np.array) -> np.array:
     return np.sum(mask, dtype=np.int64)
 
 
-
 def annotations_to_numpy(annotations: List[Dict[str, Union[int, List[int]]]]) -> Tuple[np.array, np.array]:
     """
     Converts COCO annotations to NumPy arrays.
@@ -266,3 +282,41 @@ def annotations_to_numpy(annotations: List[Dict[str, Union[int, List[int]]]]) ->
     bboxes = np.array([contour_bbox(c) for c in contours])
     return bboxes, contours
 
+def filter_coco(
+        coco : Dict, 
+        confidence : Optional[float] = None, 
+        area : Optional[int] = None, 
+        verbose : bool=False
+    ) -> Dict:
+    """
+    Filters COCO annotations by confidence.
+
+    Args:
+        coco (Dict): COCO dataset.
+        confidence (float): Confidence threshold.
+        area (int): Area threshold.
+        verbose (bool): Verbose mode.
+
+    Returns:
+        Dict: Filtered COCO dataset.
+    """
+    filtered_annotations = []
+    for a in coco["annotations"]:
+        if confidence is not None and "conf" in a:
+            if a["conf"] < confidence:
+                continue
+        if area is not None and "bbox" in a:
+            _, _, w, h = a["bbox"]
+            if (w * h) < area:
+                if verbose:
+                    print("SKIPPED")
+                continue
+        filtered_annotations += [a]
+
+    return {
+        "info": coco["info"],
+        "licenses": coco["licenses"],
+        "images": coco["images"],
+        "annotations": filtered_annotations,
+        "categories": coco["categories"]
+    }

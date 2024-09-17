@@ -1,0 +1,4 @@
+nodes: 1 # Number of nodes
+cpus_per_task: 20 # Number of CPU cores per task/job
+mem: "128GB" # CPU memory
+time: "24:00:00" # Timelimit in HMS
