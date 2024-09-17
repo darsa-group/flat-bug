@@ -437,13 +437,11 @@ def nms_polygons_(
     return winners
 
 @torch.jit.script
-def _compute_transitive_closure_cpu(adjacency_matrix : torch.Tensor) -> torch.Tensor:
+def _compute_transitive_closure_compatible(adjacency_matrix : torch.Tensor) -> torch.Tensor:
     """
     Computes the transitive closure of a boolean matrix.
 
-    This function uses CPU compatible PyTorch operations and works with int16 for small matrices and int32 for larger matrices to avoid overflow.
-    
-    Note: Using matrices large enough that overflow with int16 matters for CPU matrix multiplication is extremely slow, so this is mostly included for compatibility reasons.
+    This function uses PyTorch operations compatible with both CPU and CUDA devices.
 
     Args:
         adjacency_matrix (torch.Tensor): A boolean matrix of shape (n, n), where n is the size of the graph represented by the matrix.
@@ -451,21 +449,18 @@ def _compute_transitive_closure_cpu(adjacency_matrix : torch.Tensor) -> torch.Te
     Returns:
         torch.Tensor: A boolean matrix of shape (n, n), which is the transitive closure of the adjacency matrix.
     """
+    device = adjacency_matrix.device
+    dtype = torch.float32
     csize = adjacency_matrix.shape[0]
     # Check for possible overflow
     if csize > 2 ** (32 - 1) - 1:
-        raise ValueError(f"Matrix is too large ({csize}x{csize}) for CPU computation")
-    elif csize > 2 ** (16 - 1) - 1:
-        dtype = torch.int32
-        # raise ValueError(f"Matrix is too large ({csize}x{csize}) for CPU computation")
-    else:
-        dtype = torch.int16
+        raise ValueError(f"Matrix is too large ({csize}x{csize}) for computation")
     # We convert to torch.int16 to avoid overflow when squaring the matrix and ensure torch compatibility
     closure = adjacency_matrix.to(dtype) 
     # Expand the adjacency matrix to the transitive closure matrix, by squaring the matrix and clamping the values to 1 - each step essentially corresponds to one step of parallel breadth-first search for all nodes
-    last_max = torch.zeros(csize, dtype=dtype)
+    last_max = torch.zeros(csize, dtype=dtype, device=device)
     for _ in range(int(torch.log2(torch.tensor(csize, dtype=torch.float32)).ceil())):
-        this_square = torch.matmul(closure, closure)
+        this_square = closure @ closure
         this_max = this_square.max(dim=0).values
         if (this_max == last_max).all():
             break
@@ -511,29 +506,64 @@ def _compute_transitive_closure_cuda(adjacency_matrix : torch.Tensor) -> torch.T
         closure = closure[:-padding, :-padding]
     return closure
 
-@torch.jit.script
-def compute_transitive_closure(adjacency_matrix : torch.Tensor) -> torch.Tensor:
-    """
-    Computes the transitive closure of a boolean matrix.
+# Check if the _int_mm function is compatible with the current environment
+if torch.cuda.is_available():
+    try:
+        _compute_transitive_closure_cuda(torch.zeros((32, 32), dtype=torch.bool).cuda())
+        _INT_MM_SUPPORTED = True
+    except:
+        _INT_MM_SUPPORTED = False
+        print("Warning: _int_mm is not supported on this device, falling back to CPU implementation")
+else:
+    _INT_MM_SUPPORTED = False
 
-    Supports both CPU and CUDA devices, with performance and compatibility optimized sub-functions for each device.
+# Since we use torch.jit.script, we cannot use the global variable _INT_MM_SUPPORTED inside the function, 
+# so we need to statically compile the function differently based on the availability of _int_mm
+if _INT_MM_SUPPORTED:
+    @torch.jit.script
+    def compute_transitive_closure(adjacency_matrix : torch.Tensor) -> torch.Tensor:
+        """
+        Computes the transitive closure of a boolean matrix.
 
-    Args:
-        adjacency_matrix (torch.Tensor): A boolean matrix of shape (n, n), where n is the size of the graph represented by the matrix.
+        Supports both CPU and CUDA devices, with performance and compatibility optimized sub-functions for each device.
 
-    Returns:
-        torch.Tensor: A boolean matrix of shape (n, n), which is the transitive closure of the adjacency matrix.
-    """
-    if len(adjacency_matrix.shape) != 2 or adjacency_matrix.shape[0] != adjacency_matrix.shape[1]:
-        raise ValueError(f"Matrix must be of shape (n, n), not {adjacency_matrix.shape}")
-    # If the matrix is a 0x0, 1x1 or 2x2 matrix, the transitive closure is the matrix itself, since there are no transitive relations
-    if len(adjacency_matrix) <= 2:
-        return adjacency_matrix    
-    # There can be a quite significant difference in performance between the CPU and GPU implementation, however this function is not the bottleneck, so it might not be noticeable in practice
-    if adjacency_matrix.is_cuda:
-        return _compute_transitive_closure_cuda(adjacency_matrix)
-    else:
-        return _compute_transitive_closure_cpu(adjacency_matrix)
+        Args:
+            adjacency_matrix (torch.Tensor): A boolean matrix of shape (n, n), where n is the size of the graph represented by the matrix.
+
+        Returns:
+            torch.Tensor: A boolean matrix of shape (n, n), which is the transitive closure of the adjacency matrix.
+        """
+        if len(adjacency_matrix.shape) != 2 or adjacency_matrix.shape[0] != adjacency_matrix.shape[1]:
+            raise ValueError(f"Matrix must be of shape (n, n), not {adjacency_matrix.shape}")
+        # If the matrix is a 0x0, 1x1 or 2x2 matrix, the transitive closure is the matrix itself, since there are no transitive relations
+        if len(adjacency_matrix) <= 2:
+            return adjacency_matrix    
+        # There can be a quite significant difference in performance between the CPU and GPU implementation, however this function is not the bottleneck, so it might not be noticeable in practice
+        if adjacency_matrix.is_cuda:
+            return _compute_transitive_closure_cuda(adjacency_matrix)
+        else:
+            return _compute_transitive_closure_compatible(adjacency_matrix)
+else:
+    @torch.jit.script
+    def compute_transitive_closure(adjacency_matrix : torch.Tensor) -> torch.Tensor:
+        """
+        Computes the transitive closure of a boolean matrix.
+
+        Supports both CPU and CUDA devices, with performance and compatibility optimized sub-functions for each device.
+
+        Args:
+            adjacency_matrix (torch.Tensor): A boolean matrix of shape (n, n), where n is the size of the graph represented by the matrix.
+
+        Returns:
+            torch.Tensor: A boolean matrix of shape (n, n), which is the transitive closure of the adjacency matrix.
+        """
+        if len(adjacency_matrix.shape) != 2 or adjacency_matrix.shape[0] != adjacency_matrix.shape[1]:
+            raise ValueError(f"Matrix must be of shape (n, n), not {adjacency_matrix.shape}")
+        # If the matrix is a 0x0, 1x1 or 2x2 matrix, the transitive closure is the matrix itself, since there are no transitive relations
+        if len(adjacency_matrix) <= 2:
+            return adjacency_matrix    
+        # When torch._int_mm is not supported, we default to the CPU implementation
+        return _compute_transitive_closure_compatible(adjacency_matrix)
 
 @torch.jit.script
 def extract_components(transitive_closure : torch.Tensor) -> Tuple[List[torch.Tensor], torch.Tensor]:

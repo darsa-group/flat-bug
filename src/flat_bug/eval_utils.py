@@ -882,9 +882,9 @@ def compatible_display(image: np.array):
 def compare_groups(
         group1: List, 
         group2: List, 
-        group_labels: Optional[str] = None, 
         threshold: float = 1 / 10,
-        plot: bool = True, 
+        group_labels: Optional[str] = ["Ground Truth", "Predictions"], 
+        plot: bool = False, 
         plot_scale: float = 1, 
         plot_boxes: bool = True,
         image_path: Optional[str] = None, 
@@ -936,8 +936,8 @@ def compare_groups(
         raise ValueError(f'Expected output_directory to be a string or None, got {type(output_directory)}')
     elif isinstance(output_directory, str) and not os.path.isdir(output_directory):
         raise ValueError(f'Expected output_directory to be a valid directory, got {output_directory}')
-    if not isinstance(output_identifier, str):
-        raise ValueError(f'Expected output_identifier to be a string, got {type(output_identifier)}')
+    if not isinstance(output_identifier, str) and (plot or output_directory is not None):
+        raise ValueError(f'Expected output_identifier to be a string when saving to file or plotting, got {type(output_identifier)}')
 
     # Convert the annotations to NumPy arrays, and calculate bounding boxes and areas
     b1, c1 = annotations_to_numpy(group1)
@@ -1073,3 +1073,134 @@ def compare_groups(
         return output_path
     else:
         return output
+
+def generate_block(min: int, max: int, size: int) -> np.ndarray:
+    """
+    Generates a block of integers centered around a random start value within a given range.
+
+    Args:
+        min (int): Minimum value for the block.
+        max (int): Maximum value for the block.
+        size (int): Size of the block to generate.
+
+    Returns:
+        np.ndarray: Array of integers within the specified range.
+    """
+    if size <= 0 or min >= max:
+        raise ValueError("Size must be positive and min must be less than max.")
+    
+    start = np.random.randint(min, max)
+    left = np.random.randint(0, size)
+    right = size - left
+    block = np.arange(start - left, start + right)
+    
+    return block[np.logical_and(block >= min, block < max)]
+
+
+def generate_bootstraps(s: int, n: int, block: bool = False) -> List[np.ndarray]:
+    """
+    Generates bootstrap samples with or without block sampling.
+
+    Args:
+        s (int): The size of the dataset.
+        n (int): The number of bootstrap samples to generate.
+        block (bool, optional): If True, generates block-based bootstraps. Defaults to False.
+
+    Returns:
+        List[np.ndarray]: List of bootstrap samples.
+    """
+    if s <= 0 or n <= 0:
+        raise ValueError("The size 's' and the number 'n' of bootstraps must be positive.")
+
+    if block:
+        blocks = int(max(1, (s ** 0.5) // 2))
+        return [np.concatenate([generate_block(min=0, max=s, size=s // blocks) for _ in range(blocks)]) for _ in range(n)]
+    else:
+        return [np.random.choice(s, s, replace=True) for _ in range(n)]
+
+def f1_score(GT : np.ndarray, MP : np.ndarray) -> float:
+    """
+    Calculates the F1 score for a binary classification problem.
+
+    Args:
+        GT (np.ndarray): Ground truth binary labels.
+        MP (np.ndarray): Predicted binary labels.
+
+    Returns:
+        float: The F1 score.
+    """
+    if len(GT) != len(MP):
+        raise ValueError("Lengths of GT and MP must match.")
+    
+    TP = np.sum(MP & GT)
+    FP = np.sum(MP & ~GT)
+    FN = np.sum(~MP & GT)
+
+    precision = TP / (TP + FP) if TP + FP > 0 else 0
+    recall = TP / (TP + FN) if TP + FN > 0 else 0
+
+    return float(2 * precision * recall / (precision + recall) if precision + recall > 0 else 0)
+
+def optimal_threshold_f1(
+    y: np.ndarray,
+    iou: np.ndarray,
+    confidence: np.ndarray,
+    num_thresholds: int = 100
+) -> float:
+    """
+    Finds the optimal threshold for F1 score by iterating over possible thresholds.
+
+    Args:
+        y (np.ndarray): Ground truth binary labels.
+        iou (np.ndarray): IoU values, 
+        confidence (np.ndarray): Confidence scores for predictions.
+        num_thresholds (int, optional): Number of thresholds to test. Defaults to 100.
+
+    Returns:
+        float: The threshold that maximizes the F1 score.
+    """
+    if len(y) != len(iou) or len(y) != len(confidence):
+        raise ValueError("Lengths of y, iou, and confidence must match.")
+    
+    y = np.asarray(y, dtype=bool)
+    best_threshold, best_f1 = 0, 0
+
+    for i in range(num_thresholds + 1):
+        threshold = i / num_thresholds
+        MP = confidence >= threshold
+        
+        f1 = f1_score(y, MP)
+
+        if f1 > best_f1:
+            best_f1 = f1
+            best_threshold = threshold
+
+    return best_threshold
+
+
+def best_confidence_threshold(
+    y: Union[List[int], np.ndarray],
+    iou: Union[List[float], np.ndarray],
+    confidence: Union[List[float], np.ndarray],
+    n: int = 100
+) -> float:
+    """
+    Finds the best confidence threshold using bootstrapping and F1 score optimization.
+
+    Args:
+        y (Union[List[int], np.ndarray]): Ground truth binary labels.
+        iou (Union[List[float], np.ndarray]): IoU values, non-floats default to 0.
+        confidence (Union[List[float], np.ndarray]): Confidence scores for predictions, non-floats default to 0.
+        n (int, optional): Number of bootstrap samples. Defaults to 100.
+
+    Returns:
+        float: The average of the optimal thresholds found for each bootstrap sample.
+    """
+    if len(y) != len(iou) or len(y) != len(confidence):
+        raise ValueError("Lengths of y, iou, and confidence must match.")
+
+    y = np.asarray(y, dtype=bool)
+    iou = np.asarray([i if isinstance(i, float) else 0 for i in iou], dtype=float)
+    confidence = np.asarray([c if isinstance(c, float) else 0 for c in confidence], dtype=float)
+
+    return float(np.mean([optimal_threshold_f1(y[boot], iou[boot], confidence[boot]) for boot in generate_bootstraps(len(iou), n, True)]))

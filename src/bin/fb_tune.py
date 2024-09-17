@@ -18,19 +18,19 @@ import numpy as np
 from flat_bug.predictor import Predictor
 from flat_bug.datasets import get_datasets
 from flat_bug.coco_utils import fb_to_coco, split_annotations, filter_coco
-from flat_bug.eval_utils import compare_groups
+from flat_bug.eval_utils import compare_groups, best_confidence_threshold, f1_score
 from flat_bug.config import write_cfg, read_cfg, DEFAULT_CFG
 
 from scipy.optimize import differential_evolution
 from skopt import gp_minimize
+from skopt.plots import plot_convergence, plot_objective
 
 # Fixed ranges for the parameters during tuning - should probably be configurable
 PARAMETER_RANGES = {
     "MIN_OBJ_SIZE": (0, 64),
     "MINIMUM_TILE_OVERLAP": (0, 512),
     "EDGE_CASE_MARGIN": (0, 192),
-    "SCORE_THRESHOLD": (0.01, 0.5),
-    "IOU_THRESHOLD": (0.01, 0.5)
+    "IOU_THRESHOLD": (0.01, 0.9)
 }
 
 # Class for scaling and unscaling the parameters - ensures that the parameters visible to the optimizer have equal dynamic ranges [0, 1]
@@ -96,38 +96,36 @@ class Tuner(Predictor):
             self.kwargs = ", " + self.kwargs
         super().__init__(*args, **kwargs)
         self.set_hyperparameters(**self.default_cfg)
-
+        self.default_cfg.pop("SCORE_THRESHOLD", None)
+        self._init_score_threshold = self.SCORE_THRESHOLD
+    
     def evaluate(self) -> float:
-        """
+        r"""
         Evaluates the model on the dataset(s) and returns the cost.
-
         Cost is defined as the average of one minus the intersection over union (IoU) for all matches between labels and predicted instances. This includes both matched predictions, unmatched predictions (false positives), and unmatched labels (false negatives).
         Including false positives and negatives ensures that the model is penalized for missing instances as well as for predicting instances that are not present in the ground truth.
-        
-        Mathematically the cost can be expressed as follows:
-        
-        :math:`C(L, P, M) = \frac{\sum\limits_{i=1}^N\sum\limits_{p, q \in M_i}^{\lvert M_i\rvert} 1 - IoU\left(L_{i,p};\;P_{i,q}\right)}{\sum\limits_{i=1}^N \lvert M_i\rvert},\quad C: x \rightarrow [0,\; 1]$`
 
+        Mathematically the cost can be expressed as follows:
+
+        :math:`C(L, P, M) = \frac{\mathlarger\sum\limits_{i=1}^N\;\mathlarger\sum\limits_{(p, q) \in M_i}\left(1 - \mathrm{IoU}\left(L_{i,p};\;P_{i,q}\right)\right)\cdot\mathbf{1}_{p\neq\emptyset\,\land\, q\neq\emptyset}}{\mathlarger\sum\limits_{i=1}^N \,\lvert M_i\rvert}`
+        :math:`C: (L, P, M) \in \mathrm{List}(\mathrm{Poly}^*) \times \mathrm{List}(\mathrm{Poly}^*) \times \mathrm{List}(\mathcal{P}(\mathbb{Z}_+\times\mathbb{Z}_+)) \to [0, 1]`
         where:
         - :math:`L` is a list of the ground truth ***L***abels for each image
         - :math:`P` is a list of the ***P***redictions for each image
         - :math:`M` is a list of the set of ***M***atching pairs of indices between the ground truth and the predictions for each image
         - :math:`N` is the number of images, and the length of :math:`L`, :math:`P` and :math:`M`
         - :math:`IoU : (x, y) \rightarrow [0, 1]` is the intersection over union function between two instances (e.g. polygons or bounding boxes)
-
         False positives or negatives lead to either :math:`L_{i,p}` or :math:`P_{i,q}` being empty, which will result in a cost of 1 for that instance.
         A prediction perfectly matching a ground truth label will result in a cost of 0 for that instance.
-
         In reality, the cost is calculated as 1 minus the average IoU for each instance, this is equivalent to the above formula, but the code is a bit cleaner.
-
         Returns:
             float: The cost of the model on the dataset(s), where 0 corresponds to exactly finding and matching all ground truth instances, and 1 corresponds to not finding any instances.
         """
-        total_cost, total_instances = 0, 0
+        eval_results = {}
         for data in tqdm(self.loader, dynamic_ncols=True, leave=False, desc="Evaluating model "):
             image, labels = data
             prediction = list(split_annotations(fb_to_coco(self.pyramid_predictions(image, scale_before=self.scale_before).json_data, {}), True).values())[0]
-            eval_results : dict = compare_groups(
+            this_results : dict = compare_groups(
                 group1              = labels, 
                 group2              = prediction, 
                 group_labels        = ["Ground Truth", "Predictions"],
@@ -137,23 +135,80 @@ class Tuner(Predictor):
                 plot_scale          = 1,
                 plot_boxes          = False,
                 output_directory    = None,
-                threshold           = self.IOU_THRESHOLD
+                threshold           = 1 / 3 # TODO: At what overlap with the label do we consider a prediction to be correct? 
             )
-            total_cost += sum(eval_results["IoU"]) 
-            total_instances += len(eval_results["IoU"])
-        if total_instances == 0:
-            print("WARNING: No instances found in the dataset, returning a cost of 0.")
-            return 0
-        return 1 - total_cost / total_instances
+            # Merge the results
+            for k, v in this_results.items():
+                if k not in eval_results:
+                    eval_results[k] = v
+                else:
+                    if isinstance(v, list):
+                        eval_results[k].extend(v)
+                    elif isinstance(v, np.ndarray):
+                        eval_results[k] = np.concatenate([eval_results[k], v])
+                    else:
+                        raise ValueError(f"Unexpected type {type(v)} for {k}")
+        # Update the cost threshold
+        current_best_score_threshold = self.SCORE_THRESHOLD
+        if len(eval_results["idx_1"]) > 25:
+            current_best_score_threshold = max(0.01, best_confidence_threshold(eval_results["idx_1"] != -1, eval_results["IoU"], eval_results["conf2"]))
+        # Calculate IoU Cost
+        n, c_iou = 0, 0
+        for idx_1, idx_2, iou, conf in zip(eval_results["idx_1"], eval_results["idx_2"], eval_results["IoU"], eval_results["conf2"]):
+            if idx_2 != -1 and conf < current_best_score_threshold:
+                # These cases are skipped, since they correspond to instances that would not have been predicted by the model with the new confidence threshold
+                if idx_1 == -1:
+                    continue # These are prior false positives, which are now correctly not predicted (true negatives)
+                iou = 0 # These are prior true positives, which are now not predicted (false negatives)
+            c_iou += 1 - iou
+            n += 1
+        c_iou = c_iou / n
+        # Calculate F1 Cost
+        labels = []
+        predictions = []
+        for i, (idx_1, idx_2, conf) in enumerate(zip(eval_results["idx_1"], eval_results["idx_2"], eval_results["conf2"])):
+            if idx_2 != -1 and conf < current_best_score_threshold:
+                if idx_1 == -1:
+                    continue
+                predictions.append(False)
+                labels.append(True)
+            else:
+                predictions.append(idx_1 != -1)
+                labels.append(idx_2 != -1)
+        c_f1 = 1 - f1_score(np.asarray(labels), np.asarray(predictions))
+        # Use the F1 cost
+        cost = c_f1
+
+        self.update_score_threshold(cost, current_best_score_threshold)
+        return cost, c_f1, c_iou
+    
+    def update_score_threshold(self, cost, threshold):
+        """
+        Potentially updates the score threshold based on the cost and the current best score threshold.
+
+        An update is applied if:
+        - There are no prior costs
+        - The current cost is the minimum and there are less than 5 prior costs
+        - The current cost is below the mean of the costs below the median of the prior costs
+        """
+        prior_costs = [] if not hasattr(self, "cost_log") else self.cost_log["COST"]
+        n_prior = len(prior_costs)
+        do_update = (n_prior == 0) or (n_prior < 5 and cost < min(prior_costs)) or (n_prior > 5 and cost < np.mean([c for c in prior_costs if c < np.quantile(prior_costs, (n_prior ** 0.5) / n_prior)]))
+        if do_update:
+            self.set_hyperparameters(SCORE_THRESHOLD = (self.SCORE_THRESHOLD + threshold) / 2)
+
 
     def cost(self, cfg : dict) -> float:
         self.set_hyperparameters(**cfg)
-        cost = self.evaluate()
+        cost, c_f1, c_iou = self.evaluate()
         if not hasattr(self, "cost_log"):
-            self.cost_log = {col : [] for col in list(cfg.keys()) + ["COST"]}
+            self.cost_log = {col : [] for col in list(cfg.keys()) + ["SCORE_THRESHOLD","COST", "COST_F1", "COST_IOU"]}
         for k, v in cfg.items():
             self.cost_log[k].append(v)
         self.cost_log["COST"].append(cost)
+        self.cost_log["COST_F1"].append(c_f1)
+        self.cost_log["COST_IOU"].append(c_iou)
+        self.cost_log["SCORE_THRESHOLD"].append(self.SCORE_THRESHOLD)
         self.sync_data(1)
         self.set_hyperparameters(**self.default_cfg)
         return cost
@@ -187,16 +242,18 @@ class Tuner(Predictor):
         best_cost = min(self.cost_log["COST"])
         best_idx = self.cost_log["COST"].index(best_cost)
         first_params = {k : v[0] for k, v in self.cost_log.items() if k != "COST"}
+        first_params["SCORE_THRESHOLD"] = self._init_score_threshold
         best_params = {k : v[best_idx] for k, v in self.cost_log.items() if k != "COST"}
+        best_params["SCORE_THRESHOLD"] = self.SCORE_THRESHOLD
         # Create a string for the first and best results
         result_str = "{} Cost: {:.4f} achieved with parameters: {}"
         first_result = result_str.format("First", first_cost, first_params)
         best_result = result_str.format("Best", best_cost, best_params)
         # Create a summary string
-        improvement = (first_cost - best_cost) / first_cost * 100
+        improvement = 0 if first_cost == 0 else (first_cost - best_cost) / first_cost * 100
         summary = f"Optimization found minimum at {best_cost} with parameters {best_params}. Improvement over initial guess: {improvement:.1f}%."
         # Return the call, summary, first result and best result
-        return "\n".join([call, summary, first_result, best_result])
+        return "\n".join(["", call, summary, first_result, best_result])
 
 class AnnotatedDataset(torch.utils.data.IterableDataset):
     FILES_PER_DATASET_PER_ITER = 1
@@ -283,16 +340,11 @@ def main():
                             help="Optimization algorithm to use. Default is 'bayesian'."
                                  "Options are 'evolutionary' or 'genetic' for differential evolution and 'bayesian'/'gaussian process'/'gp' for gaussian process optimization."
                                  "The maximum number of function evaluation for both methods is pop_size * (max_iter + 1) * number_of_parameters (5).")
-    args_parse.add_argument("--mock", action="store_true",
-                            help="Mock the tuning process. Doesn't load the model, but instead immediately returns the initial configuration guess.")
     args_parse.add_argument("--verbose", action="store_true",
                             help="Prints more information during the tuning process.")
 
     args = args_parse.parse_args()
     option_dict = vars(args)
-
-    # Do we mock the tuning?
-    mock = option_dict["mock"]
     
     # Get input options
     input_dir = option_dict["input_dir"]
@@ -338,32 +390,27 @@ def main():
         unit="evaluations"
     )
 
-    # fixme: what to do here when mocking?
-    if not mock:
-        # Create the dataset for evaluating the tuning objective function
-        files = sorted([f for f in glob.glob(os.path.join(input_dir, "**"), recursive=True) if re.search(input_pattern, f)])
-        if max_images is not None:
-            dataset_lens = [len(v) for v in get_datasets(files).values()]
-            if max_images > sum(dataset_lens):
-                logging.warning(f"max_images={max_images} is greater than the total number of images in the dataset. "
-                                f"Setting max_images to {sum(dataset_lens)}")
-            else:
-                image_per_dataset = max_images // len(dataset_lens)
+    # Create the dataset for evaluating the tuning objective function
+    files = sorted([f for f in glob.glob(os.path.join(input_dir, "**"), recursive=True) if re.search(input_pattern, os.path.basename(f))])
+    if max_images is not None:
+        dataset_lens = [len(v) for v in get_datasets(files).values()]
+        if max_images > sum(dataset_lens):
+            logging.warning(f"max_images={max_images} is greater than the total number of images in the dataset. "
+                            f"Setting max_images to {sum(dataset_lens)}")
+        else:
+            image_per_dataset = max_images // len(dataset_lens)
+            total_images = sum([min(image_per_dataset, l) for l in dataset_lens])
+            while total_images < max_images:
+                image_per_dataset += 1
                 total_images = sum([min(image_per_dataset, l) for l in dataset_lens])
-                while total_images < max_images:
-                    image_per_dataset += 1
-                    total_images = sum([min(image_per_dataset, l) for l in dataset_lens])
-                if total_images > max_images and verbose:
-                    logging.warning(f"max_images={max_images} is not divisible* by the number of datasets. "
-                                    f"Setting max_images to {total_images}")
-                max_images = total_images
-                files = [f for v in get_datasets(files).values() for f in v[:image_per_dataset]]
-        dataset = AnnotatedDataset(files, annotations, datasets_per_iter=datasets_per_iter, files_per_iter=images_per_iter)
-        # Get the model
-        tuner = Tuner(loader=dataset, default_cfg=DEFAULT_CFG, scale_before=scale_before, file_path=str(os.path.join(results_dir, "tuning_log.csv")), model=model_weights, device=device, dtype=dtype)
-    else:
-        # If objective is called an error will be raised: "TypeError: 'NoneType' object is not callable"
-        tuner = None
+            if total_images > max_images and verbose:
+                logging.warning(f"max_images={max_images} is not divisible* by the number of datasets. "
+                                f"Setting max_images to {total_images}")
+            max_images = total_images
+            files = [f for v in get_datasets(files).values() for f in v[:image_per_dataset]]
+    dataset = AnnotatedDataset(files, annotations, datasets_per_iter=datasets_per_iter, files_per_iter=images_per_iter)
+    # Get the model
+    tuner = Tuner(loader=dataset, default_cfg=DEFAULT_CFG, scale_before=scale_before, file_path=str(os.path.join(results_dir, "tuning_log.csv")), model=model_weights, device=device, dtype=dtype)
 
     # Conversion helper between list of number and configuration dictionary
     def create_cfg(params):
@@ -384,34 +431,16 @@ def main():
     scaler = Scaler(PARAMETER_RANGES)
 
     # Define the objective function for the optimization algorithm    
-    if not mock:
-        def objective(params):
-            global scaler, verbose, pbar
-            pbar.update(1)
-            cfg = create_cfg(scaler.unscale(params))
-            if verbose:
-                print(f"Trying configuration: {cfg}")
-            cost = tuner.cost(cfg)
-            if verbose:
-                print(f"Cost={cost} for {cfg}")
-            return cost
-    else:
-        # When mocking the tuning process, we just return a random number
-        import random, time
-
-        generator = random.Random(42)
-        def mock_metric(x):
-            return sum([abs(xi-1/2) for xi in x]) / len(x)
-
-        def objective(x):
-            global pbar
-            pbar.update(1)
-            time.sleep(0.01)
-            true_cost = mock_metric(x)
-            cost = true_cost + 2 * (generator.random() - 1/2) / 10 + 1/10
-            if verbose:
-                print(f"Cost={cost} for true cost={true_cost}")
-            return cost
+    def objective(params):
+        global scaler, verbose, pbar
+        pbar.update(1)
+        cfg = create_cfg(scaler.unscale(params))
+        if verbose:
+            print(f"Trying configuration: {cfg}")
+        cost = tuner.cost(cfg)
+        if verbose:
+            print(f"Cost={cost} for {cfg}")
+        return cost
     
     # Define the arguments for the optimization algorithm - 
     if init_cfg is None:
@@ -435,36 +464,19 @@ def main():
                                         maxiter=max_iter, popsize=pop_size,
                                         disp=True, polish=False, updating="immediate") 
     elif optimization_algorithm in "bayesian" or optimization_algorithm in "gaussian process" or optimization_algorithm in "gp":
-        # Fixme: Initial guess seems to lead to worse convergence, perhaps this optimization algorithm isn't suited for providing an initial guess? For now we just ignore the initial guess
         result = gp_minimize(objective, bounds, x0=None, n_calls=max_fun, n_initial_points=min(10, max_fun), verbose=False)
-
-    if mock:
-        final_cost = mock_metric(result.x)
-        init_cost = mock_metric(initial)
-        improvement = (init_cost - final_cost) / init_cost * 100
-        print(f"Mock optimization found minimum at {final_cost} with parameters {result.x}. True minimum should be [0.5, 0.5, 0.5, 0.5, 0.5]. Improvement over initial guess: {improvement:.1f}%.")
-    else:
-        print(tuner)
-
+        plot_convergence(result).get_figure().savefig(os.path.join(results_dir, "convergence_plot.png"))
+        plot_objective(result).get_figure().savefig(os.path.join(results_dir, "objective_plot.png"))
     pbar.close()
 
-    if mock:
-        class DUMMY:
-            def __init__(self):
-                self.x = np.array(initial)
-        result = DUMMY()
-
-    # Convert the best configuration to a dictionary and save it as a YAML
+    # Get the best configuration
     result_values = create_cfg(scaler.unscale(result.x))
-    if verbose:
-        print(f"Best configuration: {result_values}")
-    try:
-        write_cfg(result_values, os.path.join(results_dir, "best_cfg.yaml"), overwrite=True)
-    except Exception as e:
-        if mock:
-            print(f"Failed to save result config to {os.path.join(results_dir, 'best_cfg.yaml')} due to {str(e)}")
-        else:
-            raise e
+    result_values["SCORE_THRESHOLD"] = tuner.SCORE_THRESHOLD
+    tuner.set_hyperparameters(**result_values)
+
+    # Print and save the results
+    print(tuner)
+    write_cfg(result_values, os.path.join(results_dir, "best_cfg.yaml"), overwrite=True)
         
 if __name__ == "__main__":
     main()

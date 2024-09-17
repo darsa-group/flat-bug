@@ -24,10 +24,10 @@ def main():
     # iou_match_threshold = 0.1
 
     parser = argparse.ArgumentParser(description='Evaluate predictions')
-    parser.add_argument('-p', '--predictions', type=str, help='Path or pattern to the predictions files')
-    parser.add_argument('-g', '--ground_truth', type=str, help='Path to the ground truth file')
-    parser.add_argument('-I', '--image_directory', type=str, help='Path to the image directory')
-    parser.add_argument('-o', '--output_directory', type=str, help='Path to the output directory')
+    parser.add_argument('-p', '--predictions', type=str, help='Path or pattern to the predictions files', required=True)
+    parser.add_argument('-g', '--ground_truth', type=str, help='Path to the ground truth file', required=True)
+    parser.add_argument('-I', '--image_directory', type=str, help='Path to the image directory', required=True)
+    parser.add_argument('-o', '--output_directory', type=str, help='Path to the output directory', required=True)
     parser.add_argument('--config', type=str, help='Path to the configuration file', required=False)
     parser.add_argument('-P', '--plot', action="store_true", help='Plot the matches and the IoU matrix')
     parser.add_argument('-b', '--no_boxes', action="store_false", help='Do not plot the bounding boxes')
