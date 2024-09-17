@@ -171,8 +171,10 @@ runs/
 datasets/
 
 test/
-s3/
+scipts/experiments/results/
 dev/
+s3/
+prototypes/
 utils/eval_slurm.sh
 utils/zip_output_for_ERDA.sh
 src/flat_bug/tests/assets/*.txt
