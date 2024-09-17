@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import argparse
 import logging
 import os.path
@@ -9,13 +8,13 @@ from flat_bug.trainers import MySegmentationTrainer
 from ultralytics import settings
 
 # fixme, resume should continue on the same "run folder"
-if __name__ == '__main__':
+def main():
     DEFAULT_CONF = {
         "batch": 8,
         "imgsz": 1024,
         "model": "yolov8m-seg.pt",
         "task": "detect",
-        # "task": "segment", #fixme why not segment?!
+        # "task": "segment", #fixme why not segment?! RE: It is overwritten in the __init__ method of ultralytics.models.yolo.segment.train.SegmentationTrainer
         "epochs": 5000,
         "device": "cuda",
         "patience": 500,
@@ -33,7 +32,6 @@ if __name__ == '__main__':
         "cache": "ram"
     }
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-
     args_parse.add_argument("-d", "--data-dir", dest="data_dir",
                             help="The directory containing the prepared data (i.e., the output of  `fb_prepare.py`",
                             type=str)
@@ -46,7 +44,24 @@ if __name__ == '__main__':
                             action='store_true')
 
 
-    args = args_parse.parse_args()
+    args, extra = args_parse.parse_known_args()
+    cli_overrides = {}
+    for key, value in zip(extra[::2], extra[1::2]):
+        if not key.startswith("--"):
+            raise ValueError(f"Unknown argument: {key}\n" + args_parse.format_help())
+        key = key.removeprefix("--")
+        if not key in DEFAULT_CONF:
+            raise ValueError(f"Unknown argument: {key}\n" + args_parse.format_help())
+        if key.startswith("fb_"):
+            raise ValueError(f"Options starting with 'fb_' should be specified in the config file, not as command line arguments")
+        # fixme: probably unsafe...
+        try:
+            value = eval(value)
+        except:
+            pass
+
+        cli_overrides[key] = value
+        
     option_dict = vars(args)
 
     assert os.path.isdir(option_dict["data_dir"])
@@ -56,32 +71,40 @@ if __name__ == '__main__':
     #fixme issue when providing new dataset path, sill using old one?! see when i used pollen data
     settings.update({'datasets_dir': option_dict["data_dir"]})
 
+    # Load default training parameters
     overrides = DEFAULT_CONF
 
+    # Update with parameters from the config file
     if option_dict["config_file"]:
         with open(option_dict["config_file"]) as f:
             yaml_config = yaml.safe_load(f)
             overrides.update(yaml_config)
 
+    # Update data directory and resume flag from the command line
     overrides["data"] = data
     if option_dict["resume"]:
         assert os.path.isfile(overrides["model"]), f"Trying to resume from a model that does not seem to be a valid file: {overrides['model']}"
         overrides["resume"] = overrides["model"]
     else:
         overrides["resume"] = False
-    # print(settings)
-    custom_fb_args = {}
-    todel = []
-    for k, v in overrides.items():
-        if k.startswith("fb_"):
-            custom_fb_args[k.removeprefix("fb_")] = v
-            todel.append(k)
 
-    for d in todel:
-        del overrides[d]
-    print(overrides)
-    t = MySegmentationTrainer(overrides=overrides, **custom_fb_args)
+    # This is just a hack to fix this: https://github.com/pytorch/pytorch/issues/37377 - only relevant for DDP
+    if isinstance(overrides["device"], (tuple, list)) :
+        num_devices = len(overrides["device"])
+    elif isinstance(overrides["device"], str):
+        num_devices = len(overrides["device"].split(","))
+    else:
+        num_devices = 1 # Fixme: Is this a real case, or just a type error?
+    if isinstance(overrides["device"], (tuple, list)) or (isinstance(overrides["device"], str) and len(overrides["device"].split(",")) > 1):
+        os.environ['MKL_THREADING_LAYER'] = 'GNU'
+        os.environ['OMP_NUM_THREADS'] = str(overrides["workers"])
+
+    # Instantiate trainer
+    trainer = MySegmentationTrainer(overrides=overrides)
 
     if not option_dict["resume"]:
-        t.start_epoch = 0
-    t.train()
+        trainer.start_epoch = 0
+    trainer.train()
+
+if __name__ == "__main__":
+    main()

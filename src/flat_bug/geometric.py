@@ -1,5 +1,3 @@
-import math
-
 from typing import Union, List, Tuple, Optional
 
 import torch
@@ -170,7 +168,7 @@ def contours_to_masks(
     # Convert to tensors
     return torch.tensor(masks, dtype=torch.bool, device=device)
     
-def poly_normals(polygon : "torch.Tensor") -> "torch.Tensor":
+def poly_normals(polygon : torch.Tensor) -> torch.Tensor:
     """
     Calculates the normals of a polygon.
 
@@ -185,7 +183,10 @@ def poly_normals(polygon : "torch.Tensor") -> "torch.Tensor":
     n = (n + np.roll(n, 1, axis=0)) / 2
     return n
 
-def linear_interpolate(poly : "np.ndarray", scale : int) -> "np.ndarray":
+def linear_interpolate(
+        poly : np.ndarray, 
+        scale : int
+    ) -> np.ndarray:
     """
     Linearly interpolates a N x 2 polygon to have N x scale vertices.
     """
@@ -202,7 +203,11 @@ def linear_interpolate(poly : "np.ndarray", scale : int) -> "np.ndarray":
     new_poly[-scale:] = np.linspace(poly[-1], poly[0], scale, endpoint=False)
     return new_poly[~(new_poly == np.roll(new_poly, -1, axis=0)).all(axis=1)]
 
-def scale_contour(contour : "np.ndarray", scale : float, expand_by_one : bool=False) -> "np.ndarray":
+def scale_contour(
+        contour : np.ndarray, 
+        scale : float, 
+        expand_by_one : bool=False
+    ) -> np.ndarray:
     if len(contour.shape) != 2 or contour.shape[1] != 2:
         if contour.shape[0] == 2:
             contour = contour.reshape(1, 2)
@@ -234,7 +239,10 @@ def scale_contour(contour : "np.ndarray", scale : float, expand_by_one : bool=Fa
     drift = centroid - contour.mean(axis=0)
     return (contour + drift).round().astype(np.int32)[(n_interp // 2)::n_interp].copy()
 
-def resize_mask(masks : "torch.Tensor", new_shape : Union[Tuple[int, int], List[int]]) -> "torch.Tensor":
+def resize_mask(
+        masks : torch.Tensor, 
+        new_shape : Union[Tuple[int, int], List[int]]
+    ) -> torch.Tensor:
     """
     Takes a mask (or a batch of masks) and resizes it by scaling the contour coordinates and snapping to the integer grid, ensuring that snapping is always done towards the outside of the mask.
 
