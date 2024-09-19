@@ -185,3 +185,6 @@ scripts/experiments/results/**
 slurm_logs
 
 prototypes/**
+
+install_digital_research_alliance_canada.sh
+pyvenv.cfg

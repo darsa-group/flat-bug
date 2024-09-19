@@ -1,6 +1,6 @@
 batch: 16
 model: "./yolov8m-seg.pt"
-epochs: 200
+epochs: 3
 device: 0
 save_period: 25
 patience: 9999
