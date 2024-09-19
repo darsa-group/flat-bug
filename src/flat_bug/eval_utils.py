@@ -6,6 +6,7 @@ from typing import Union, List, Tuple, List, Dict, Any, Optional
 import cv2
 import numpy as np
 
+from flat_bug import logger
 from flat_bug.coco_utils import contour_bbox, contour_area, annotations_to_numpy
 
 def isfloat(num : str) -> bool:
@@ -354,7 +355,7 @@ def plot_heatmap(
             scale_dims = 1000 / min_dim
             dimensions = tuple([int(d * scale_dims) for d in dimensions])
     if mat.shape[0] == 0 or mat.shape[1] == 0:
-        print('WARNING: Empty matrix. Cannot plot heatmap.')
+        logger.warning('Empty matrix. Cannot plot heatmap.')
         return
 
     # Create a colormap for viridis
@@ -867,11 +868,11 @@ def compatible_display(image: np.array):
         start_time = time.time()
         while not button_clicked and (time.time() - start_time) < TIMEOUT:
             time.sleep(0.01)
-        print('Image display closed')
+        logger.info('Image display closed')
     else:
         # Check if a display is available
         if os.environ.get('DISPLAY', '') == '':
-            print('No display found, unable to display the image')
+            logger.info('No display found, unable to display the image')
         else:
             # Display the image
             cv2.imshow('Matches', image)

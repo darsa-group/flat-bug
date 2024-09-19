@@ -14,6 +14,7 @@ from shapely.validation import make_valid
 from ultralytics.data.augment import RandomPerspective
 from ultralytics.utils.instance import Instances
 
+from flat_bug import logger
 from flat_bug.config import check_types
 
 ### From Ultralytics reposity, remove clipping from `RandomPerspective` and add `apply_segments` function
@@ -353,7 +354,7 @@ def remove_instances(
     labels["cls"] = labels["cls"][valid_i]
 
     labels["instances"] = instances
-    # print(labels)
+    # logger.info(labels)
     return labels
 
 def scale_labels(
@@ -536,11 +537,11 @@ class Crop:
         img = inpaint_pad(img, (py0, py1, px0, px1))
         img = img[start_y: start_y + size_y, start_x: start_x + size_x, :]
 
-        if img.shape != (size_x, size_y, 3):
-            print("shape:", img.shape)
-            print("or-shape", orig_shape)
-            print("x,y:", start_x, start_y)
-            print(labels["im_file"])  # fixme, this is also done during validation?!
+        if img.shape != (size_x, size_y, 3): 
+            logger.info("shape:", img.shape)
+            logger.info("or-shape", orig_shape)
+            logger.info("x, y:", start_x, start_y)
+            logger.info(labels["im_file"])  # fixme, this is also done during validation?!
 
         assert img.shape == (size_x, size_y, 3), f"{img.shape}, ({size_x}, {size_y})"
 
@@ -677,10 +678,10 @@ class RandomColorInv(object):
 
     def __init__(self, p : float=0.5):
         if p < 0:
-            print("Warning: p should be in [0,1], got", p, "setting to 0")
+            logger.warning("p should be in [0,1], got", p, "setting to 0")
             p = 0
         if p > 1:
-            print("Warning: p should be in [0,1], got", p, "setting to 1")
+            logger.warning("p should be in [0,1], got", p, "setting to 1")
             p = 1
         self.p = 1 - p
 

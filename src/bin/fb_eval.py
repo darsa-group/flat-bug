@@ -7,6 +7,7 @@ from glob import glob
 
 from tqdm import tqdm
 
+from flat_bug import logger
 from flat_bug.coco_utils import fb_to_coco, split_annotations, filter_coco
 from flat_bug.eval_utils import compare_groups
 from flat_bug.config import read_cfg, DEFAULT_CFG
@@ -72,23 +73,29 @@ def main():
     if len(gt_diff_keys) > 0:
         show = min(2, len(gt_diff_keys))
         missing_gt_diff_formatted = ', '.join(['"' + str(i) + '"' for i in gt_diff_keys[:show]])
-        print(f'Ground truth has {len(gt_diff_keys)} images that are not in the predictions: [{missing_gt_diff_formatted}{", ..." if len(gt_diff_keys) > show else ""}] and {len(gt_diff_keys) - show} more')
+        logger.info(
+            f'Ground truth has {len(gt_diff_keys)} images that are not in the predictions:'
+            f'[{missing_gt_diff_formatted}{", ..." if len(gt_diff_keys) > show else ""}] and {len(gt_diff_keys) - show} more'
+        )
     if len(pred_diff_keys) > 0:
         show = min(2, len(pred_diff_keys))
         missing_pred_diff_formatted = ', '.join(['"' + str(i) + '"' for i in pred_diff_keys[:show]])
-        print(f'Predictions has {len(pred_diff_keys)} images that are not in the ground truth: [{missing_pred_diff_formatted} {", ..." if len(pred_diff_keys) > show else ""}] and {len(pred_diff_keys) - show} more')
+        logger.info(
+            f'Predictions has {len(pred_diff_keys)} images that are not in the ground truth:'
+            f'[{missing_pred_diff_formatted} {", ..." if len(pred_diff_keys) > show else ""}] and {len(pred_diff_keys) - show} more'
+        )
     if len(shared_keys) == 0:
         raise ValueError(f'No images in common between the ground truth and the predictions')
 
     shared_keys = sorted(shared_keys)
     if args.n != -1:
-        print(f'Skipping the evaluation of {len(shared_keys) - args.n} images')
+        logger.info(f'Skipping the evaluation of {len(shared_keys) - args.n} images')
         shared_keys = shared_keys[:args.n]
     if len(shared_keys) == 0:
         raise ValueError(f'No images to evaluate')
     if len(shared_keys) < args.workers:
         args.workers = min(args.workers, len(shared_keys))
-        print(f"Warning: More workers than images, reducing the number of workers to {args.workers}")
+        logger.info(f"Warning: More workers than images, reducing the number of workers to {args.workers}")
     
     result_files = []
     

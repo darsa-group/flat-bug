@@ -1,18 +1,23 @@
-from typing import Union, List, Tuple, Optional
+from typing import Union, List, Tuple
 
-import torch
+import torch, torchvision
 import torch.nn.functional as F
 import numpy as np
 import cv2
 
+from flat_bug import logger
+
 def intersect(
-        rect1s : "torch.Tensor", 
-        rect2s : "torch.Tensor", 
+        rect1s : torch.Tensor, 
+        rect2s : torch.Tensor, 
         area_only : bool=False
-    ) -> "torch.Tensor":
+    ) -> torch.Tensor:
     """
-    Calculates the intersections between two sets of rectangles. The rectangles are represented as tensors of shape (n, 4) where the 4 columns are the x and y coordinates of the top-left and bottom-right corners of the rectangles. 
-    The intersection is calculated as the rectangle that covers the intersection of the two rectangles. If `area_only` is True, only the area of the intersection(s) are/is returned, otherwise the intersecting rectangle(s) are/is returned.
+    Calculates the intersections between two sets of rectangles. The rectangles are represented as tensors of shape (n, 4)
+    where the 4 columns are the x and y coordinates of the top-left and bottom-right corners of the rectangles. 
+    The intersection is calculated as the rectangle that covers the intersection of the two rectangles. 
+    
+    If `area_only` is True, only the area of the intersection(s) are/is returned, otherwise the intersecting rectangle(s) are/is returned.
 
     Args:
         rect1s (`torch.Tensor`): A tensor of shape (n_1, 4) representing the left hand set of rectangles.
@@ -20,7 +25,9 @@ def intersect(
         area_only (`bool`, optional): Whether to return only the area of the intersection(s). Defaults to False.
     
     Returns:
-        `torch.Tensor`: A tensor of shape (n_1, n_2, 4) representing the intersection(s) of the two sets of rectangles. If `area_only` is True, the tensor will have shape (n_1, n_2) instead. Empty intersections are represented as rectangles with area 0 and coordinates (0, 0, 0, 0).
+        `torch.Tensor`: A tensor of shape (n_1, n_2, 4) representing the intersection(s) of the two sets of rectangles. \\ 
+            If `area_only` is True, the tensor will have shape (n_1, n_2) instead. \\
+            Empty intersections are represented as rectangles with area 0 and coordinates (0, 0, 0, 0).
     """
     # Shape checking
     if len(rect1s.shape) == 1 and not rect1s.shape[0] == 4 or len(rect1s.shape) == 2 and not rect1s.shape[1] == 4:
@@ -81,13 +88,13 @@ def create_contour_mask(
         raise ValueError(f"Invalid width: {width}")
 
 def find_contours(
-        mask : "torch.Tensor", 
+        mask : torch.Tensor, 
         largest_only : bool=True, 
         simplify : bool=True
     ) -> Union[torch.Tensor, List[torch.Tensor]]:
     contour = cv2.findContours(mask.to(torch.uint8).cpu().numpy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)[0]
     if len(contour) == 0:
-        print("No contours found; mask shape:", mask.shape, "mask sum:", mask.sum())
+        logger.info("No contours found; mask shape:", mask.shape, "mask sum:", mask.sum())
         return torch.tensor([[0, 0]], device=mask.device, dtype=torch.long)
     if largest_only:
         # Calculate areas of each contour
@@ -103,9 +110,9 @@ def find_contours(
         return torch.tensor(contour, dtype=torch.long, device=mask.device).squeeze(1)
 
 def simplify_contour(
-        contour : Union["torch.Tensor", "np.ndarray"], 
+        contour : Union[torch.Tensor, np.ndarray], 
         tolerance : float=1.0
-    ) -> Union["torch.Tensor", "np.ndarray"]:
+    ) -> Union[torch.Tensor, np.ndarray]:
     """
     Wrapper for cv2.approxPolyDP that simplifies a contour by reducing the number of points while keeping the shape of the contour.
     Only works for simple closed contours without holes.
@@ -130,17 +137,17 @@ def simplify_contour(
         return simplied_contour
 
 def contours_to_masks(
-        contours : list["torch.Tensor"], 
-        height : int, 
-        width : int
-    ) -> "torch.Tensor":
+        contours : List[torch.Tensor], 
+        height : Union[int, torch.Tensor], 
+        width : Union[int, torch.Tensor]
+    ) -> torch.Tensor:
     """
     Takes a list of contours represented as (i, j) index-coordinates in a Xx2 tensor and returns a NxHxW tensor of boolean masks with the contours filled in.
 
     Args:
-        contours (`list[torch.Tensor]`): List of contours represented as (i, j) index-coordinates in a Nx2 tensor (OBS: dtype=torch.long)
-        height (`int`): Height of the masks
-        width (`int`): Width of the masks
+        contours (`List[torch.Tensor]`): List of contours represented as (i, j) index-coordinates in a Nx2 tensor (OBS: dtype=torch.long)
+        height (`int | torch.Tensor`): The height of the masks
+        width (`int | torch.Tensor`): The width of the masks
 
     Returns:
         `torch.Tensor`: NxHxW tensor of boolean masks with the contours filled in
@@ -151,7 +158,15 @@ def contours_to_masks(
     assert all(c.dtype == torch.long for c in contours), "All contours must be of dtype=torch.long"
     assert all(c.device == device for c in contours), "All contours must be on the same device"
     assert all(len(c.shape) == 2 and c.shape[1] == 2 for c in contours), "All contours must be Xx2 tensors"
-    assert isinstance(height, int) and isinstance(width, int), f"Height and width must be integers not {type(height)} and {type(width)}"
+    if isinstance(height, torch.Tensor):
+        assert height.numel() == 1, f"Height must be a scalar tensor not {height.shape}"
+        height = height.item()
+    assert isinstance(height, int), f"Height must be an integer not {height}"
+    height = int(height)
+    if isinstance(width, torch.Tensor):
+        assert width.numel() == 1, f"Width must be a scalar tensor not {width.shape}"
+        width = width.item()
+    assert isinstance(width, int), f"Width must be an integer not {width}"
     assert height > 0 and width > 0, f"Height and width must be positive not {height} and {width}"
 
     # Initialize the masks as UMATs
@@ -205,7 +220,7 @@ def linear_interpolate(
 
 def scale_contour(
         contour : np.ndarray, 
-        scale : float, 
+        scale : Union[List[Union[float, int]], np.ndarray, float, int], 
         expand_by_one : bool=False
     ) -> np.ndarray:
     if len(contour.shape) != 2 or contour.shape[1] != 2:
@@ -213,6 +228,13 @@ def scale_contour(
             contour = contour.reshape(1, 2)
         else:
             raise ValueError(f"Contour must be a Nx2 array, not {contour.shape}")
+    if isinstance(scale, (int, float)):
+        scale = [scale, scale]
+    if isinstance(scale, list):
+        scale = np.array(scale, dtype=np.float32)
+    if len(scale) != 2:
+        raise ValueError(f"Scale must be a scalar or a list of 2 scalars, not {scale}")
+
     if len(contour) == 0:
         return contour
     if len(contour) == 1:
@@ -244,14 +266,15 @@ def resize_mask(
         new_shape : Union[Tuple[int, int], List[int]]
     ) -> torch.Tensor:
     """
-    Takes a mask (or a batch of masks) and resizes it by scaling the contour coordinates and snapping to the integer grid, ensuring that snapping is always done towards the outside of the mask.
+    Takes a mask (or a batch of masks) and resizes it by scaling the contour coordinates and snapping to the integer grid, 
+    ensuring that snapping is always done towards the outside of the mask.
 
     Args:
-        mask (torch.Tensor): A mask of shape (H, W) or (N, H, W) where N is the batch size.
-        new_shape (tuple[int, int]): The new shape of the mask (H', W').
+        mask (`torch.Tensor`): A mask of shape (H, W) or (N, H, W) where N is the batch size.
+        new_shape (`Tuple[int, int] | List[int]`): The new shape of the mask (H', W').
 
     Returns:
-        torch.Tensor: The resized mask of shape (H', W') or (N, H', W').
+        `torch.Tensor`: The resized mask of shape (H', W') or (N, H', W').
     """
     # If the mask is a not a batch of masks, unsqueeze and call the function again
     if len(masks.shape) == 2:
@@ -264,3 +287,25 @@ def resize_mask(
         raise ValueError(f"Target shape must be at least 2x2, not {new_shape}")
     # Resize the mask
     return F.interpolate(masks.float()[None], new_shape, mode='nearest-exact', antialias=False)[0] > 0.5
+
+_to_uint8 = torchvision.transforms.ConvertImageDtype(torch.uint8)
+
+def chw2hwc_uint8(
+        crop : torch.Tensor, 
+        mask : torch.Tensor
+    ) -> torch.Tensor:
+    """
+    Converts a crop from CHW to HWC format, and adds the mask as an alpha channel if it exists.
+
+    Args:
+        crop (`torch.Tensor`): The crop to convert from CHW to HWC format.
+        mask (`torch.Tensor`): The mask to add as an alpha channel.
+
+    Returns:
+        `torch.Tensor`: The crop in HWC format with the mask as an alpha channel, if supplied.
+    """
+    crop = _to_uint8(crop)
+    if mask is not None:
+        mask = mask.bool().to(torch.uint8) * 255
+        crop = torch.cat([crop, mask], dim=0)
+    return crop.permute(1, 2, 0)
