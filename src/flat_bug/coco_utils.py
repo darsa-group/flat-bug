@@ -7,6 +7,8 @@ from typing import Union, List, Tuple, Dict, Optional
 import cv2
 import numpy as np
 
+from flat_bug import logger
+
 # COCO Format:
 #
 #     {
@@ -309,7 +311,7 @@ def filter_coco(
             _, _, w, h = a["bbox"]
             if (w * h) < area:
                 if verbose:
-                    print("SKIPPED")
+                    logger.info("SKIPPED")
                 continue
         filtered_annotations += [a]
 

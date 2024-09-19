@@ -4,6 +4,8 @@ import torch, torchvision
 import numpy as np
 from shapely.geometry import Polygon
 
+from flat_bug import logger
+
 def iou_boxes(
         rectangles : torch.Tensor,
         other_rectangles : Optional[torch.Tensor]=None
@@ -513,7 +515,7 @@ if torch.cuda.is_available():
         _INT_MM_SUPPORTED = True
     except:
         _INT_MM_SUPPORTED = False
-        print("Warning: _int_mm is not supported on this device, falling back to CPU implementation")
+        logger.warning("_int_mm is not supported on this device, falling back to CPU implementation")
 else:
     _INT_MM_SUPPORTED = False
 

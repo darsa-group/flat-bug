@@ -16,7 +16,7 @@ from ultralytics.utils.plotting import plot_images
 
 from flat_bug.datasets import MyYOLODataset, MyYOLOValidationDataset
 
-from .remote_lfs_fallback import check_file_with_remote_fallback
+from flat_bug.tests.remote_lfs_fallback import check_file_with_remote_fallback
 
 TEST_DIR = os.path.dirname(__file__)
 ASSET_DIR = os.path.join(TEST_DIR, "assets")

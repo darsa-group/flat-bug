@@ -16,6 +16,7 @@ from ultralytics.data import build_dataloader
 from ultralytics.data.utils import PIN_MEMORY
 from ultralytics.data.build import InfiniteDataLoader, seed_worker
 
+from flat_bug import logger
 from flat_bug.datasets import MyYOLODataset, MyYOLOValidationDataset
 
 def remove_custom_fb_args(args : Union[Dict, IterableSimpleNamespace, Any]) -> Union[Dict, IterableSimpleNamespace, Any]:
@@ -160,7 +161,7 @@ def _custom_end_to_end_validation(self : "MySegmentationTrainer"):
 #         )
     
 # def save_loss_items(self):
-#     print(self.loss_items)
+#     logger.info(self.loss_items)
 #     raise NotImplementedError
 #     self.current_epoch_losses += self.loss_items.tolist()
 
@@ -261,7 +262,7 @@ class MySegmentationTrainer(SegmentationTrainer):
             mode : str='train', 
             batch : Optional[int]=None
         ) -> Union[MyYOLODataset, MyYOLOValidationDataset]:
-        print(f"Building dataset with max instances ({self._max_instances}), max images ({self._max_images}) and exclude pattern ({self.exclude_pattern}).")
+        logger.info(f"Building dataset with max instances ({self._max_instances}), max images ({self._max_images}) and exclude pattern ({self.exclude_pattern}).")
         if mode == "train":
             dataset = MyYOLODataset(
                 data=yaml_load(self.args.data),
@@ -339,7 +340,7 @@ class MySegmentationTrainer(SegmentationTrainer):
         try:
             return self.train_loader.dataset.im_files
         except Exception as e:
-            print("Perhaps the trainer has not been activated yet. Accessing the training image paths is not possible, while training has not started.")
+            logger.error("Perhaps the trainer has not been activated yet. Accessing the training image paths is not possible, while training has not started.")
             raise e
         
     @property
@@ -347,12 +348,12 @@ class MySegmentationTrainer(SegmentationTrainer):
         try:
             return self.test_loader.dataset.im_files
         except Exception as e:
-            print("Perhaps the trainer has not been activated yet. Accessing the validation image paths is not possible, while training has not started.")
+            logger.error("Perhaps the trainer has not been activated yet. Accessing the validation image paths is not possible, while training has not started.")
             raise e
 
     def _reproducibility_setup(self : Self):
         if not RANK in {-1, 0}:
-            print("Reproducibility setup skipped for non-master rank.")
+            logger.warning("Reproducibility setup skipped for non-master rank.")
             return
         def log_data(self):
             with open(self.save_dir / "data_log.json", "w") as f:
