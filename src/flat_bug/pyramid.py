@@ -23,9 +23,9 @@ def adjust_image_for_tile(
     # First we ensure that the image size is divisible by 4
     h, w = image_size
     if scale != 1:
-        h, w = [round(s * scale / 4) * 4 for s in (h, w)]
-    # And that the tile can fit in the image by padded
-    pad = [max(0, tile_size - s) for s in (h, w)]
+        h, w = [round(dim * scale / 4) * 4 for dim in (h, w)]
+    # And that the tile can fit in the image by padding
+    pad = [max(0, tile_size - dim) for dim in (h, w)]
     ltrb_pad = floor(pad[1] / 2), ceil(pad[0] / 2), ceil(pad[1] / 2), floor(pad[0] / 2)
     return h, w, *ltrb_pad
 
@@ -84,7 +84,7 @@ def count_tiles(
         `int`: The number of tiles needed to tile the layer.
     """
     h, w, l_pad, t_pad, r_pad, b_pad = adjust_image_for_tile(image_size, tile_size, scale)
-    h, w = h + t_pad + b_pad, h + t_pad + b_pad
+    h, w = h + t_pad + b_pad, w + l_pad + r_pad
     x_n_tiles, y_n_tiles, _, _ = calculate_tile_parameters(h, w, tile_size, min_overlap)
 
     return x_n_tiles * y_n_tiles
@@ -108,7 +108,7 @@ def tile_layer(
         `Tuple[Tuple[int, int, int, int], List[Tuple[int, int]]]`: The target image size and padding, and the offsets of the tiles.
     """
     h, w, l_pad, t_pad, r_pad, b_pad = adjust_image_for_tile(image_size, tile_size, scale)
-    h, w = h + t_pad + b_pad, h + t_pad + b_pad
+    h, w = h + t_pad + b_pad, w + l_pad + r_pad
     x_n_tiles, y_n_tiles, x_stride, y_stride = calculate_tile_parameters(h, w, tile_size, min_overlap)
     
     # Calculate the offsets of the tiles
