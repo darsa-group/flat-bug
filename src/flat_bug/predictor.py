@@ -26,6 +26,7 @@ from ultralytics.engine.results import Results
 from flat_bug import logger
 from flat_bug.yolo_helpers import ResultsWithTiles, stack_masks, offset_box, resize_mask, postprocess, merge_tile_results
 from flat_bug.geometric import find_contours, contours_to_masks, simplify_contour, create_contour_mask, scale_contour, chw2hwc_uint8
+from flat_bug.pyramid import PyramidTiling, PyramidLayer
 from flat_bug.nms import nms_masks, nms_polygons, detect_duplicate_boxes
 from flat_bug.config import read_cfg, DEFAULT_CFG, CFG_PARAMS
 from flat_bug.augmentations import InpaintPad
@@ -1170,7 +1171,7 @@ class Predictor(object):
     def _detect_instances(
             self,
             image : torch.Tensor,
-            scale : float=1.0,
+            layer : PyramidLayer,
             max_scale : bool = False
         ) -> Prepared_Results:
         TILE_SIZE = self.TILE_SIZE
@@ -1188,47 +1189,15 @@ class Predictor(object):
             main_stream = torch.cuda.current_stream(device=self._device)
             start_detect.record(main_stream)
         
-        orig_h, orig_w = image.shape[1:]
-        w, h = orig_w, orig_h
-        padded = False
-        h_pad, w_pad = 0, 0
-        pad_lrtb = 0, 0, 0, 0
-        real_scale = 1, 1
+        # Resize the image to the correct size
+        _, orig_h, orig_w = image.shape
+        image = layer.adjust_tensor_image(image)
+        _, h, w = image.shape
 
-        # Check dimensions and channels
-        assert image.device == self._device, RuntimeError(f"image.device {image.device} != self._device {self._device}")
-        assert image.dtype == self._dtype, RuntimeError(f"image.dtype {image.dtype} != self._dtype {self._dtype}")
-
-        # Resize if scale is not 1
-        if scale != 1:
-            h, w = round(orig_h * scale / 4) * 4, round(orig_w * scale / 4) * 4
-            real_scale = w / orig_w, h / orig_h
-            resize = transforms.Resize((h, w), antialias=True) 
-            image = resize(image)
-            h, w = image.shape[1:]
-        
-        # If any of the sides are smaller than the TILE_SIZE, pad to TILE_SIZE
-        if w < TILE_SIZE or h < TILE_SIZE:
-            padded = True
-            w_pad = max(0, TILE_SIZE - w) // 2
-            h_pad = max(0, TILE_SIZE - h) // 2
-            pad_lrtb = w_pad, w_pad + (w % 2 == 1), h_pad, h_pad + (h % 2 == 1)
-            image = torch.nn.functional.pad(image, pad_lrtb, mode="constant", value=0) # Pad with black
-            h, w = image.shape[1:]
-
-        # Tile calculation
-        x_n_tiles = math.ceil(w / (TILE_SIZE - self.MINIMUM_TILE_OVERLAP)) if w != TILE_SIZE else 1
-        y_n_tiles = math.ceil(h / (TILE_SIZE - self.MINIMUM_TILE_OVERLAP)) if h != TILE_SIZE else 1
-
-        x_stride = TILE_SIZE - math.floor((TILE_SIZE * (x_n_tiles + 0) - w) / x_n_tiles) if x_n_tiles > 1 else TILE_SIZE
-        y_stride = TILE_SIZE - math.floor((TILE_SIZE * (y_n_tiles + 0) - h) / y_n_tiles) if y_n_tiles > 1 else TILE_SIZE
-        x_stride -= x_stride % 4
-        y_stride -= y_stride % 4
-
-        x_range = [i if (i + TILE_SIZE) < w else (w - TILE_SIZE - w % 4) for i in range(0, x_stride * x_n_tiles, x_stride)]
-        y_range = [i if (i + TILE_SIZE) < h else (h - TILE_SIZE - h % 4) for i in range(0, y_stride * y_n_tiles, y_stride)]
-
-        offsets = [((m, n), (j, i)) for n, j in enumerate(y_range) for m, i in enumerate(x_range)]
+        # Get the offsets for the tiles
+        offsets, ltrb_pad = layer.offsets, layer.ltrb_pad
+        pad_lrtb = [ltrb_pad[0], ltrb_pad[2], ltrb_pad[1], ltrb_pad[3]]
+        padded = sum(pad_lrtb) > 0
 
         hyperparams = {
             "image" : image,
@@ -1368,7 +1337,7 @@ class Predictor(object):
                 self.total_forward_time += forward_time
         return Prepared_Results(
             predictions = postprocessed_results, 
-            scale = real_scale, 
+            scale = [layer.hw[1] / orig_w, layer.hw[0] / orig_h], 
             device = self._device, 
             dtype = self._dtype
         )
@@ -1377,7 +1346,6 @@ class Predictor(object):
             self, 
             image : Union[torch.Tensor, str], 
             path : Optional[str]=None, 
-            scale_increment : float=2/3, 
             scale_before : Union[float, int]=1, 
             single_scale : bool=False
         ) -> TensorPredictions:
@@ -1448,31 +1416,15 @@ class Predictor(object):
         # Check correct number of channels
         assert transformed_image.shape[0] == 3, RuntimeError(f"transformed_image.shape[0] {transformed_image.shape[0]} != 3")
 
-        max_dim = max(transformed_image.shape[1:])
-        min_dim = min(transformed_image.shape[1:])
-
-        # fixme, what to do if the image is too small? - RE: Fixed by adding padding in _detect_instances
-        scales = []
-
-        if single_scale:
-            scales.append(min(1, 1024 / min_dim))
-        else:
-            s = 1024 / max_dim
-
-            if s > 1:
-                scales.append(s)
-            else:
-                while s <= 0.9:  # Cut off at 90%, to avoid having s~1 and s=1.
-                    scales.append(s)
-                    s /= scale_increment
-                if s != 1:
-                    scales.append(1.0)
-
-        logger.debug(f"Running inference on scales: {scales}")
-
         if self.TIME:
             self.total_detection_time, self.total_forward_time = 0, 0
-        all_preds = [self._detect_instances(transformed_image, scale=s, max_scale=s == min(scales)) for s in reversed(scales)]
+        tiler = PyramidTiling(self.TILE_SIZE, self.MIN_MAX_OBJ_SIZE[0], self.EDGE_CASE_MARGIN)
+        print(tiler)
+        pyramid_solution = tiler((h, w))
+        if single_scale:
+            pyramid_solution = [pyramid_solution[0]]
+        logger.debug(f"Pyramid solution: {pyramid_solution}")
+        all_preds = [self._detect_instances(transformed_image, layer, max_scale=len(layer) == 1) for layer in pyramid_solution]
 
         if self.TIME:
             logger.info(

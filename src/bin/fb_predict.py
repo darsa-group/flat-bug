@@ -210,7 +210,7 @@ def main():
         pbar.set_postfix_str(f"Processing {os.path.basename(f)}")
         try:
             # Run the model
-            prediction = pred.pyramid_predictions(f, scale_increment=1/2, scale_before=option_dict["scale_before"], single_scale=option_dict["single_scale"])
+            prediction = pred.pyramid_predictions(f, scale_before=option_dict["scale_before"], single_scale=option_dict["single_scale"])
             # Save the results
             if not option_dict["no_save"]:
                 result_directory = prediction.save(
