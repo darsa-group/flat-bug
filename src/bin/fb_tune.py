@@ -28,9 +28,7 @@ from skopt.plots import plot_convergence, plot_objective
 
 # Fixed ranges for the parameters during tuning - should probably be configurable
 PARAMETER_RANGES = {
-    "MIN_OBJ_SIZE": (0, 64),
-    "MINIMUM_TILE_OVERLAP": (0, 512),
-    "EDGE_CASE_MARGIN": (0, 192),
+    "MIN_OBJ_SIZE": (1, 64),
     "IOU_THRESHOLD": (0.01, 0.9)
 }
 

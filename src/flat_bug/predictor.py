@@ -1056,12 +1056,6 @@ class Predictor(object):
     """
     The IOU threshold used to determine if two instances are duplicates. \\
     """
-    MINIMUM_TILE_OVERLAP : int = None
-    """
-    The minimum - but not necessarily the maximum - overlap between tiles \\
-    in a single layer of the pyramid. Increasing this value will increase \\
-    the computation time, but may improve the detection of large instances. 
-    """
     EDGE_CASE_MARGIN : int = None
     """
     The margin to add to the edge of the image to catch instances that are \\
@@ -1419,7 +1413,6 @@ class Predictor(object):
         if self.TIME:
             self.total_detection_time, self.total_forward_time = 0, 0
         tiler = PyramidTiling(self.TILE_SIZE, self.MIN_MAX_OBJ_SIZE[0], self.EDGE_CASE_MARGIN)
-        print(tiler)
         pyramid_solution = tiler((h, w))
         if single_scale:
             pyramid_solution = [pyramid_solution[0]]
