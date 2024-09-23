@@ -7,7 +7,7 @@ import re
 
 from tqdm import tqdm
 
-from flat_bug import logger
+from flat_bug import logger, set_log_level
 from flat_bug.coco_utils import fb_to_coco
 from flat_bug.predictor import Predictor
 from flat_bug.config import read_cfg, DEFAULT_CFG
@@ -116,6 +116,7 @@ def main():
     verbose = option_dict["verbose"]
     if verbose:
         config["TIME"] = True
+        set_log_level("DEBUG")
 
     pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype, cfg=config)
 

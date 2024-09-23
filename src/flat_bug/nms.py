@@ -457,7 +457,7 @@ def _compute_transitive_closure_compatible(adjacency_matrix : torch.Tensor) -> t
     # Check for possible overflow
     if csize > 2 ** (32 - 1) - 1:
         raise ValueError(f"Matrix is too large ({csize}x{csize}) for computation")
-    # We convert to torch.int16 to avoid overflow when squaring the matrix and ensure torch compatibility
+    # We convert to fp32 to avoid overflow when squaring the matrix and ensure torch compatibility
     closure = adjacency_matrix.to(dtype) 
     # Expand the adjacency matrix to the transitive closure matrix, by squaring the matrix and clamping the values to 1 - each step essentially corresponds to one step of parallel breadth-first search for all nodes
     last_max = torch.zeros(csize, dtype=dtype, device=device)
@@ -491,7 +491,7 @@ def _compute_transitive_closure_cuda(adjacency_matrix : torch.Tensor) -> torch.T
         padding = 8 - len(adjacency_matrix) % 8
     else:
         padding = 0
-    # Convert the adjacency matrix to float16, this is just done to ensure that the values don't overflow when squaring the matrix before clamping - if there existed a "or-matrix multiplication" for boolean matrices, this would not be necessary
+    # Pad the adjacency matrix to the nearest multiple of 8 and convert it to int8
     closure = torch.nn.functional.pad(adjacency_matrix, (0, padding, 0, padding), value=0.).to(torch.int8) 
     # Expand the adjacency matrix to the transitive closure matrix, by squaring the matrix and clamping the values to 1 - each step essentially corresponds to one step of parallel breadth-first search for all nodes
     last_max = torch.zeros(len(closure), dtype=torch.int32, device=closure.device)

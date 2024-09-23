@@ -7,3 +7,7 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+def set_log_level(level):
+    logger.setLevel(level)
+    logger.info(f'Log level set to {level}')
