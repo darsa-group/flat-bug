@@ -366,6 +366,8 @@ class TensorPredictions:
                 )
             # Remove the instances that were not selected
             self = self[nms_ind.sort().values]
+        else:
+            nms_ind = []
         
         if self.time:
             end.record()
