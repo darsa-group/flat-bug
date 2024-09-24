@@ -206,6 +206,15 @@ class TensorPredictions:
         self.classes = torch.cat([p.classes[nd] for p, nd in zip(predictions, valid_chunked)])  # N
         self.scales = [predictions[i].scale for i, p in enumerate(valid_chunked) for _ in range(len(p))]  # N
 
+        # Sort the polygons, masks, boxes, classes, scales and confidences by confidence
+        sorted_indices = self.confs.argsort(descending=True)
+        self.masks = self.masks[sorted_indices]
+        self.polygons = [self.polygons[i] for i in sorted_indices]
+        self.boxes = self.boxes[sorted_indices]
+        self.classes = self.classes[sorted_indices]
+        self.scales = [self.scales[i] for i in sorted_indices]
+        self.confs = self.confs[sorted_indices]
+
         # # Check that everything is the correct size
         assert len(self) == len(self.boxes), RuntimeError(f"len(self) {len(self)} != len(self.boxes) {len(self.boxes)}")
         assert len(self) == len(self.confs), RuntimeError(f"len(self) {len(self)} != len(self.confs) {len(self.confs)}")
@@ -336,7 +345,9 @@ class TensorPredictions:
                 nms_ind = nms_polygons(
                     polygons=self.polygons,
                     scores=self.confs,# * torch.tensor(self.scales, dtype=self.dtype, device=self.device),
-                    iou_threshold=iou_threshold, return_indices=True, dtype=self.dtype,
+                    iou_threshold=iou_threshold, 
+                    return_indices=True, 
+                    dtype=self.dtype,
                     boxes=self.boxes, 
                     **kwargs
                 )
@@ -354,9 +365,7 @@ class TensorPredictions:
                     **kwargs
                 )
             # Remove the instances that were not selected
-            self = self[nms_ind]
-        else:
-            nms_ind = []
+            self = self[nms_ind.sort().values]
         
         if self.time:
             end.record()
