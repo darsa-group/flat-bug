@@ -308,11 +308,28 @@ def read_slurm_params(
     #         params[f"slurm_{key}"] = params.pop(key)
     #### END OF NOT NECESSARY
 
+    # Get list of submitit-slurm parameters
     available_params = _default_submitit_slurm_params().keys()
+    
+    # Disentangle submitit slurm parameters from additional (advanced) slurm parameters
     additional_params = dict()
     for key in list(params.keys()):
         if key not in available_params:
             additional_params[key] = params.pop(key)
+    
+    # Snipe and replace the bespoke "slurm_setup" parameter (allows passing a list of commands to the "setup" parameter using a text-file)
+    if "slurm_setup" in additional_params:
+        slurm_setup_path = os.path.join(os.path.dirname(__file__), "slurm_config", additional_params.pop("slurm_setup"))
+        if not (isinstance(slurm_setup_path, str) and os.path.exists(slurm_setup_path)):
+            raise FileNotFoundError(f"Invalid SLURM setup file specified: {slurm_setup_path}.")
+        with open(slurm_setup_path, "r") as f:
+            slurm_setup_commands = f.read().strip().split("\n")
+        if slurm_setup_commands[0] == 0:
+            slurm_setup_commands.pop(0) 
+        assert len(slurm_setup_commands) > 0, f"Empty SLURM setup file specified." 
+        params["setup"] = additional_params.get("setup", []) + slurm_setup_commands
+    
+    # Submit additional parameters via the "additional_parameters" parameter
     if additional_params:
         params["additional_parameters"] = additional_params
 
@@ -409,20 +426,6 @@ class ExperimentRunner:
         self.devices = devices
         self.slurm = slurm
         self.slurm_params = slurm_params
-
-        # Allows the user to have a custom SLURM setup before executing the jobs
-        if self.slurm_params.get("additional_parameters", {}).get("slurm_setup", False):
-            slurm_setup_path = os.path.join(os.path.dirname(__file__), "slurm_config", self.slurm_params["additional_parameters"].pop("slurm_setup"))
-            if len(self.slurm_params["additional_parameters"]) == 0:
-                self.slurm_params.pop("additional_parameters")
-            if not (isinstance(slurm_setup_path, str) and os.path.exists(slurm_setup_path)):
-                raise FileNotFoundError(f"Invalid SLURM setup file specified: {slurm_setup_path}.")
-            with open(slurm_setup_path, "r") as f:
-                slurm_setup_commands = f.read().strip().split("\n")
-            if slurm_setup_commands[0] == 0:
-                slurm_setup_commands.pop(0) 
-            assert len(slurm_setup_commands) > 0, f"Empty SLURM setup file specified." 
-            self.slurm_params["setup"] = self.slurm_params.get("setup", []) + slurm_setup_commands
 
         if slurm:
             slurm_folder = os.path.join(os.getcwd(), "slurm_logs") if get_outputdir(strict=False) is False else os.path.join(get_outputdir(), "slurm_logs")

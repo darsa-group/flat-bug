@@ -23,7 +23,8 @@ def eval_model(
         pattern : Optional[str]=None, 
         store_all : bool=False, 
         dry_run : bool = False, 
-        execute : bool=True
+        execute : bool=True,
+        strict : bool=True
     ) -> str:
     """
     Evaluate a model on a dataset.
@@ -39,24 +40,25 @@ def eval_model(
         store_all (bool, optional): If set, all results will be saved. Defaults to False.
         dry_run (bool, optional): If set, the evaluation will not be run. If the command would be executed it is printed instead. Defaults to False.
         execute (bool, optional): If set, the evaluation will be run, otherwise the command will be returned. Defaults to True.
+        strict (bool, optional): If set, the files and directories must exist when this function is called. Defaults to True.
 
     Returns:
         str: The (executed) command (to run).
     """
-
-    # Check if the weights file exists
-    assert os.path.exists(weights), f"Weights file not found: {weights}"
-    if config is not None:
-        # Check if the config file exists
-        assert os.path.exists(config), f"Config file not found: {config}"
-    # Check if the directory exists
-    assert os.path.exists(directory) and os.path.isdir(directory), f"Data directory not found: {directory}"
-    # Check if the output directory exists
-    # assert os.path.exists(output_directory) and os.path.isdir(output_directory), f"Output directory not found: {output_directory}"
-    # Check if the local directory exists
-    if local_directory is not None:
+    if strict:
+        # Check if the weights file exists
+        assert os.path.exists(weights), f"Weights file not found: {weights}"
+        if config is not None:
+            # Check if the config file exists
+            assert os.path.exists(config), f"Config file not found: {config}"
+        # Check if the directory exists
+        assert os.path.exists(directory) and os.path.isdir(directory), f"Data directory not found: {directory}"
+        # Check if the output directory exists
+        # assert os.path.exists(output_directory) and os.path.isdir(output_directory), f"Output directory not found: {output_directory}"
         # Check if the local directory exists
-        assert os.path.exists(local_directory), f"Local directory not found: {local_directory}"
+        if local_directory is not None:
+            # Check if the local directory exists
+            assert os.path.exists(local_directory), f"Local directory not found: {local_directory}"
 
     # Create the command
     command = f'bash {os.path.join(os.path.dirname(os.path.dirname(__file__)), "eval","end_to_end_eval.sh")} -w "{weights}" -d "{directory}" -o "{output_directory}"'
@@ -267,6 +269,7 @@ if __name__ == "__main__":
     arg_parse.add_argument("--save_all", dest="save_all", help="If set, all results will be saved.", action="store_true")
     arg_parse.add_argument("--ignore_existing", dest="ignore_existing", help="If set, existing result directories will be ignored.", action="store_true")
     arg_parse.add_argument("--name", dest="name", help="The name of comparison.", type=str, default="")
+    arg_parse.add_argument("--soft", dest="soft", help="Ignore missing input/output directories.", action="store_true")
     arg_parse.add_argument("--slurm", dest="slurm", help="If set, the evaluation will be run on a SLURM cluster.", action="store_true")
     args, extra = arg_parse.parse_known_args()
     try:
@@ -276,23 +279,24 @@ if __name__ == "__main__":
                 f"Error parsing extra arguments: `{' '.join(extra)}`. {e}\n\n"
                 f"{arg_parse.format_help()}"
         )
-    if not args.output is None:
+    if not args.output is None and not args.soft:
         assert os.path.exists(args.output) and os.path.isdir(args.output), f'Output directory not found: {args.output}'
-        RESULT_DIR = args.output 
+    RESULT_DIR = args.output 
 
     # Get the model director(y/ies)
-    model_directories = glob.glob(args.directory)
+    model_directories = glob.glob(os.path.expanduser(args.directory))
     # Check if there are any model directories
     assert len(model_directories) > 0, "No model directories found."
     # Get the data directory
     data_directory = args.input
     # Check if the data directory exists
-    assert os.path.exists(data_directory) and os.path.isdir(data_directory), f'Data directory not found: {data_directory}'
+    if not args.soft:
+        assert os.path.exists(data_directory) and os.path.isdir(data_directory), f'Data directory not found: {data_directory}'
 
     # Get the config file
     config_file = args.config
     # Check if the config file exists
-    if config_file is not None:
+    if config_file is not None and not args.soft:
         assert os.path.exists(config_file), f'Config file not found: {config_file}'
 
     result_directories = {d : [] for d in model_directories}
@@ -340,14 +344,15 @@ if __name__ == "__main__":
                 os.makedirs(this_result_dir, exist_ok=True)
             # Set the shared evaluation parameters
             eval_params = {
-                "weights" : os.path.abspath(weight_file), 
-                "directory" : os.path.abspath(data_directory), 
-                "output_directory" : os.path.abspath(this_result_dir),
-                "config" : os.path.abspath(config_file) if config_file is not None else config_file,
-                "local_directory" : os.path.abspath(args.ground_truth),
+                "weights" : os.path.expanduser(weight_file), 
+                "directory" : os.path.expanduser(data_directory), 
+                "output_directory" : os.path.expanduser(this_result_dir),
+                "config" : os.path.expanduser(config_file) if config_file is not None else config_file,
+                "local_directory" : os.path.expanduser(args.ground_truth),
                 "pattern" : args.input_pattern,
                 "dry_run" : args.dry_run,
-                "store_all" : args.save_all
+                "store_all" : args.save_all,
+                "strict" : not args.soft
             }
             # Add the evaluation parameters to the producer-consumer queue for asynchronous evaluation
             all_eval_params.append(eval_params)

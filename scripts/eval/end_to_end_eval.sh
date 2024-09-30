@@ -98,7 +98,7 @@ START_TIME=$(date +%s)
 
 # Run the model on the validation set
 # PREDICT_CMD="fb_predict.py -i \"${DIR}\" -w \"${WEIGHTS}\" -o \"${ODIR}/preds\"${GPU}${IPAT} --no-crops"
-PREDICT_CMD=(fb_predict -i "${DIR}" -w "${WEIGHTS}" -o "${ODIR}/preds" --no-crops --no-overviews --fast)
+PREDICT_CMD=(fb_predict -i "${DIR}" -w "${WEIGHTS}" -o "${ODIR}/preds" --no-crops --no-overviews --fast --verbose)
 if [[ -n "$GPU" ]]; then
     PREDICT_CMD+=("--gpu" "${GPU}")
 fi
