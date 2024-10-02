@@ -65,11 +65,12 @@ def main():
     option_dict = vars(args)
 
     assert os.path.isdir(option_dict["data_dir"])
+    option_dict["data_dir"] = os.path.abspath(os.path.normpath(option_dict["data_dir"]))
 
-    data = os.path.join(option_dict["data_dir"], "data.yaml")
-
-    #fixme issue when providing new dataset path, sill using old one?! see when i used pollen data
-    settings.update({'datasets_dir': option_dict["data_dir"]})
+    # I think this should be fixed by resolving the path before passing it to the trainer 
+    # (see https://github.com/ultralytics/ultralytics/blob/588bbbe4aed122e3d24353856484148bc5ef05ad/ultralytics/data/utils.py#L301)
+    # #fixme issue when providing new dataset path, sill using old one?! see when i used pollen data
+    # settings.update({'datasets_dir': option_dict["data_dir"]})
 
     # Load default training parameters
     overrides = DEFAULT_CONF
@@ -81,7 +82,7 @@ def main():
             overrides.update(yaml_config)
 
     # Update data directory and resume flag from the command line
-    overrides["data"] = data
+    overrides["data"] = os.path.join(option_dict["data_dir"], "data.yaml")
     if option_dict["resume"]:
         assert os.path.isfile(overrides["model"]), f"Trying to resume from a model that does not seem to be a valid file: {overrides['model']}"
         overrides["resume"] = overrides["model"]
@@ -98,6 +99,12 @@ def main():
     if isinstance(overrides["device"], (tuple, list)) or (isinstance(overrides["device"], str) and len(overrides["device"].split(",")) > 1):
         os.environ['MKL_THREADING_LAYER'] = 'GNU'
         os.environ['OMP_NUM_THREADS'] = str(overrides["workers"])
+    
+    # DEBUG
+    print("#######################################################")
+    print("OVERRIDES")
+    print(overrides)
+    print("#######################################################")
 
     # Instantiate trainer
     trainer = MySegmentationTrainer(overrides=overrides)

@@ -1,8 +1,9 @@
-import os, sys, subprocess, glob, tempfile, argparse, time
-import yaml, re
+import os, sys, subprocess, time, argparse
+import glob, tempfile, re
+import yaml, io, zipfile
 
 from argparse import Namespace
-from typing import Self, Optional, Union, List, Tuple, Dict, Any, Callable, Iterable
+from typing import Self, Optional, Union, List, Tuple, Dict, Any, Callable, Iterable, IO
 
 import queue, threading, submitit
 
@@ -26,11 +27,11 @@ DEFAULT_CONFIG = "<UNSET>"
 PROJECT_DIR = "<UNSET>"
 OUTPUT_DIR = "<UNSET>"
 
-def set_datadir(datadir : str):
+def set_datadir(datadir : str, strict : bool=True):
     global DATA_DIR
     if datadir == "<UNSET>":
         raise ValueError("Data directory must be set to other than '<UNSET>'.")
-    if not os.path.exists(datadir):
+    if not os.path.exists(datadir) and strict:
         raise ValueError(f"Data directory {datadir} does not exist.")
     DATA_DIR = datadir
 
@@ -185,6 +186,54 @@ def clean_temporary_dir():
         os.rmdir(TMP_DIR)
         TMP_DIR = "<UNSET>"
 
+class ZipOrDirectory:
+    def __init__(self, path : str):
+        if not isinstance(path, str):
+            raise TypeError(f"Supplied path '{path}' should be a `str` not `{type(path)}`")
+        self._path = os.path.abspath(os.path.normpath(path))
+        self._zip = zipfile.ZipFile(self._path) if zipfile.is_zipfile(self._path) else None
+        self._zip_root = self._get_zip_root()
+    
+    def _get_zip_root(self) -> str:
+        if self._zip is None:
+            return ""
+        top_level = list(set([content.split("/")[0] for content in self._zip.namelist()]))
+        if len(top_level) == 1:
+            return top_level[0] + "/"
+        return ""
+    
+    def _zip_prep_path(self, path : str) -> str:
+        if os.sep != "/" and os.sep in path:
+            path = path.replace(os.sep, "/")
+        if self._zip_root:
+            path = f'{self._zip_root}{path}'
+        return path
+    
+    def open(self, path : str, mode : str = "r", *args, **kwargs) -> IO[bytes]:
+        path = os.path.normpath(path)
+        if isinstance(self._zip, zipfile.ZipFile):
+            mode = mode.replace("t", "")
+            raw_file = self._zip.open(self._zip_prep_path(path), mode=mode, *args, **kwargs)
+            if not "b" in mode:
+                return io.TextIOWrapper(raw_file)
+            return raw_file
+        else:
+            return open(os.path.join(self._path, path), mode=mode, *args, **kwargs)
+    
+    def contains(self, path : str) -> bool:
+        path = os.path.normpath(path)
+        if isinstance(self._zip, zipfile.ZipFile):
+            return self._zip_prep_path(path) in self._zip.namelist()
+        else:
+            return os.path.exists(os.path.join(self._path, path))
+    
+    def close(self) -> None:
+        if isinstance(self._zip, zipfile.ZipFile):
+            self._zip.close()
+    
+    def __del__(self) -> None:
+        self.close()
+
 class HelpfulArgumentParser(argparse.ArgumentParser):
     def error(self, message : str):
         self.print_help(sys.stderr)
@@ -241,6 +290,7 @@ def get_cmd_args() -> Tuple[Namespace, Dict[str, str]]:
     args_parse.add_argument("-i", "--datadir", help="The directory containing the data.", required=True)
     args_parse.add_argument("-o", "--output", dest="output", help="The directory to save the output.", required=False)
     args_parse.add_argument("--devices", "--device", nargs="+", help="The GPU(s) to use for the experiments.", default=0)
+    args_parse.add_argument("--soft", dest="soft", help="Ignore missing input directories.", action="store_true")
     args_parse.add_argument("--slurm", action="store_true", help="Use SLURM for the experiments.")
     args_parse.add_argument("--dry-run", "--dry_run", dest="dry_run", action="store_true", help="Print the experiment configurations without running them.")
     args_parse.add_argument(
@@ -270,13 +320,13 @@ def get_cmd_args() -> Tuple[Namespace, Dict[str, str]]:
                 f"{args_parse.format_help()}"
             )
     if not args.output is None:
-        args.output = os.path.abspath(args.output)
+        args.output = os.path.normpath(os.path.expanduser(args.output))
     if not args.output is None:
         project_dir = args.output
     else:
         project_dir = os.path.abspath("./runs/segment")
     set_outputdir(project_dir)
-    set_datadir(args.datadir)
+    set_datadir(args.datadir, strict=not args.soft)
     return args, extra
 
 def read_slurm_params(

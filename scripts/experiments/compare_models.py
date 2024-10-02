@@ -7,7 +7,7 @@ from typing import Union, Optional, List, Tuple, Dict, Any
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from scripts.experiments.experiment_helpers import run_command, remove_directory, split_by_sample, parse_unknown_arguments, read_slurm_params, ExperimentRunner
+from scripts.experiments.experiment_helpers import run_command, remove_directory, split_by_sample, parse_unknown_arguments, read_slurm_params, ExperimentRunner, ZipOrDirectory
 from flat_bug.datasets import get_datasets
 from flat_bug.eval_utils import pretty_print_csv
 
@@ -18,7 +18,8 @@ def eval_model(
         config : Optional[str], 
         directory : str, 
         output_directory : str, 
-        local_directory : str=None, 
+        local_directory : str=None,
+        tmp_directory : Optional[str]=None, 
         device : Optional[str]=None, 
         pattern : Optional[str]=None, 
         store_all : bool=False, 
@@ -35,6 +36,7 @@ def eval_model(
         directory (str): The directory where the data is located and where the results will be saved the directory should have a 'reference' directory with the ground truth json in 'instances_default.json' and the matching images'.
         output_directory (str): The path to the output directory where the results will be saved. If not supplied, it is assumed to be the same as the directory. Defaults to None.
         local_directory (str, optional): The path to the local directory where the ground truth json is located. If not supplied, it is assumed to be the same as the directory. Defaults to None.
+        tmp_directory (str, optional): Path to a temporary directory to use as the output directory, where the contents will then be copied to the actual output directory at the end of the evaluation.
         device (str, optional): The PyTorch device string to use for inference. If not supplied, it is assumed to be cuda:0. Defaults to None.
         pattern (str, optional): The regex pattern to use for selecting the inference files. If not supplied, it is assumed to be the default pattern. Defaults to None.
         store_all (bool, optional): If set, all results will be saved. Defaults to False.
@@ -45,6 +47,11 @@ def eval_model(
     Returns:
         str: The (executed) command (to run).
     """
+    # Fix paths 
+    weights, config, directory, output_directory, local_directory, tmp_directory = [
+        os.path.normpath(path) if isinstance(path, str) else path
+        for path in [weights, config, directory, output_directory, local_directory, tmp_directory]
+    ]
     if strict:
         # Check if the weights file exists
         assert os.path.exists(weights), f"Weights file not found: {weights}"
@@ -59,9 +66,18 @@ def eval_model(
         if local_directory is not None:
             # Check if the local directory exists
             assert os.path.exists(local_directory), f"Local directory not found: {local_directory}"
+    do_transfer_results = False
+    dst_dir = output_directory
+    if not tmp_directory is None:
+        if not os.path.isdir(tmp_directory) and strict:
+            if os.path.exists(tmp_directory):
+                raise FileExistsError(f"Specified {tmp_directory} already exists, and is not a directory.")
+            os.makedirs(tmp_directory, exists_ok=True)
+        output_directory = tmp_directory
+        do_transfer_results = True
 
     # Create the command
-    command = f'bash {os.path.join(os.path.dirname(os.path.dirname(__file__)), "eval","end_to_end_eval.sh")} -w "{weights}" -d "{directory}" -o "{output_directory}"'
+    command = f'. {os.path.join(os.path.dirname(os.path.dirname(__file__)), "eval","end_to_end_eval.sh")} -w "{weights}" -d "{directory}" -o "{output_directory}"'
     if config is not None:
         command += f' -c "{config}"'
     if local_directory is not None:
@@ -70,11 +86,23 @@ def eval_model(
         command += f' -g "{device}"'
     if pattern is not None:
         command += f' -p "{pattern}"'
-    
+    # Wrap with extra things (don't think it is technically necessary)
+    transfer_command = " && ".join([
+        f'cd "{os.path.dirname(output_directory)}"',
+        f'zip -r "{os.path.basename(output_directory)}.zip" "{os.path.basename(output_directory)}"/*',
+        f'cp "{os.path.basename(output_directory)}.zip" "{dst_dir}"',
+        f'rm -rf "{os.path.basename(output_directory)}" "{os.path.basename(output_directory)}.zip"'
+    ])
+    command = f'\
+        echo "Current virtual environment (in task): $VIRTUAL_ENV" &&\
+        mkdir -p "{output_directory}" &&\
+        {command} &&\
+        echo "Finished evaluation" {"#" if not do_transfer_results else "&&"} {transfer_command}'
+
     # Run the command
     if execute:
         if dry_run:
-            print(command)
+            print(f'Would have executed: {command}')
         else:
             run_command(command)
         result_csv = os.path.join(output_directory, "results", "results.csv")
@@ -159,7 +187,7 @@ def get_gpus() -> List[str]:
 
 def combine_result_csvs(
         result_directories : List[str], 
-        new_directory : str, 
+        dst_path : str, 
         dry_run : bool=False
     ) -> str:
     """
@@ -171,39 +199,43 @@ def combine_result_csvs(
     
     Args:
         result_directories (list of str): A list of result directories.
-        new_directory (str): The directory where the combined results will be saved.
+        dst_path (str): The path of the combined results output CSV.
 
     Returns:
         str: The path to the combined results CSV.
     """
-    # Check that the new directory exists
-    if not os.path.exists(new_directory) and os.path.isdir(new_directory):
-        raise FileNotFoundError(new_directory)
+    # Check if the destination is a directory
+    if os.path.isdir(dst_path):
+        dst_path = os.path.join(dst_path, "combined_results.csv")
+    elif not os.path.exists(os.path.dirname(dst_path)):
+        os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+    _, ext = os.path.splitext(dst_path)
+    if ext != ".csv":
+        dst_path += ".csv"
     # Check that there are result directories
     if not len(result_directories) > 0:
         raise ValueError("No result directories provided.")
-    # Get the path to the new result CSV
-    new_result_csv = os.path.join(new_directory, "results.csv")
     # If it is a dry run, return the path to the new result CSV
     if dry_run:
-        return new_result_csv
+        return dst_path
     # Check if the new result CSV exists and delete it if it does
-    if os.path.exists(new_result_csv):
-        os.remove(new_result_csv)
+    if os.path.exists(dst_path):
+        os.remove(dst_path)
     # Combine the result CSVs into the new result CSV with the following additional columns from the metadata file:
     new_column_names = ['model', 'commit', 'time']
-    with open(new_result_csv, 'w', newline='') as new_file:
+    with open(dst_path, 'w', newline='') as new_file:
         csv_writer = None
-        for result_directory in result_directories:
-            result_csv_path = os.path.join(result_directory, "results", "results.csv")
-            metadata_path = os.path.join(result_directory, "metadata.yml")
+        for result_directory_path in result_directories:
+            result_directory = ZipOrDirectory(result_directory_path)
+            result_csv_path = os.path.join("results", "results.csv")
+            metadata_path = "metadata.yml"
             
-            if not os.path.exists(result_csv_path):
-                raise FileNotFoundError(f"Result CSV not found: {result_csv_path}")
-            if not os.path.exists(metadata_path):
-                raise FileNotFoundError(f"Metadata file not found: {metadata_path}")
+            if not result_directory.contains(result_csv_path):
+                raise FileNotFoundError(f"Result CSV not found: {result_csv_path} in {result_directory}")
+            if not result_directory.contains(metadata_path):
+                raise FileNotFoundError(f"Metadata file not found: {metadata_path} in {result_directory}")
             
-            with open(metadata_path, 'r') as file:
+            with result_directory.open(metadata_path, 'r') as file:
                 metadata = yaml.safe_load(file)
                 if metadata is None:
                     raise ValueError(f"Metadata file is empty: {metadata_path}")
@@ -212,7 +244,7 @@ def combine_result_csvs(
                         raise ValueError(f"Metadata file does not contain the '{column}' key: {metadata_path}")
                 new_column_data = [metadata[column] for column in new_column_names]
             
-            with open(result_csv_path, 'r') as file:
+            with result_directory.open(result_csv_path, 'r') as file:
                 csv_reader = csv.reader(file)
                 headers = next(csv_reader)
                 if csv_writer is None:
@@ -222,7 +254,7 @@ def combine_result_csvs(
                 for row in csv_reader:
                     csv_writer.writerow(new_column_data + row)
     # Return the path to the new result CSV
-    return new_result_csv
+    return dst_path
 
 class DeferredCall:
     def __init__(self, func, *args, **kwargs):
@@ -270,6 +302,7 @@ if __name__ == "__main__":
     arg_parse.add_argument("--ignore_existing", dest="ignore_existing", help="If set, existing result directories will be ignored.", action="store_true")
     arg_parse.add_argument("--name", dest="name", help="The name of comparison.", type=str, default="")
     arg_parse.add_argument("--soft", dest="soft", help="Ignore missing input/output directories.", action="store_true")
+    arg_parse.add_argument("--tmp", dest="temporary_output_directory", help="Temporary directory to store the results while the evaluation is running (primarily useful for SLURM clusters with a networked file-system).", type=str)
     arg_parse.add_argument("--slurm", dest="slurm", help="If set, the evaluation will be run on a SLURM cluster.", action="store_true")
     args, extra = arg_parse.parse_known_args()
     try:
@@ -328,20 +361,22 @@ if __name__ == "__main__":
 
         for weight_file, id in zip(all_weight_files, weight_ids):
             # Get the result directory path for the current model and weight file
-            this_result_dir = os.path.join(RESULT_DIR, args.name, os.path.basename(model_directory), id)
+            this_weight_id_subdir = os.path.join(args.name, os.path.basename(model_directory), id)
+            this_result_dir = os.path.join(RESULT_DIR, this_weight_id_subdir)
+            if not args.temporary_output_directory is None:
+                this_tmp_output_dir = os.path.join(os.path.expanduser(args.temporary_output_directory), this_weight_id_subdir)
+            else:
+                this_tmp_output_dir = None
             # Remember the result directory for each model
             result_directories[model_directory].append(this_result_dir)
             # Check if the result directory exists and is not empty
             if os.path.exists(this_result_dir) and len(os.listdir(this_result_dir)) > 0:
                 # If the ignore_existing flag is set, ignore the existing result directory and skip the evaluation
-                if args.ignore_existing:
+                if args.ignore_existing or args.soft:
                     print(f'Ignoring existing result directory: {this_result_dir}')
                     continue
                 else:
                     raise ValueError(f'Result directory already exists: {this_result_dir}')
-            if not args.dry_run:
-                # Create the result directory
-                os.makedirs(this_result_dir, exist_ok=True)
             # Set the shared evaluation parameters
             eval_params = {
                 "weights" : os.path.expanduser(weight_file), 
@@ -349,6 +384,7 @@ if __name__ == "__main__":
                 "output_directory" : os.path.expanduser(this_result_dir),
                 "config" : os.path.expanduser(config_file) if config_file is not None else config_file,
                 "local_directory" : os.path.expanduser(args.ground_truth),
+                "tmp_directory" : this_tmp_output_dir,
                 "pattern" : args.input_pattern,
                 "dry_run" : args.dry_run,
                 "store_all" : args.save_all,
@@ -366,6 +402,8 @@ if __name__ == "__main__":
     runner = ExperimentRunner(eval_model_wrapper, all_eval_params, devices=args.device, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(**extra))
     runner.run().complete()
 
-    extra.update({"dependency" : f'afterok:{runner.slurm_job_id}', "cpus_per_task" : 1})
+    extra.update({"dependency" : f'afterok:{runner.slurm_job_id}', "cpus_per_task" : 1, "time" : "01:00:00"})
+    extra.pop("gres", None)
+    # We could snipe out GPU specifications here, but I think it becomes a bit too involved as there are a multitude of ways GPUs can be specified with SLURM, and it also depends on the cluster setup
     finalizer = ExperimentRunner(combine_result_csvs_wrapper, [[all_result_directories, os.path.join(RESULT_DIR, args.name), args.dry_run]], devices=args.device, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(**extra))
     finalizer.run().complete()

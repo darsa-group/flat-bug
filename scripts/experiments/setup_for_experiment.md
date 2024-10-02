@@ -31,7 +31,7 @@ cd flat-bug
 It is not strictly necessary to create a virtual environment with `flat-bug` on the login-node for all experiments (only `compare_models.py` strictly needs it, and could quite easily be amended such that it is not necessary). However, it is highly encouraged for two reasons (1) it makes you more familiar with the process and (2) it allows you to use the `Python` interpreter associated with the environment to properly parse the scripts in `flat-bug` and provide proper type hints, warnings and documentation on hover (if using an IDE like VSCode). 
 ```bash
 # Load the necessary modules
-module load python/3.11.5 opencv/4.10.0 gcc scipy-stack/2024a
+module load python/3.11.5 opencv/4.10.0 gcc scipy-stack/2024a r/4.4.0
 # Create a virtual environment
 virtualenv --no-download fb_env
 # Install flat-bug in editable mode
@@ -77,11 +77,18 @@ python -m build --wheel
 pip download . -d dist # Can be pretty slow
 ```
 
+## Install R dependencies
+Unfortunately we are currently using an `R` script for our end-to-end evaluation, due to its' much superior plotting capabilities compared to `Python`. This necessitates that the following packages are installed `data.table`, `ggplot2`, `scales`, `optparse` and `magrittr`, which can be done in an interactive `R` shell on the login-node, first simply run the command `R` in the terminal. Then:
+```R
+install.packages(c("data.table", "ggplot2", "scales", "optparse", "magrittr"))
+```
+For the prompts simply answer 'yes' for the onees regarding the install path (library) of the packages, and for the CRAN server select one from Canada (probably 12).
+
 ## Install offline inside SLURM job
 To use the wheels created in the prior section for an offline install of `flat-bug` inside a compute node, the following can be used: 
 ```bash
 # Inside the bash job (or elsewhere) - load the necessary modules
-module load python/3.11.5 opencv/4.10.0 gcc scipy-stack/2024a
+module load python/3.11.5 opencv/4.10.0 gcc scipy-stack/2024a r/4.4.0
 # Create a new virtual environment in the local storage of the job and activate it
 virtualenv --no-download $SLURM_TMPDIR/env
 source $SLURM_TMPDIR/env/bin/activate
@@ -90,6 +97,42 @@ pip install --no-index --find-links=$HOME/flat-bug/dist dist/flat_bug-0.3.0-py3-
 # (optional) Create a copy of the dataset on the local storage of the job
 mkdir "$SLURM_TMPDIR/fb_yolo"
 unzip "$HOME/scratch/fb_data/fb_yolo.zip" -d "$SLURM_TMPDIR/fb_yolo" 
+```
+
+In reality, we include this:
+```bash
+# Clean environment
+deactivate && module purge
+cd $HOME/flat-bug
+
+# Setup virtual environments and local data on all nodes
+srun --ntasks=$SLURM_NNODES --ntasks-per-node=1 bash <<EOF
+#!/bin/bash
+# Install flat-bug in a local virtual environment
+module load python/3.11.5 opencv/4.10.0 gcc scipy-stack/2024a r/4.4.0
+virtualenv --no-download \$SLURM_TMPDIR/env
+source \$SLURM_TMPDIR/env/bin/activate
+pip install --no-index --find-links=\$HOME/flat-bug/dist dist/flat_bug-0.3.0-py3-none-any.whl
+pip list
+echo "Current virtual environment (node \$SLURM_JOB_ID.\$SLURM_ARRAY_TASK_ID%\$SLURM_ARRAY_TASK_COUNT): \$VIRTUAL_ENV"
+# Create the output directory for the job
+mkdir \$SLURM_TMPDIR/job_output
+# Copy flat-bug data to local storage
+unzip /home/asgersve/scratch/fb_data/fb_yolo.zip -d \$SLURM_TMPDIR
+# Print the state of the local storage
+echo "Contents of the temporary \$SLURM_TMPDIR:"
+ls -a1 \$SLURM_TMPDIR
+EOF
+
+# Activate the environment only on the main node (see https://docs.alliancecan.ca/wiki/Python#Creating_virtual_environments_inside_of_your_jobs_(multi-nodes))
+module load python/3.11.5 opencv/4.10.0 gcc scipy-stack/2024a r/4.4.0
+source $SLURM_TMPDIR/env/bin/activate;
+
+echo "Running jobs..."
+```
+inside our SLURM batch scripts before calling `srun`. This template is found in `flat-bug/scripts/experiments/slurm_config/setup.txt` and is included (which is almost a requirement) by specifying:
+```bash
+python scripts/experiments/.../SOME_SCRIPT.py --some-args some-value --slurm slurm_setup=setup.txt
 ```
 
 ## Using SLURM_TMPDIR with submitit and Python scripts
@@ -115,7 +158,7 @@ python script.py --path "$SLURM_TMPDIR/my_path"
 **OBS:** This can be used for arbitrary code injection, i.e. a security vulnerability, if the arguments can be controlled by an outside user in an unsanitized manner. 
 
 # Example for one of our experiments
-```bash
+```sh
 # Ensure that the proper modules and virtual environment (with flat-bug) is active
 # This is NOT run with a SLURM script, instead our experiments use `submitit` to submit an array job for all the subtasks in each experiment
 # This means that the experiment scripts should be executed on a login-node with the `--slurm` flag followed by the SLURM config arguments. 
@@ -124,8 +167,9 @@ cd $HOME/flat-bug
 python scripts/experiments/compare_models.py \
     -i "\$SLURM_TMPDIR/fb_yolo/insects/images/val" \
     -g "\$SLURM_TMPDIR/fb_yolo/insects/labels/val/instances_default.json" \
-    -o "$HOME/scratch/my_output_folder" \# Notice that $HOME is NOT escaped here
-    -d "~/scratch/output/experiment_*" \# You can use "$HOME" and "~" interchangeably
+    --tmp "\$SLURM_TMPDIR/job_output" \
+    -o "$HOME/scratch/my_output_folder" \ # Notice that $HOME is NOT escaped here
+    -d "~/scratch/output/experiment_*" \ # You can use "$HOME" and "~" interchangeably
     --soft \# Disables check for existence of `i` and `g`
     --slurm \
     slurm_setup=setup.txt \
@@ -133,4 +177,5 @@ python scripts/experiments/compare_models.py \
     cpus_per_task=12 \
     mem=32GB \
     time=01:00:00
+# OBS: Comments cannot be included in actual bash code
 ``` 
