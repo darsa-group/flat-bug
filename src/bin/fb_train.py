@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import argparse
-import logging
 import os.path
 import yaml
 
 from flat_bug.trainers import MySegmentationTrainer
-from ultralytics import settings
+# from ultralytics.utils import DATASETS_DIR
+import ultralytics
+from ultralytics import utils as uu
+from pathlib import Path
 
 # fixme, resume should continue on the same "run folder"
 def main():
@@ -67,7 +69,7 @@ def main():
     assert os.path.isdir(option_dict["data_dir"])
     option_dict["data_dir"] = os.path.abspath(os.path.normpath(option_dict["data_dir"]))
 
-    # I think this should be fixed by resolving the path before passing it to the trainer 
+    # I think this should be fixed by resolving the path before passing it to the trainer and setting DATASETS_DIR
     # (see https://github.com/ultralytics/ultralytics/blob/588bbbe4aed122e3d24353856484148bc5ef05ad/ultralytics/data/utils.py#L301)
     # #fixme issue when providing new dataset path, sill using old one?! see when i used pollen data
     # settings.update({'datasets_dir': option_dict["data_dir"]})
@@ -82,6 +84,8 @@ def main():
             overrides.update(yaml_config)
 
     # Update data directory and resume flag from the command line
+    ultralytics.SETTINGS.update({"datasets_dir" : Path(os.path.dirname(option_dict["data_dir"]))})
+    uu.DATASETS_DIR = Path(os.path.dirname(option_dict["data_dir"]))
     overrides["data"] = os.path.join(option_dict["data_dir"], "data.yaml")
     if option_dict["resume"]:
         assert os.path.isfile(overrides["model"]), f"Trying to resume from a model that does not seem to be a valid file: {overrides['model']}"

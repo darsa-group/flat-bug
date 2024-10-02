@@ -403,7 +403,6 @@ def do_yolo_train_run(
     Returns:
         str: The (executed) command (to run).
     """
-    global DATA_DIR
     if DATA_DIR == "<UNSET>":
         raise RuntimeError("The data directory has not been set. Use `experiment_helpers.set_datadir(<path>)` to set it.")
     ITEMIZE = '\n  - '
