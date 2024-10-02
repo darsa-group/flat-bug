@@ -1,5 +1,5 @@
 batch: 16
-model: "./yolov8n-seg.pt"
+model: "~/flat-bug/yolov8n-seg.pt"
 epochs: 100
 device: 0
 save_period: 25

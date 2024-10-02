@@ -13,10 +13,10 @@ if __name__ == "__main__":
 
     backbone_sizes = ["L", "M", "S", "N"]
     backbone_paths = {
-        "L" : "/home/asgersve/flat-bug/yolov8l-seg.pt",
-        "M" : "/home/asgersve/flat-bug/yolov8m-seg.pt",
-        "S" : "/home/asgersve/flat-bug/yolov8s-seg.pt",
-        "N" : "/home/asgersve/flat-bug/yolov8n-seg.pt"
+        "L" : "~/flat-bug/yolov8l-seg.pt",
+        "M" : "~/flat-bug/yolov8m-seg.pt",
+        "S" : "~/flat-bug/yolov8s-seg.pt",
+        "N" : "~/flat-bug/yolov8n-seg.pt"
     }
 
     experiment_configs = []

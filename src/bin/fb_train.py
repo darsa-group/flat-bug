@@ -4,9 +4,9 @@ import os.path
 import yaml
 
 from flat_bug.trainers import MySegmentationTrainer
-# from ultralytics.utils import DATASETS_DIR
-import ultralytics
-from ultralytics import utils as uu
+
+import ultralytics.data.utils as ultralytics_data_utils 
+import ultralytics.utils as ultralytics_utils
 from pathlib import Path
 
 # fixme, resume should continue on the same "run folder"
@@ -31,7 +31,7 @@ def main():
         "fb_custom_eval": False,
         "fb_custom_eval_num_images": -1,
         "fb_exclude_datasets" : [],
-        "cache": "ram"
+        "cache": "disk"
     }
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     args_parse.add_argument("-d", "--data-dir", dest="data_dir",
@@ -69,7 +69,7 @@ def main():
     assert os.path.isdir(option_dict["data_dir"])
     option_dict["data_dir"] = os.path.abspath(os.path.normpath(option_dict["data_dir"]))
 
-    # I think this should be fixed by resolving the path before passing it to the trainer and setting DATASETS_DIR
+    # I think this should be fixed by resolving the path before passing it to the trainer and setting DATASETS_DIR in the scope of ultralytics.data.utils
     # (see https://github.com/ultralytics/ultralytics/blob/588bbbe4aed122e3d24353856484148bc5ef05ad/ultralytics/data/utils.py#L301)
     # #fixme issue when providing new dataset path, sill using old one?! see when i used pollen data
     # settings.update({'datasets_dir': option_dict["data_dir"]})
@@ -84,9 +84,11 @@ def main():
             overrides.update(yaml_config)
 
     # Update data directory and resume flag from the command line
-    ultralytics.SETTINGS.update({"datasets_dir" : Path(os.path.dirname(option_dict["data_dir"]))})
-    uu.DATASETS_DIR = Path(os.path.dirname(option_dict["data_dir"]))
     overrides["data"] = os.path.join(option_dict["data_dir"], "data.yaml")
+    # OBS: This is a *very* cursed hack around the fact that ultralytics have decided that you cannot change the settings at runtime. 
+    ultralytics_data_utils.DATASETS_DIR = Path(option_dict["data_dir"]) # We technically only need to change it here, but I'll change it both places for consistency
+    ultralytics_utils.DATASETS_DIR = Path(option_dict["data_dir"])
+
     if option_dict["resume"]:
         assert os.path.isfile(overrides["model"]), f"Trying to resume from a model that does not seem to be a valid file: {overrides['model']}"
         overrides["resume"] = overrides["model"]
