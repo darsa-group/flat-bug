@@ -268,6 +268,10 @@ def parse_unknown_arguments(extra : List[str]) -> Dict[str, Any]:
         else:
             position = sum([len(arg) for arg in extra[:i]]) + i
             raise ValueError(f"Unable to parse extra misspecified or unnamed argument: `{arg}` at position {position}:{position + len(arg)}.")
+        if value.isdigit():
+            value = int(value)
+        elif value.isdecimal():
+            value = float(value)
         unknown_args[key] = value
         i += 1
     return unknown_args
@@ -389,7 +393,7 @@ def do_yolo_train_run(
         config : Dict, 
         dry_run : bool=False, 
         execute : bool=True, 
-        device : Optional[Union[int, str]]=None
+        device : Optional[Union[int, str, List[Union[int, str]]]]=None
     ) -> str:
     """
     Wrapper for conducting a Flat-Bug YOLO training run, with `fb_train`.
@@ -409,7 +413,8 @@ def do_yolo_train_run(
 
     # Set/override the device if specified
     if device is not None:
-        config["device"] = f"cuda:{device}" if isinstance(device, int) or device.isdigit() else device
+        sanitize_device = lambda x : f"cuda:{x}" if isinstance(x, int) or x.isdigit() else x
+        config["device"] = sanitize_device(device) if isinstance(device, (str, int)) else [sanitize_device(d) for d in device]
 
     # The config file is written to a "temporary" directory, which can be cleaned once the commands have been executed. In the case of non-SLURM execution, this is done automatically if using the `ExperimentRunner` class.
     config_path = get_temp_config_path()
@@ -484,16 +489,13 @@ class ExperimentRunner:
         # Initialize consumer/job lists
         self.consumer_threads : List[threading.Thread] = []
         self.slurm_jobs : List[submitit.Job] = []
-
-        if self.slurm and self.multi_gpu:
-            raise ValueError("Cannot use both slurm and multiple GPUs for the experiments.")
         
     def __len__(self):
         return self._length
     
     @property
     def multi_gpu(self):
-        return isinstance(self.devices, list) and len(self.devices) > 1
+        return isinstance(self.devices, list) and len(self.devices) > 1 and not self.slurm
 
     @staticmethod
     def consumer_thread(
@@ -551,13 +553,11 @@ class ExperimentRunner:
                 thread.start()
                 self.consumer_threads.append(thread)
         else:
-            if isinstance(self.devices, list):
+            if isinstance(self.devices, (list, tuple, set)):
                 if len(self.devices) == 1:
                     self.devices = self.devices[0]
                 elif len(self.devices) == 0:
                     self.devices = None
-                else:
-                    raise ValueError(f"Invalid (number of) devices for sequential or slurm execution: {self.devices}")
             # Run the experiments sequentially
             if self.slurm:
                 cmds = []
