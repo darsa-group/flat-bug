@@ -12,7 +12,7 @@ if __name__ == "__main__":
     args, extra = get_cmd_args()
 
     backbone_size = "m"
-    backbone_path = f"./yolov8{backbone_size}-seg.pt"
+    backbone_path = f"~/flat-bug/yolov8{backbone_size}-seg.pt"
 
     config = get_config()
     config["model"] = backbone_path
