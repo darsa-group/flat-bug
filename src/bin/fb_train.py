@@ -105,7 +105,12 @@ def main():
     if isinstance(overrides["device"], (tuple, list)) or (isinstance(overrides["device"], str) and len(overrides["device"].split(",")) > 1):
         os.environ['MKL_THREADING_LAYER'] = 'GNU'
         os.environ['OMP_NUM_THREADS'] = str(overrides["workers"])
-    
+
+    # Ensure that `~` is not interpreted literally in arguments
+    for k in overrides:
+        if isinstance(k, str) and k in ["model", "data", "project", "pretrained"]:
+            overrides[k] = os.path.expanduser(overrides[k])
+
     # DEBUG
     print("#######################################################")
     print("OVERRIDES")
