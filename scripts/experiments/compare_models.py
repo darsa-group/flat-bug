@@ -168,7 +168,8 @@ def get_weights_in_directory(directory : str) -> List[str]:
         weight_dir = directory
     weight_files = glob.glob(os.path.join(weight_dir, "**", "*.pt"), recursive=True)
     # Check if there are any weight files
-    assert len(weight_files) > 0, f"No weight files found in the directory: {weight_dir}"
+    if len(weight_files) == 0:
+        print(f"WARNING: No weight files found in the directory: {weight_dir}")
     
     return sorted(weight_files, key=os.path.getmtime)
 
@@ -340,21 +341,19 @@ if __name__ == "__main__":
     for model_directory in model_directories:
         # Get the best weight file
         all_weight_files = get_weights_in_directory(model_directory)
+        if len(all_weight_files) == 0:
+            continue
         if args.all_weights:
             num_before_pattern = len(all_weight_files)
             if args.weight_pattern is not None:
                 all_weight_files = [file for file in all_weight_files if re.search(args.weight_pattern, file)]
             if len(all_weight_files) == 0:
-                if num_before_pattern > 0:
-                    pattern_message = f' | Perhaps the pattern ("{args.weight_pattern}") is too restrictive, {num_before_pattern} files found before pattern filtering.'
-                else:
-                    pattern_message = ''
-                print(f'No weight files found in the directory: {model_directory}{pattern_message}')
+                print(f'No weight files found in the directory: {model_directory} | Perhaps the pattern ("{args.weight_pattern}") is too restrictive, {num_before_pattern} files found before pattern filtering.')
                 continue
             weight_ids = [os.path.basename(file).split(".")[0] for file in all_weight_files]
         else:
             if args.weight_pattern is None:
-                args.weight_pattern = "best\.pt"
+                args.weight_pattern = r"best\.pt"
             all_weight_files = [file for file in all_weight_files if re.search(args.weight_pattern, file)]
             # assert len(all_weight_files) == 1, f'Exactly one best weight file should be found. Found: {len(all_weight_files)}.'
             weight_ids = ["" for file in all_weight_files]
