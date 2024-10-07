@@ -1,7 +1,7 @@
 #!/bin/bash
 
 function usage {
-    cat << EOF
+  cat <<EOF
 Usage: $0 -w weights -d directory [-c config.yaml] [-l local_directory] [-o output_directory] [-g PyTorch_device_string] [-p inference_file_regex_pattern]
     -w weights (MANDATORY):
         The path to the weights file.
@@ -50,7 +50,7 @@ do
         o) ODIR=${OPTARG};;
         g) GPU=${OPTARG};;
         p) IPAT=${OPTARG};;
-        *) usage; exit 1;;
+        *) usage; return 1 2>/dev/null; exit 1;;
     esac
 done
 
@@ -62,6 +62,7 @@ fi
 # Check for mandatory options
 if [[ -z "$WEIGHTS" || -z "$DIR" ]]; then
     usage
+    return 1 2>/dev/null
     exit 1
 fi
 
