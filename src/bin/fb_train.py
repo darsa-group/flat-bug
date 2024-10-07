@@ -31,7 +31,7 @@ def main():
         "fb_custom_eval": False,
         "fb_custom_eval_num_images": -1,
         "fb_exclude_datasets" : [],
-        "cache": "disk"
+        "cache": False
     }
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     args_parse.add_argument("-d", "--data-dir", dest="data_dir",
@@ -66,8 +66,8 @@ def main():
         
     option_dict = vars(args)
 
-    assert os.path.isdir(option_dict["data_dir"])
     option_dict["data_dir"] = os.path.abspath(os.path.normpath(option_dict["data_dir"]))
+    assert os.path.isdir(option_dict["data_dir"]), f'Directory {option_dict["data_dir"]} not found.'
 
     # I think this should be fixed by resolving the path before passing it to the trainer and setting DATASETS_DIR in the scope of ultralytics.data.utils
     # (see https://github.com/ultralytics/ultralytics/blob/588bbbe4aed122e3d24353856484148bc5ef05ad/ultralytics/data/utils.py#L301)
