@@ -74,7 +74,7 @@ def print_and_sleep(text : str):
 def run_command(
         command : Union[str | Callable], 
         python_binary : Optional[str]=None
-    ):
+    ) -> bool:
     if callable(command):
         command = command()
     elif isinstance(command, str):
@@ -96,7 +96,8 @@ def run_command(
                         output_buffer = ""
             process.wait()
         if process.returncode != 0:
-            raise subprocess.CalledProcessError(process.returncode, command)
+            print(f"`{command}` had unsuccessful returncode: {process.returncode}")
+        return process.returncode
     else:
         raise ValueError("Command must be a string or callable.")
 
