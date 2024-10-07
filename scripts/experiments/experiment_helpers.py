@@ -276,7 +276,7 @@ def parse_unknown_arguments(extra : List[str]) -> Dict[str, Any]:
         i += 1
     return unknown_args
 
-def get_cmd_args() -> Tuple[Namespace, Dict[str, str]]:
+def get_cmd_args(additional_args : Optional[List[Tuple[List[str], Dict[str, Any]]]]) -> Tuple[Namespace, Dict[str, str]]:
     """
     A simple wrapper for shared command line arguments and parsing between experiment orchestration scripts.
 
@@ -287,6 +287,9 @@ def get_cmd_args() -> Tuple[Namespace, Dict[str, str]]:
         --slurm: Use SLURM for the experiments.
         ... and any additional SBATCH arguments to pass to the experiments. Only relevant if using --slurm.
 
+    Args:
+        additional_args (Optional[List[Tuple[List[str], Dict[str, Any]]]]) : if supplied must be a list of additional commandline arguments and corresponding dictionaries containing keyword arguments and values passed to `HelpfulArgumentParser.add_argument` to specify the type of argument.
+        
     Returns:
         argparse.Namespace: The parsed command line arguments.
     """
@@ -297,6 +300,8 @@ def get_cmd_args() -> Tuple[Namespace, Dict[str, str]]:
     args_parse.add_argument("--soft", dest="soft", help="Ignore missing input directories.", action="store_true")
     args_parse.add_argument("--slurm", action="store_true", help="Use SLURM for the experiments.")
     args_parse.add_argument("--dry-run", "--dry_run", dest="dry_run", action="store_true", help="Print the experiment configurations without running them.")
+    for args, kwargs in additional_args:
+        args_parse.add_argument(*args, **kwargs)
     args_parse.add_argument(
         "--do-not-specify-extra",
         dest="extra",
