@@ -276,7 +276,7 @@ def parse_unknown_arguments(extra : List[str]) -> Dict[str, Any]:
         i += 1
     return unknown_args
 
-def get_cmd_args(additional_args : Optional[List[Tuple[List[str], Dict[str, Any]]]]) -> Tuple[Namespace, Dict[str, str]]:
+def get_cmd_args(additional_args : Optional[List[Tuple[List[str], Dict[str, Any]]]] = None) -> Tuple[Namespace, Dict[str, str]]:
     """
     A simple wrapper for shared command line arguments and parsing between experiment orchestration scripts.
 
