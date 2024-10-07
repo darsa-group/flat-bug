@@ -300,8 +300,10 @@ def get_cmd_args(additional_args : Optional[List[Tuple[List[str], Dict[str, Any]
     args_parse.add_argument("--soft", dest="soft", help="Ignore missing input directories.", action="store_true")
     args_parse.add_argument("--slurm", action="store_true", help="Use SLURM for the experiments.")
     args_parse.add_argument("--dry-run", "--dry_run", dest="dry_run", action="store_true", help="Print the experiment configurations without running them.")
-    for args, kwargs in additional_args:
-        args_parse.add_argument(*args, **kwargs)
+    if additional_args:
+        for args, kwargs in additional_args:
+            args_parse.add_argument(*args, **kwargs)
+    
     args_parse.add_argument(
         "--do-not-specify-extra",
         dest="extra",
