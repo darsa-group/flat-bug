@@ -484,11 +484,11 @@ def _compute_transitive_closure_cuda(adjacency_matrix : torch.Tensor) -> torch.T
     Returns:
         torch.Tensor: A boolean matrix of shape (n, n), which is the transitive closure of the adjacency matrix.
     """
-    # torch._int_mm only supports matrices such that the output is larger than 32x32 and a multiple of 8
+    # torch._int_mm only supports matrices such that the output is larger than 32x32 and a multiple of 32
     if len(adjacency_matrix) < 32:
         padding = 32 - len(adjacency_matrix)
-    elif len(adjacency_matrix) % 8 != 0:
-        padding = 8 - len(adjacency_matrix) % 8
+    elif len(adjacency_matrix) % 32 != 0:
+        padding = 32 - len(adjacency_matrix) % 32
     else:
         padding = 0
     # Convert the adjacency matrix to float16, this is just done to ensure that the values don't overflow when squaring the matrix before clamping - if there existed a "or-matrix multiplication" for boolean matrices, this would not be necessary
@@ -511,7 +511,7 @@ def _compute_transitive_closure_cuda(adjacency_matrix : torch.Tensor) -> torch.T
 # Check if the _int_mm function is compatible with the current environment
 if torch.cuda.is_available():
     try:
-        _compute_transitive_closure_cuda(torch.zeros((32, 32), dtype=torch.bool).cuda())
+        _compute_transitive_closure_cuda(torch.zeros((33, 33), dtype=torch.bool).cuda())
         _INT_MM_SUPPORTED = True
     except:
         _INT_MM_SUPPORTED = False
