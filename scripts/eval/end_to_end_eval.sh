@@ -1,6 +1,6 @@
 #!/bin/bash
 
-function usage {
+usage () {
   cat <<EOF
 Usage: $0 -w weights -d directory [-c config.yaml] [-l local_directory] [-o output_directory] [-g PyTorch_device_string] [-p inference_file_regex_pattern]
     -w weights (MANDATORY):

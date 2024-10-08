@@ -38,7 +38,7 @@ if __name__ == "__main__":
     for name, config in experiment_configs.items():
         fine_tune_config = config.copy()
         fine_tune_config["name"] = f"{BASE_NAME}_fine_tune_{name}"
-        fine_tune_config["model"] = os.path.join(fine_tune_config["project"], name, "weights", "best.pt")
+        fine_tune_config["model"] = os.path.join(fine_tune_config["project"], config["name"], "weights", "best.pt")
         fine_tune_config["fb_exclude_datasets"] = [d for d in fine_tune_config["fb_exclude_datasets"] if d != name]
         fine_tune_config["epochs"] = 10
         fine_tune_config["resume"] = True
