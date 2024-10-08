@@ -82,6 +82,9 @@ def main():
         with open(option_dict["config_file"]) as f:
             yaml_config = yaml.safe_load(f)
             overrides.update(yaml_config)
+    
+    # Update with cli overrides
+    overrides.update(cli_overrides)
 
     # Update data directory and resume flag from the command line
     overrides["data"] = os.path.join(option_dict["data_dir"], "data.yaml")

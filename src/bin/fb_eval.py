@@ -12,6 +12,10 @@ from flat_bug.coco_utils import fb_to_coco, split_annotations, filter_coco
 from flat_bug.eval_utils import compare_groups
 from flat_bug.config import read_cfg, DEFAULT_CFG
 
+def load_json(file : str):
+    with open(file, "r") as f:
+        return json.load(f)
+
 # Wrapper function to call compare_groups with a single parameter dictionary for multiprocessing
 def process_image(params):
     return compare_groups(**params)
@@ -49,10 +53,10 @@ def main():
     iou_match_threshold = config["IOU_THRESHOLD"]
 
     if args.coco_predictions:
-        pred_coco = json.load(open(args.predictions, "r"))
+        pred_coco = load_json(args.predictions)
     else:
         files = sorted(glob(args.predictions, recursive=True))
-        flat_bug_predictions = [json.load(open(p)) for p in files]
+        flat_bug_predictions = [load_json(p) for p in files]
         pred_coco = {}
         for d in flat_bug_predictions:
             fb_to_coco(d, pred_coco)
@@ -60,7 +64,7 @@ def main():
 
     if not os.path.exists(args.ground_truth):
         raise ValueError(f'Ground truth file not found: {args.ground_truth}')
-    gt_coco = json.load(open(args.ground_truth, "r"))
+    gt_coco = load_json(args.ground_truth)
     gt_coco = filter_coco(gt_coco, area=min_size)
     gt_annotations, pred_annotations = split_annotations(gt_coco), split_annotations(pred_coco)
 
