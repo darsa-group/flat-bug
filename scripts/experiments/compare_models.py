@@ -77,7 +77,7 @@ def eval_model(
         do_transfer_results = True
 
     # Create the command
-    command = f'. {os.path.join(os.path.dirname(os.path.dirname(__file__)), "eval","end_to_end_eval.sh")} -w "{weights}" -d "{directory}" -o "{output_directory}"'
+    command = f'bash {os.path.join(os.path.dirname(os.path.dirname(__file__)), "eval","end_to_end_eval.sh")} -w "{weights}" -d "{directory}" -o "{output_directory}"'
     if config is not None:
         command += f' -c "{config}"'
     if local_directory is not None:
