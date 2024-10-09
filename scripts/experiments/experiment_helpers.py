@@ -448,21 +448,19 @@ def do_yolo_train_run(
 
     # Check if it is possible to resume prior training
     name_project_dir = os.path.join(config["project"], config["name"], "weights")
-    name_project_weights = []
-    if os.path.exists(name_project_dir):
-        name_project_weights = [f for f in os.listdir() if f.endswith(".pt")]
+    attempt_resume &= os.path.exists(name_project_dir) & (len([f for f in os.listdir(name_project_dir) if f.endswith(".pt")]) > 0)
     
-    if attempt_resume and (len(name_project_weights) > 0):
+    if attempt_resume:
         resume_weight = os.path.join(name_project_dir, "last.pt")
-        if not os.path.exists(resume_weight) and os.path.isfile(resume_weight):
+        if not (os.path.exists(resume_weight) and os.path.isfile(resume_weight)):
             attempt_resume = False
         else:
             config["model"] = resume_weight
 
     # The config file is written to a "temporary" directory, which can be cleaned once the commands have been executed. In the case of non-SLURM execution, this is done automatically if using the `ExperimentRunner` class.
     config_path = get_temp_config_path()
-    with open(config_path, "w") as conf:
-        yaml.dump(config, conf, default_flow_style=False, sort_keys=False)
+    with open(config_path, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
     
     print(f"Running experiment: {config['name']} with config:{ITEMIZE + ITEMIZE.join([f'{k}: {v}' for k, v in config.items()])}")
     command = f'fb_train -c "{config_path}" -d "{DATA_DIR}"'
