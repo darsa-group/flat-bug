@@ -23,7 +23,7 @@ def parse_include_datasets(path : str) -> List[str]:
     return [dataset for dataset in datasets if dataset]
 
 if __name__ == "__main__":
-    args, extra = get_cmd_args()
+    args, extra = get_cmd_args(name = BASE_NAME)
 
     # Filter out the prospective datasets
     relevant_datasets = parse_include_datasets(os.path.join(BASE_PATH, "include_datasets"))
@@ -44,16 +44,5 @@ if __name__ == "__main__":
             this_config["fb_exclude_datasets"].extend(list(set(this_excluded_datasets)))
             experiment_configs[this_config["name"]] = this_config
 
-    if "cpus_per_task" in extra and extra["cpus_per_task"] >= full_config["workers"]:
-        n_workers = extra["cpus_per_task"]
-    else:
-        n_workers = full_config["workers"]
-        if "cpus_per_task" in extra:
-            print(f"WARNING: Requested cpus_per_task ({extra['cpus_per_task']}) is less than the required number of workers ({n_workers}). Ignoring the cpus_per_task parameter and continuing with {n_workers} workers.")
-
-    extra.update({"cpus_per_task" : n_workers})
-    if not "job_name" in extra:
-        extra.update({"job_name" : BASE_NAME})
-
-    experiment_runner = ExperimentRunner(inputs=experiment_configs.values(), devices=args.devices, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(**extra))
+    experiment_runner = ExperimentRunner(inputs=experiment_configs.values(), devices=args.devices, attempt_resume=args.try_resume, slurm=args.slurm, slurm_params=read_slurm_params(**extra), dry_run=args.dry_run)
     experiment_runner.run().complete()

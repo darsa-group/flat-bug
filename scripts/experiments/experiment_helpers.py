@@ -143,17 +143,18 @@ def split_by_sample(files : List[str]) -> Dict[str, List[str]]:
 
 TMP_DIR = "<UNSET>"
 
-def set_temp_config_dir(**kwargs):
+def set_temp_config_dir(dir : str):
     global TMP_DIR
-    if "dir" in kwargs:
-        if not os.path.exists(kwargs["dir"]):
-            os.makedirs(kwargs["dir"], exist_ok=True)
-    TMP_DIR = tempfile.mkdtemp(**kwargs)
+    if not os.path.exists(dir):
+        if not os.path.isdir(dir):
+            raise FileExistsError(f"Unable to create directory for temporary training configs, '{dir}' is a file.")
+        os.makedirs(dir, exist_ok=True)
+    TMP_DIR = dir
 
 def get_temp_config_dir() -> str:
     global TMP_DIR
     if TMP_DIR == "<UNSET>":
-        set_temp_config_dir(dir=os.environ["HOME"], prefix="fb_tmp_experiment_configs_")
+        set_temp_config_dir(os.path.join(os.environ["HOME"], "fb_tmp_experiment_configs"))
     return TMP_DIR
 
 def get_temp_config_path() -> str:
@@ -167,7 +168,7 @@ def set_outputdir(outputdir : str):
         os.makedirs(outputdir, exist_ok=True)
     OUTPUT_DIR = outputdir
     set_projectdir(outputdir)
-    set_temp_config_dir(dir=outputdir, prefix="fb_tmp_experiment_configs_")
+    set_temp_config_dir(os.path.join(outputdir, "fb_tmp_experiment_configs"))
 
 def get_outputdir(strict : bool=True) -> str:
     global OUTPUT_DIR
@@ -277,7 +278,7 @@ def parse_unknown_arguments(extra : List[str]) -> Dict[str, Any]:
         i += 1
     return unknown_args
 
-def get_cmd_args(additional_args : Optional[List[Tuple[List[str], Dict[str, Any]]]] = None) -> Tuple[Namespace, Dict[str, str]]:
+def get_cmd_args(name : Optional[str] = None, additional_args : Optional[List[Tuple[List[str], Dict[str, Any]]]] = None) -> Tuple[Namespace, Dict[str, str]]:
     """
     A simple wrapper for shared command line arguments and parsing between experiment orchestration scripts.
 
@@ -297,8 +298,9 @@ def get_cmd_args(additional_args : Optional[List[Tuple[List[str], Dict[str, Any]
     args_parse = HelpfulArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     args_parse.add_argument("-i", "--datadir", help="The directory containing the data.", required=True)
     args_parse.add_argument("-o", "--output", dest="output", help="The directory to save the output.", required=False)
-    args_parse.add_argument("--devices", "--device", nargs="+", help="The GPU(s) to use for the experiments.", default=0)
-    args_parse.add_argument("--soft", dest="soft", help="Ignore missing input directories.", action="store_true")
+    args_parse.add_argument("-d", "--devices", "--device", nargs="+", help="The GPU(s) to use for the experiments.", default=0)
+    args_parse.add_argument("-s", "--soft", dest="soft", help="Ignore missing input directories.", action="store_true")
+    args_parse.add_argument("-r", "--try-resume", "--try_resume", dest="try_resume", help="Attempt to resume cancelled jobs.", action="store_true")
     args_parse.add_argument("--slurm", action="store_true", help="Use SLURM for the experiments.")
     args_parse.add_argument("--dry-run", "--dry_run", dest="dry_run", action="store_true", help="Print the experiment configurations without running them.")
     if additional_args:
@@ -339,6 +341,24 @@ def get_cmd_args(additional_args : Optional[List[Tuple[List[str], Dict[str, Any]
         project_dir = os.path.abspath("./runs/segment")
     set_outputdir(project_dir)
     set_datadir(args.datadir, strict=not args.soft)
+
+    if "cpus_per_task" in extra:
+        assert extra["cpus_per_task"].isdigit(), f'Invalid `cpus_per_task` specified: {extra["cpus_per_task"]}'
+        extra["cpus_per_task"] = int(extra["cpus_per_task"])
+        if extra["cpus_per_task"] >= DEFAULT_CONFIG["workers"]:
+            n_workers = extra["cpus_per_task"]
+        else:
+            n_workers = DEFAULT_CONFIG["workers"]
+            if "cpus_per_task" in extra:
+                print(
+                    f"WARNING: Requested cpus_per_task ({extra['cpus_per_task']}) is less than the required number of workers ({n_workers})." 
+                    f"Ignoring the cpus_per_task parameter and continuing with {n_workers} workers."
+                )
+        extra.update({"cpus_per_task" : n_workers})
+
+    if not "job_name" in extra:
+        extra.update({"job_name" : name if name is not None else "fb_unnamed_experiment"})
+
     return args, extra
 
 def read_slurm_params(
@@ -399,6 +419,7 @@ def read_slurm_params(
 
 def do_yolo_train_run(
         config : Dict, 
+        attempt_resume : bool=False,
         dry_run : bool=False, 
         execute : bool=True, 
         device : Optional[Union[int, str, List[Union[int, str]]]]=None
@@ -408,6 +429,7 @@ def do_yolo_train_run(
 
     Args:
         config (Dict): The configuration dictionary.
+        attempt_resume (bool): Whether to attempt to restart cancelled training runs with the same name and project (if they exist).
         dry_run (bool): Whether to print the command without running it. Defaults to False.
         execute (bool): Whether to run the command. Defaults to True.
         device (Optional[Union[int, str]]): The GPU to use for the experiment. Defaults to None.
@@ -424,6 +446,19 @@ def do_yolo_train_run(
         sanitize_device = lambda x : f"cuda:{x}" if isinstance(x, int) or x.isdigit() else x
         config["device"] = sanitize_device(device) if isinstance(device, (str, int)) else [sanitize_device(d) for d in device]
 
+    # Check if it is possible to resume prior training
+    name_project_dir = os.path.join(config["project"], config["name"], "weights")
+    name_project_weights = []
+    if os.path.exists(name_project_dir):
+        name_project_weights = [f for f in os.listdir() if f.endswith(".pt")]
+    
+    if attempt_resume and (len(name_project_weights) > 0):
+        resume_weight = os.path.join(name_project_dir, "last.pt")
+        if not os.path.exists(resume_weight) and os.path.isfile(resume_weight):
+            attempt_resume = False
+        else:
+            config["model"] = resume_weight
+
     # The config file is written to a "temporary" directory, which can be cleaned once the commands have been executed. In the case of non-SLURM execution, this is done automatically if using the `ExperimentRunner` class.
     config_path = get_temp_config_path()
     with open(config_path, "w") as conf:
@@ -431,6 +466,8 @@ def do_yolo_train_run(
     
     print(f"Running experiment: {config['name']} with config:{ITEMIZE + ITEMIZE.join([f'{k}: {v}' for k, v in config.items()])}")
     command = f'fb_train -c "{config_path}" -d "{DATA_DIR}"'
+    if attempt_resume:
+        command += f' -r'
     if execute:
         if dry_run:
             print(command)
