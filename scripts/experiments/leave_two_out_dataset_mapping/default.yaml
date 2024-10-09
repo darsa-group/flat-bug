@@ -14,4 +14,4 @@ fb_custom_eval: false
 fb_custom_eval_num_images: 100
 fb_exclude_datasets: ["00-prospective-ALUS-mixed", "00-prospective-crall2023", "00-prospective-chavez2024", "00-prospective-InsectCV"] # "01-partial-NHM-beetles-crops", "01-partial-Diopsis", "01-partial-abram2023", "01-partial-AMI-traps", "01-partial-gernat2018"
 plots: true
-
+cache: False
