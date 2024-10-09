@@ -16,6 +16,7 @@ from ultralytics.utils.torch_utils import smart_inference_mode, torch_distribute
 from ultralytics.data import build_dataloader
 from ultralytics.data.utils import PIN_MEMORY
 from ultralytics.data.build import InfiniteDataLoader, seed_worker
+from ultralytics.utils.files import increment_path
 
 from flat_bug import logger
 from flat_bug.datasets import MyYOLODataset, MyYOLOValidationDataset
@@ -80,28 +81,54 @@ def _custom_end_to_end_validation(self : "MySegmentationTrainer"):
         # Run command
         os.system(command)
 
-def findattr(obj, name : str, label : str="object"):
-    isd = isinstance(obj, dict)
+def findattr(o, name : str, filters : list=[lambda _ : True], exclude_prefix="_", label : str="object"):
+    isd = isinstance(o, dict)
     if isd:
-        attrs = list(obj.keys())
+        attrs = list(o.keys())
     else:
         try:
-            attrs = list(obj.__dict__.keys())
+            attrs = list(o.__dict__.keys())
+        except:
+            return {}
+    values = {}
+    for attr in attrs:
+        if (isinstance(attr, str) and attr.startswith(exclude_prefix)):
+            continue
+        new_label = f'{label}["{attr}"]' if isd else f"{label}.{attr}"
+        val = o.get(attr) if isd else getattr(o, attr)
+        if name == attr and all(map(lambda f : f(val), filters)):
+            values[new_label] = val
+        else:
+            values.update(findattr(val, name, filters=filters, exclude_prefix=exclude_prefix, label=new_label))
+    return values
+
+def replaceattr(o, name : str, value, filters : list=[lambda _ : True], exclude_prefix="_", label : str="object", verbose : bool=False):
+    isd = isinstance(o, dict)
+    if isd:
+        attrs = list(o.keys())
+    else:
+        try:
+            attrs = list(o.__dict__.keys())
         except:
             return False
     for attr in attrs:
+        if (isinstance(attr, str) and attr.startswith(exclude_prefix)):
+            continue
         new_label = f'{label}["{attr}"]' if isd else f"{label}.{attr}"
-        val = obj.get(attr) if isd else getattr(obj, attr)
-        if name == attr:
-            print(f'{new_label:>65} = {type(val)} : {val}')
+        val = o.get(attr) if isd else getattr(o, attr)
+        if name == attr and all(map(lambda f : f(val), filters)):
+            if verbose:
+                print(f'{new_label} : {val} ==> {value}')
+            if isd:
+                o.update({attr : value})
+            else:
+                setattr(o, attr, value)
         else:
-            findattr(val, name, label = new_label)
+            replaceattr(o.get(attr) if isd else getattr(o, attr), name, value, filters=filters, exclude_prefix=exclude_prefix, label=new_label, verbose=verbose)
 
 def apply_overrides_to_checkpoint(overrides):
     if not overrides.get("resume", False):
         return
-    # if not ("name" in overrides and "project" in overrides):
-    #     return
     resume_model = overrides["resume"]
     _, ckpt_ext = os.path.splitext(resume_model)
     if not isinstance(resume_model, str):
@@ -109,23 +136,25 @@ def apply_overrides_to_checkpoint(overrides):
     if not os.path.exists(resume_model):
         raise FileNotFoundError(f"Resume checkpoint {resume_model} not found.")
     # Load original checkpoint
-    resume_ckpt = torch.load(resume_model, torch.device("cpu"))
+    resume_ckpt = torch.load(resume_model)
     # Enforce overrides
-    resume_ckpt["model"].args.__dict__.update(overrides)
-    resume_ckpt["model"].criterion.hyp.__dict__.update(overrides)
-    resume_ckpt["train_args"].update(overrides)
+    for k, v in overrides.items():
+        if not k.startswith("fb_") and v is not None:
+            replaceattr(resume_ckpt, k, v, [lambda x : isinstance(x, (str, int, float)) or x is None], verbose=False)
     # Change save dir
-    overrides["name"] = overrides.get("name", None) or resume_ckpt["model"].args.name
-    overrides["project"] = overrides.get("project", None) or resume_ckpt["model"].args.project
-    resume_ckpt["model"].args.save_dir = os.path.join(overrides["project"], overrides["name"])
-    resume_ckpt["model"].criterion.hyp.save_dir = os.path.join(overrides["project"], overrides["name"])
+    if "name" not in overrides:
+        overrides["name"] = (list(findattr(resume_ckpt, "name", [lambda x : isinstance(x, str)]).values()) or ["train"])[0]
+    if "project" not in overrides:
+        overrides["project"] = (list(findattr(resume_ckpt, "project", [lambda x : isinstance(x, str)]).values()) or ["runs/segment"])[0]
+    new_save_dir = increment_path(os.path.join(overrides["project"], overrides["name"]), False)
+    replaceattr(resume_ckpt, "save_dir", new_save_dir, [lambda x : isinstance(x, (str, int, float)) or x is None], verbose=False)
     # Set epoch appropriately
     prior_epochs = resume_ckpt["train_results"]["epoch"]
     if len(prior_epochs) == 0 or max(prior_epochs) < 1:
         raise ValueError("Checkpoint doesn't contain enough information to restart training.")
     resume_ckpt["epoch"] = max(prior_epochs)
     # Save the new checkpoint to a temporary file
-    tmp_resume_weight_dir = os.path.join(resume_ckpt["model"].args.project, "resume_weights")
+    tmp_resume_weight_dir = os.path.join(overrides["project"], "resume_weights")
     os.makedirs(tmp_resume_weight_dir, exist_ok=True)
     with NamedTemporaryFile(
         delete=False, 
@@ -136,6 +165,8 @@ def apply_overrides_to_checkpoint(overrides):
         torch.save(resume_ckpt, tmp_model)
     # Replace the resume checkpoint with the updated checkpoint in the temporary file
     overrides["resume"] = tmp_model.name
+    if "model" in overrides:
+        overrides["model"] = tmp_model.name
     # Return overrides for convenience, in fact this function mutates the original overrides object
     return overrides
 

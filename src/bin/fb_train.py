@@ -4,6 +4,7 @@ import os.path
 import yaml
 
 from flat_bug.trainers import MySegmentationTrainer
+from flat_bug import logger
 
 import ultralytics.data.utils as ultralytics_data_utils 
 import ultralytics.utils as ultralytics_utils
@@ -15,8 +16,7 @@ def main():
         "batch": 8,
         "imgsz": 1024,
         "model": "yolov8m-seg.pt",
-        "task": "detect",
-        # "task": "segment", #fixme why not segment?! RE: It is overwritten in the __init__ method of ultralytics.models.yolo.segment.train.SegmentationTrainer
+        "task": "segment",
         "epochs": 5000,
         "device": "cuda",
         "patience": 500,
@@ -75,7 +75,10 @@ def main():
     # settings.update({'datasets_dir': option_dict["data_dir"]})
 
     # Load default training parameters
-    overrides = DEFAULT_CONF
+    if not option_dict["resume"]:
+        overrides = DEFAULT_CONF
+    else:
+        overrides = {}
 
     # Update with parameters from the config file
     if option_dict["config_file"]:
@@ -95,6 +98,8 @@ def main():
     if option_dict["resume"]:
         assert os.path.isfile(overrides["model"]), f"Trying to resume from a model that does not seem to be a valid file: {overrides['model']}"
         overrides["resume"] = overrides["model"]
+        if (old_optim := overrides.pop("optimizer", None)) is not None:
+            logger.warning(f"Ignored optimizer '{old_optim}' - YOLO does not support changing the optimizer while training.")
     else:
         overrides["resume"] = False
 
