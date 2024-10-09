@@ -447,8 +447,16 @@ def do_yolo_train_run(
         config["device"] = sanitize_device(device) if isinstance(device, (str, int)) else [sanitize_device(d) for d in device]
 
     # Check if it is possible to resume prior training
-    name_project_dir = os.path.join(config["project"], config["name"], "weights")
-    attempt_resume &= os.path.exists(name_project_dir) & (len([f for f in os.listdir(name_project_dir) if f.endswith(".pt")]) > 0)
+    check_contains_weight = lambda dir : os.path.exists(dir) and (len([f for f in os.listdir(dir) if f.endswith(".pt")]) > 0)
+    name_project_dir = prospective_name_project_dir = os.path.join(config["project"], config["name"], "weights")
+    name_project_num = 1
+    while check_contains_weight(prospective_name_project_dir):
+        name_project_dir = prospective_name_project_dir
+        name_project_num += 1
+        prospective_name_project_dir = os.path.join(config["project"], f'{config["name"]}{name_project_num}', "weights")
+        print(name_project_dir)
+    
+    attempt_resume &= check_contains_weight(name_project_dir)
     
     if attempt_resume:
         resume_weight = os.path.join(name_project_dir, "last.pt")
