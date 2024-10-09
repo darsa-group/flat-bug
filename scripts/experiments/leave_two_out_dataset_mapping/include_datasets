@@ -1,31 +1,27 @@
-/ 00-prospective-ALUS-mixed # Prospective
-/ 00-prospective-chavez2024 # Prospective
-/ 00-prospective-crall2023 # Prospective
-/ 00-prospective-InsectCV # Prospective
-01-partial-abram2023 # Large scan, hard
-01-partial-AMI-traps # Light trap
-01-partial-Diopsis # Light trap
-01-partial-gernat2018 # Bee hive, dissimilar
-/ 01-partial-NHM-beetles-crops # Single(ish) animal
-ALUS # Large scan, medium
-amarathunga2022 # Single animal
-/ AMI-traps # EMPTY? 
-AMT # Light trap
-/ anTraX # Ants, easy
-ArTaxOr # Very dissimilar, hard
-biodiscover-arm # Large scan, medium
-/ biodiversa-arm # Empty?
-BIOSCAN # Single animal
-/ cao2022 # Ants, easy
-CollembolAI # Collombola (spring tails), relatively hard
-DIRT # Messy complex background
-DiversityScanner # Single animal
-/ Mothitor # Too small
-/ PeMaToEuroPep # Large scan, hard
-pinoy2023 # Large scan, hard
-/ pitfall # Empty? 
-/ scanned-sticky-cards # Empty?
-sittinger2023 # Light trap, medium
-sticky-pi # Large scan, hard
-/ ubc-pitfall-traps # Large scan, easy
-ubc-scanned-sticky-cards # Large scan, hard
+/ 00-prospective-ALUS-mixed # Prospective (12)
+/ 00-prospective-chavez2024 # Prospective (0)
+/ 00-prospective-crall2023 # Prospective (0)
+/ 00-prospective-InsectCV # Prospective (0)
+01-partial-abram2023 # Large scan, hard (26)
+01-partial-AMI-traps # Light trap (153)
+01-partial-Diopsis # Light trap (47)
+01-partial-gernat2018 # Bee hive, dissimilar (38)
+/ 01-partial-NHM-beetles-crops # Single(ish) animal (729)
+ALUS # Large scan, medium (352)
+amarathunga2022 # Single animal (550)
+AMT # Light trap (106)
+/ anTraX # Ants, easy (212)
+ArTaxOr # Very dissimilar, hard (1039)
+biodiscover-arm # Large scan, medium (52)
+BIOSCAN # Single animal (497)
+/ cao2022 # Ants, easy (60)
+CollembolAI # Collombola (spring tails), relatively hard (36)
+DIRT # Messy complex background (271)
+DiversityScanner # Single animal (528)
+/ Mothitor # Too small (12)
+/ PeMaToEuroPep # Large scan, hard (284)
+pinoy2023 # Large scan, hard (76)
+sittinger2023 # Light trap, medium (387)
+sticky-pi # Large scan, hard (476)
+/ ubc-pitfall-traps # Large scan, easy (150)
+ubc-scanned-sticky-cards # Large scan, hard (50)

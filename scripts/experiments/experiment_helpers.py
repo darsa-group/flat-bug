@@ -146,9 +146,9 @@ TMP_DIR = "<UNSET>"
 def set_temp_config_dir(dir : str):
     global TMP_DIR
     if not os.path.exists(dir):
-        if not os.path.isdir(dir):
-            raise FileExistsError(f"Unable to create directory for temporary training configs, '{dir}' is a file.")
         os.makedirs(dir, exist_ok=True)
+    elif not os.path.isdir(dir):
+            raise FileExistsError(f"Unable to create directory for temporary training configs, '{dir}' is a file.")
     TMP_DIR = dir
 
 def get_temp_config_dir() -> str:
