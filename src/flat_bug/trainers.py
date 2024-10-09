@@ -16,6 +16,7 @@ from ultralytics.data import build_dataloader
 from ultralytics.data.utils import PIN_MEMORY
 from ultralytics.data.build import InfiniteDataLoader, seed_worker
 from ultralytics.utils.checks import print_args
+from ultralytics.cfg import get_save_dir
 
 from flat_bug import logger
 from flat_bug.datasets import MyYOLODataset, MyYOLOValidationDataset
@@ -215,6 +216,9 @@ class MySegmentationTrainer(SegmentationTrainer):
         super().__init__(cfg, overrides, _callbacks, *args, **kwargs)
         if overrides.get("resume", False):
             self.args.__dict__.update(overrides)
+            delattr(self.args, "save_dir")
+            self.args.save_dir = get_save_dir(self.args)
+            self.args.name = self.args.save_dir.name  # update name for loggers
             print("Resuming with:")
             print(print_args(vars(self.args)))
         self.args.__dict__.update(custom_fb_args) # But we need to add them back, otherwise they will be missing in DDP mode
