@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 import argparse
-import logging
 import os.path
 import yaml
 
 from flat_bug.trainers import MySegmentationTrainer
-from ultralytics import settings
+from flat_bug import logger
+
+import ultralytics.data.utils as ultralytics_data_utils 
+import ultralytics.utils as ultralytics_utils
+from pathlib import Path
 
 # fixme, resume should continue on the same "run folder"
 def main():
@@ -13,8 +16,7 @@ def main():
         "batch": 8,
         "imgsz": 1024,
         "model": "yolov8m-seg.pt",
-        "task": "detect",
-        # "task": "segment", #fixme why not segment?! RE: It is overwritten in the __init__ method of ultralytics.models.yolo.segment.train.SegmentationTrainer
+        "task": "segment",
         "epochs": 5000,
         "device": "cuda",
         "patience": 500,
@@ -29,7 +31,7 @@ def main():
         "fb_custom_eval": False,
         "fb_custom_eval_num_images": -1,
         "fb_exclude_datasets" : [],
-        "cache": "ram"
+        "cache": False
     }
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     args_parse.add_argument("-d", "--data-dir", dest="data_dir",
@@ -64,27 +66,40 @@ def main():
         
     option_dict = vars(args)
 
-    assert os.path.isdir(option_dict["data_dir"])
+    option_dict["data_dir"] = os.path.abspath(os.path.normpath(option_dict["data_dir"]))
+    assert os.path.isdir(option_dict["data_dir"]), f'Directory {option_dict["data_dir"]} not found.'
 
-    data = os.path.join(option_dict["data_dir"], "data.yaml")
-
-    #fixme issue when providing new dataset path, sill using old one?! see when i used pollen data
-    settings.update({'datasets_dir': option_dict["data_dir"]})
+    # I think this should be fixed by resolving the path before passing it to the trainer and setting DATASETS_DIR in the scope of ultralytics.data.utils
+    # (see https://github.com/ultralytics/ultralytics/blob/588bbbe4aed122e3d24353856484148bc5ef05ad/ultralytics/data/utils.py#L301)
+    # #fixme issue when providing new dataset path, sill using old one?! see when i used pollen data
+    # settings.update({'datasets_dir': option_dict["data_dir"]})
 
     # Load default training parameters
-    overrides = DEFAULT_CONF
+    if not option_dict["resume"]:
+        overrides = DEFAULT_CONF
+    else:
+        overrides = {}
 
     # Update with parameters from the config file
     if option_dict["config_file"]:
         with open(option_dict["config_file"]) as f:
             yaml_config = yaml.safe_load(f)
             overrides.update(yaml_config)
+    
+    # Update with cli overrides
+    overrides.update(cli_overrides)
 
     # Update data directory and resume flag from the command line
-    overrides["data"] = data
+    overrides["data"] = os.path.join(option_dict["data_dir"], "data.yaml")
+    # OBS: This is a *very* cursed hack around the fact that ultralytics have decided that you cannot change the settings at runtime. 
+    ultralytics_data_utils.DATASETS_DIR = Path(option_dict["data_dir"]) # We technically only need to change it here, but I'll change it both places for consistency
+    ultralytics_utils.DATASETS_DIR = Path(option_dict["data_dir"])
+
     if option_dict["resume"]:
         assert os.path.isfile(overrides["model"]), f"Trying to resume from a model that does not seem to be a valid file: {overrides['model']}"
         overrides["resume"] = overrides["model"]
+        if (old_optim := overrides.pop("optimizer", None)) is not None:
+            logger.warning(f"Ignored optimizer '{old_optim}' - YOLO does not support changing the optimizer while training.")
     else:
         overrides["resume"] = False
 
@@ -98,6 +113,16 @@ def main():
     if isinstance(overrides["device"], (tuple, list)) or (isinstance(overrides["device"], str) and len(overrides["device"].split(",")) > 1):
         os.environ['MKL_THREADING_LAYER'] = 'GNU'
         os.environ['OMP_NUM_THREADS'] = str(overrides["workers"])
+
+    # Ensure that `~` is not interpreted literally in arguments
+    for k in overrides:
+        if isinstance(k, str) and k in ["model", "data", "project", "pretrained"]:
+            overrides[k] = os.path.expanduser(overrides[k])
+
+    logger.debug("#######################################################")
+    logger.debug("OVERRIDES")
+    logger.debug(overrides)
+    logger.debug("#######################################################")
 
     # Instantiate trainer
     trainer = MySegmentationTrainer(overrides=overrides)

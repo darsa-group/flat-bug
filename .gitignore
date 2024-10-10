@@ -187,3 +187,5 @@ src/flat_bug/tests/assets/*.txt
 
 install_digital_research_alliance_canada.sh
 pyvenv.cfg
+*.whl
+*.gz

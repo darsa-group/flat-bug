@@ -1,10 +1,13 @@
-import os, sys, subprocess, glob, tempfile, argparse, time
-import yaml, re
+import os, sys, subprocess, time, argparse
+import glob, tempfile, re
+import yaml, io, zipfile
 
 from argparse import Namespace
-from typing import Self, Optional, Union, List, Tuple, Dict, Any, Callable, Iterable
+from typing import Self, Optional, Union, List, Tuple, Dict, Any, Callable, Iterable, IO
 
 import queue, threading, submitit
+
+import torch
 
 from submitit.slurm.slurm import _get_default_parameters as _default_submitit_slurm_params
 
@@ -26,11 +29,11 @@ DEFAULT_CONFIG = "<UNSET>"
 PROJECT_DIR = "<UNSET>"
 OUTPUT_DIR = "<UNSET>"
 
-def set_datadir(datadir : str):
+def set_datadir(datadir : str, strict : bool=True):
     global DATA_DIR
     if datadir == "<UNSET>":
         raise ValueError("Data directory must be set to other than '<UNSET>'.")
-    if not os.path.exists(datadir):
+    if not os.path.exists(datadir) and strict:
         raise ValueError(f"Data directory {datadir} does not exist.")
     DATA_DIR = datadir
 
@@ -73,7 +76,7 @@ def print_and_sleep(text : str):
 def run_command(
         command : Union[str | Callable], 
         python_binary : Optional[str]=None
-    ):
+    ) -> bool:
     if callable(command):
         command = command()
     elif isinstance(command, str):
@@ -95,7 +98,8 @@ def run_command(
                         output_buffer = ""
             process.wait()
         if process.returncode != 0:
-            raise subprocess.CalledProcessError(process.returncode, command)
+            print(f"`{command}` had unsuccessful returncode: {process.returncode}")
+        return process.returncode
     else:
         raise ValueError("Command must be a string or callable.")
 
@@ -141,17 +145,18 @@ def split_by_sample(files : List[str]) -> Dict[str, List[str]]:
 
 TMP_DIR = "<UNSET>"
 
-def set_temp_config_dir(**kwargs):
+def set_temp_config_dir(dir : str):
     global TMP_DIR
-    if "dir" in kwargs:
-        if not os.path.exists(kwargs["dir"]):
-            os.makedirs(kwargs["dir"], exist_ok=True)
-    TMP_DIR = tempfile.mkdtemp(**kwargs)
+    if not os.path.exists(dir):
+        os.makedirs(dir, exist_ok=True)
+    elif not os.path.isdir(dir):
+            raise FileExistsError(f"Unable to create directory for temporary training configs, '{dir}' is a file.")
+    TMP_DIR = dir
 
 def get_temp_config_dir() -> str:
     global TMP_DIR
     if TMP_DIR == "<UNSET>":
-        set_temp_config_dir(dir=os.environ["HOME"], prefix="fb_tmp_experiment_configs_")
+        set_temp_config_dir(os.path.join(os.environ["HOME"], "fb_tmp_experiment_configs"))
     return TMP_DIR
 
 def get_temp_config_path() -> str:
@@ -165,7 +170,7 @@ def set_outputdir(outputdir : str):
         os.makedirs(outputdir, exist_ok=True)
     OUTPUT_DIR = outputdir
     set_projectdir(outputdir)
-    set_temp_config_dir(dir=outputdir, prefix="fb_tmp_experiment_configs_")
+    set_temp_config_dir(os.path.join(outputdir, "fb_tmp_experiment_configs"))
 
 def get_outputdir(strict : bool=True) -> str:
     global OUTPUT_DIR
@@ -184,6 +189,54 @@ def clean_temporary_dir():
             os.remove(os.path.join(TMP_DIR, tmp_file))
         os.rmdir(TMP_DIR)
         TMP_DIR = "<UNSET>"
+
+class ZipOrDirectory:
+    def __init__(self, path : str):
+        if not isinstance(path, str):
+            raise TypeError(f"Supplied path '{path}' should be a `str` not `{type(path)}`")
+        self._path = os.path.abspath(os.path.normpath(path))
+        self._zip = zipfile.ZipFile(self._path) if zipfile.is_zipfile(self._path) else None
+        self._zip_root = self._get_zip_root()
+    
+    def _get_zip_root(self) -> str:
+        if self._zip is None:
+            return ""
+        top_level = list(set([content.split("/")[0] for content in self._zip.namelist()]))
+        if len(top_level) == 1:
+            return top_level[0] + "/"
+        return ""
+    
+    def _zip_prep_path(self, path : str) -> str:
+        if os.sep != "/" and os.sep in path:
+            path = path.replace(os.sep, "/")
+        if self._zip_root:
+            path = f'{self._zip_root}{path}'
+        return path
+    
+    def open(self, path : str, mode : str = "r", *args, **kwargs) -> IO[bytes]:
+        path = os.path.normpath(path)
+        if isinstance(self._zip, zipfile.ZipFile):
+            mode = mode.replace("t", "")
+            raw_file = self._zip.open(self._zip_prep_path(path), mode=mode, *args, **kwargs)
+            if not "b" in mode:
+                return io.TextIOWrapper(raw_file)
+            return raw_file
+        else:
+            return open(os.path.join(self._path, path), mode=mode, *args, **kwargs)
+    
+    def contains(self, path : str) -> bool:
+        path = os.path.normpath(path)
+        if isinstance(self._zip, zipfile.ZipFile):
+            return self._zip_prep_path(path) in self._zip.namelist()
+        else:
+            return os.path.exists(os.path.join(self._path, path))
+    
+    def close(self) -> None:
+        if isinstance(self._zip, zipfile.ZipFile):
+            self._zip.close()
+    
+    def __del__(self) -> None:
+        self.close()
 
 class HelpfulArgumentParser(argparse.ArgumentParser):
     def error(self, message : str):
@@ -219,11 +272,15 @@ def parse_unknown_arguments(extra : List[str]) -> Dict[str, Any]:
         else:
             position = sum([len(arg) for arg in extra[:i]]) + i
             raise ValueError(f"Unable to parse extra misspecified or unnamed argument: `{arg}` at position {position}:{position + len(arg)}.")
+        if value.isdigit():
+            value = int(value)
+        elif value.isdecimal():
+            value = float(value)
         unknown_args[key] = value
         i += 1
     return unknown_args
 
-def get_cmd_args() -> Tuple[Namespace, Dict[str, str]]:
+def get_cmd_args(name : Optional[str] = None, additional_args : Optional[List[Tuple[List[str], Dict[str, Any]]]] = None) -> Tuple[Namespace, Dict[str, str]]:
     """
     A simple wrapper for shared command line arguments and parsing between experiment orchestration scripts.
 
@@ -234,15 +291,24 @@ def get_cmd_args() -> Tuple[Namespace, Dict[str, str]]:
         --slurm: Use SLURM for the experiments.
         ... and any additional SBATCH arguments to pass to the experiments. Only relevant if using --slurm.
 
+    Args:
+        additional_args (Optional[List[Tuple[List[str], Dict[str, Any]]]]) : if supplied must be a list of additional commandline arguments and corresponding dictionaries containing keyword arguments and values passed to `HelpfulArgumentParser.add_argument` to specify the type of argument.
+        
     Returns:
         argparse.Namespace: The parsed command line arguments.
     """
     args_parse = HelpfulArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     args_parse.add_argument("-i", "--datadir", help="The directory containing the data.", required=True)
     args_parse.add_argument("-o", "--output", dest="output", help="The directory to save the output.", required=False)
-    args_parse.add_argument("--devices", "--device", nargs="+", help="The GPU(s) to use for the experiments.", default=0)
+    args_parse.add_argument("-d", "--devices", "--device", nargs="+", help="The GPU(s) to use for the experiments.", default=0)
+    args_parse.add_argument("-s", "--soft", dest="soft", help="Ignore missing input directories.", action="store_true")
+    args_parse.add_argument("-r", "--try-resume", "--try_resume", dest="try_resume", help="Attempt to resume cancelled jobs.", action="store_true")
     args_parse.add_argument("--slurm", action="store_true", help="Use SLURM for the experiments.")
     args_parse.add_argument("--dry-run", "--dry_run", dest="dry_run", action="store_true", help="Print the experiment configurations without running them.")
+    if additional_args:
+        for args, kwargs in additional_args:
+            args_parse.add_argument(*args, **kwargs)
+    
     args_parse.add_argument(
         "--do-not-specify-extra",
         dest="extra",
@@ -270,13 +336,31 @@ def get_cmd_args() -> Tuple[Namespace, Dict[str, str]]:
                 f"{args_parse.format_help()}"
             )
     if not args.output is None:
-        args.output = os.path.abspath(args.output)
+        args.output = os.path.normpath(os.path.expanduser(args.output))
     if not args.output is None:
         project_dir = args.output
     else:
         project_dir = os.path.abspath("./runs/segment")
     set_outputdir(project_dir)
-    set_datadir(args.datadir)
+    set_datadir(args.datadir, strict=not args.soft)
+
+    if "cpus_per_task" in extra:
+        assert extra["cpus_per_task"].isdigit(), f'Invalid `cpus_per_task` specified: {extra["cpus_per_task"]}'
+        extra["cpus_per_task"] = int(extra["cpus_per_task"])
+        if extra["cpus_per_task"] >= DEFAULT_CONFIG["workers"]:
+            n_workers = extra["cpus_per_task"]
+        else:
+            n_workers = DEFAULT_CONFIG["workers"]
+            if "cpus_per_task" in extra:
+                print(
+                    f"WARNING: Requested cpus_per_task ({extra['cpus_per_task']}) is less than the required number of workers ({n_workers})." 
+                    f"Ignoring the cpus_per_task parameter and continuing with {n_workers} workers."
+                )
+        extra.update({"cpus_per_task" : n_workers})
+
+    if not "job_name" in extra:
+        extra.update({"job_name" : name if name is not None else "fb_unnamed_experiment"})
+
     return args, extra
 
 def read_slurm_params(
@@ -308,11 +392,28 @@ def read_slurm_params(
     #         params[f"slurm_{key}"] = params.pop(key)
     #### END OF NOT NECESSARY
 
+    # Get list of submitit-slurm parameters
     available_params = _default_submitit_slurm_params().keys()
+    
+    # Disentangle submitit slurm parameters from additional (advanced) slurm parameters
     additional_params = dict()
     for key in list(params.keys()):
         if key not in available_params:
             additional_params[key] = params.pop(key)
+    
+    # Snipe and replace the bespoke "slurm_setup" parameter (allows passing a list of commands to the "setup" parameter using a text-file)
+    if "slurm_setup" in additional_params:
+        slurm_setup_path = os.path.join(os.path.dirname(__file__), "slurm_config", additional_params.pop("slurm_setup"))
+        if not (isinstance(slurm_setup_path, str) and os.path.exists(slurm_setup_path)):
+            raise FileNotFoundError(f"Invalid SLURM setup file specified: {slurm_setup_path}.")
+        with open(slurm_setup_path, "r") as f:
+            slurm_setup_commands = f.read().strip().split("\n")
+        if slurm_setup_commands[0] == 0:
+            slurm_setup_commands.pop(0) 
+        assert len(slurm_setup_commands) > 0, f"Empty SLURM setup file specified." 
+        params["setup"] = additional_params.get("setup", []) + slurm_setup_commands
+    
+    # Submit additional parameters via the "additional_parameters" parameter
     if additional_params:
         params["additional_parameters"] = additional_params
 
@@ -320,41 +421,78 @@ def read_slurm_params(
 
 def do_yolo_train_run(
         config : Dict, 
+        attempt_resume : bool=False,
         dry_run : bool=False, 
         execute : bool=True, 
-        device : Optional[Union[int, str]]=None
-    ) -> str:
+        device : Optional[Union[int, str, List[Union[int, str]]]]=None
+    ) -> Optional[str]:
     """
     Wrapper for conducting a Flat-Bug YOLO training run, with `fb_train`.
 
     Args:
         config (Dict): The configuration dictionary.
+        attempt_resume (bool): Whether to attempt to restart cancelled training runs with the same name and project (if they exist).
         dry_run (bool): Whether to print the command without running it. Defaults to False.
         execute (bool): Whether to run the command. Defaults to True.
         device (Optional[Union[int, str]]): The GPU to use for the experiment. Defaults to None.
 
     Returns:
-        str: The (executed) command (to run).
+        Optional[str]: The (executed) command (to run) or None if training is already completed.
     """
-    global DATA_DIR
     if DATA_DIR == "<UNSET>":
         raise RuntimeError("The data directory has not been set. Use `experiment_helpers.set_datadir(<path>)` to set it.")
     ITEMIZE = '\n  - '
 
     # Set/override the device if specified
     if device is not None:
-        config["device"] = f"cuda:{device}" if isinstance(device, int) or device.isdigit() else device
+        sanitize_device = lambda x : f"cuda:{x}" if isinstance(x, int) or x.isdigit() else x
+        config["device"] = sanitize_device(device) if isinstance(device, (str, int)) else [sanitize_device(d) for d in device]
+
+    # Check if it is possible to resume prior training
+    check_contains_weight = lambda dir : os.path.exists(dir) and (len([f for f in os.listdir(dir) if f.endswith(".pt")]) > 0)
+    name_project_dir = prospective_name_project_dir = os.path.join(config["project"], config["name"], "weights")
+    name_project_num = 1
+    while check_contains_weight(prospective_name_project_dir):
+        name_project_dir = prospective_name_project_dir
+        name_project_num += 1
+        prospective_name_project_dir = os.path.join(config["project"], f'{config["name"]}{name_project_num}', "weights")
+    
+    attempt_resume &= check_contains_weight(name_project_dir)
+    
+    resume_weight = ""
+    if attempt_resume:
+        resume_weight = os.path.join(name_project_dir, "last.pt")
+        if not (os.path.exists(resume_weight) and os.path.isfile(resume_weight)):
+            attempt_resume = False
+        else:
+            # Check if the run is already completed (checkpoint contains "epoch"=-1)
+            try:
+                resume_stored_epoch = torch.load(resume_weight, map_location="cpu", weights_only=False)["epoch"]
+            except KeyError:
+                raise KeyError(f'Malformed resume checkpoint {resume_weight} does not contain "epoch". Consider inspecting the checkpoint using `torch.load`.')
+            if isinstance(resume_stored_epoch, str) and resume_stored_epoch.isdigit():
+                resume_stored_epoch = int(resume_stored_epoch)
+            if isinstance(resume_stored_epoch, float) and resume_stored_epoch.is_integer():
+                resume_stored_epoch = int(resume_stored_epoch)
+            if not isinstance(resume_stored_epoch, int) or (resume_stored_epoch < 1 and not resume_stored_epoch == -1):
+                raise RuntimeError(f'Malformed resume checkpoint {resume_weight} contains invalid "epoch" value {resume_stored_epoch}. Only integers greater than 0, and -1, are valid. Consider inspecting the checkpoint using `torch.load`.')
+            if resume_stored_epoch == -1:
+                print(f"Skipping finished experiment: {config['name']} with config:{ITEMIZE + ITEMIZE.join([f'{k}: {v}' for k, v in config.items()])}")
+                return
+            config["model"] = resume_weight
 
     # The config file is written to a "temporary" directory, which can be cleaned once the commands have been executed. In the case of non-SLURM execution, this is done automatically if using the `ExperimentRunner` class.
     config_path = get_temp_config_path()
-    with open(config_path, "w") as conf:
-        yaml.dump(config, conf, default_flow_style=False, sort_keys=False)
+    with open(config_path, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
     
     print(f"Running experiment: {config['name']} with config:{ITEMIZE + ITEMIZE.join([f'{k}: {v}' for k, v in config.items()])}")
     command = f'fb_train -c "{config_path}" -d "{DATA_DIR}"'
+    if attempt_resume:
+        command += f' -r'
     if execute:
         if dry_run:
-            print(command)
+            print(f'Dry run would executed: {command}')
         else:
             run_command(command)
     return command
@@ -410,20 +548,6 @@ class ExperimentRunner:
         self.slurm = slurm
         self.slurm_params = slurm_params
 
-        # Allows the user to have a custom SLURM setup before executing the jobs
-        if self.slurm_params.get("additional_parameters", {}).get("slurm_setup", False):
-            slurm_setup_path = os.path.join(os.path.dirname(__file__), "slurm_config", self.slurm_params["additional_parameters"].pop("slurm_setup"))
-            if len(self.slurm_params["additional_parameters"]) == 0:
-                self.slurm_params.pop("additional_parameters")
-            if not (isinstance(slurm_setup_path, str) and os.path.exists(slurm_setup_path)):
-                raise FileNotFoundError(f"Invalid SLURM setup file specified: {slurm_setup_path}.")
-            with open(slurm_setup_path, "r") as f:
-                slurm_setup_commands = f.read().strip().split("\n")
-            if slurm_setup_commands[0] == 0:
-                slurm_setup_commands.pop(0) 
-            assert len(slurm_setup_commands) > 0, f"Empty SLURM setup file specified." 
-            self.slurm_params["setup"] = self.slurm_params.get("setup", []) + slurm_setup_commands
-
         if slurm:
             slurm_folder = os.path.join(os.getcwd(), "slurm_logs") if get_outputdir(strict=False) is False else os.path.join(get_outputdir(), "slurm_logs")
             self.executor = submitit.SlurmExecutor(folder=slurm_folder, max_num_timeout=0)
@@ -432,16 +556,13 @@ class ExperimentRunner:
         # Initialize consumer/job lists
         self.consumer_threads : List[threading.Thread] = []
         self.slurm_jobs : List[submitit.Job] = []
-
-        if self.slurm and self.multi_gpu:
-            raise ValueError("Cannot use both slurm and multiple GPUs for the experiments.")
         
     def __len__(self):
         return self._length
     
     @property
     def multi_gpu(self):
-        return isinstance(self.devices, list) and len(self.devices) > 1
+        return isinstance(self.devices, list) and len(self.devices) > 1 and not self.slurm
 
     @staticmethod
     def consumer_thread(
@@ -499,13 +620,11 @@ class ExperimentRunner:
                 thread.start()
                 self.consumer_threads.append(thread)
         else:
-            if isinstance(self.devices, list):
+            if isinstance(self.devices, (list, tuple, set)):
                 if len(self.devices) == 1:
                     self.devices = self.devices[0]
                 elif len(self.devices) == 0:
                     self.devices = None
-                else:
-                    raise ValueError(f"Invalid (number of) devices for sequential or slurm execution: {self.devices}")
             # Run the experiments sequentially
             if self.slurm:
                 cmds = []
@@ -513,7 +632,8 @@ class ExperimentRunner:
                 input = self.experiment_queue.get()
                 if self.slurm:
                     cmd = self.experiment_fn(input, execute=False, device=self.devices, **self.kwargs)
-                    cmds.append(cmd)
+                    if cmd is not None:
+                        cmds.append(cmd)
                 else:
                     self.experiment_fn(input, execute=True, device=self.devices, **self.kwargs)
             if self.slurm:

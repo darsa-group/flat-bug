@@ -1,18 +1,28 @@
-# Deactivate the current environment
-deactivate
-echo "Current environment (1): $VIRTUAL_ENV"
+# Clean environment
+deactivate && module purge
+cd $HOME/flat-bug
 
-# Load the necessary modules on the main node
-module load python/3.11.5 opencv/4.10.0 gcc scipy-stack
+# Setup virtual environments and local data on all nodes
+srun --ntasks=$SLURM_NNODES --ntasks-per-node=1 bash <<EOF
+#!/bin/bash
+# Install flat-bug in a local virtual environment
+module load python/3.11.5 opencv/4.10.0 gcc scipy-stack/2024a r/4.4.0
+virtualenv --no-download \$SLURM_TMPDIR/env
+source \$SLURM_TMPDIR/env/bin/activate
+pip install --no-index --find-links=\$HOME/flat-bug/dist dist/flat_bug-0.3.0-py3-none-any.whl
+pip list
+echo "Current virtual environment (node \$SLURM_JOB_ID.\$SLURM_ARRAY_TASK_ID%\$SLURM_ARRAY_TASK_COUNT): \$VIRTUAL_ENV"
+# Create the output directory for the job
+mkdir \$SLURM_TMPDIR/job_output
+# Copy flat-bug data to local storage
+unzip /home/asgersve/scratch/fb_data/fb_yolo.zip -d \$SLURM_TMPDIR
+# Print the state of the local storage
+echo "Contents of the temporary \$SLURM_TMPDIR:"
+ls -a1 \$SLURM_TMPDIR
+EOF
 
-# Create the virtual environment on the main node
-MAIN_VENV_DIR="$SLURM_TMPDIR/env"
-virtualenv --no-download "$MAIN_VENV_DIR"
-source "$MAIN_VENV_DIR/bin/activate"
+# Activate the environment only on the main node (see https://docs.alliancecan.ca/wiki/Python#Creating_virtual_environments_inside_of_your_jobs_(multi-nodes))
+module load python/3.11.5 opencv/4.10.0 gcc scipy-stack/2024a r/4.4.0
+source $SLURM_TMPDIR/env/bin/activate;
 
-echo "Current environment (2): $VIRTUAL_ENV"
-
-# Install the package in the virtual environment
-pip install --no-cache-dir --no-index .
-
-echo "Current environment (3): $VIRTUAL_ENV"
+echo "Running jobs..."

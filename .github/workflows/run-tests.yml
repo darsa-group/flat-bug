@@ -11,6 +11,7 @@ on:
       - develop
     types:
       - opened
+      - edited
 
 jobs:
   Continous-Testing:

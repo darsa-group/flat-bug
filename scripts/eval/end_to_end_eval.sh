@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-function usage {
-    cat << EOF
+usage () {
+  cat <<EOF
 Usage: $0 -w weights -d directory [-c config.yaml] [-l local_directory] [-o output_directory] [-g PyTorch_device_string] [-p inference_file_regex_pattern]
     -w weights (MANDATORY):
         The path to the weights file.
@@ -31,6 +31,9 @@ Usage: $0 -w weights -d directory [-c config.yaml] [-l local_directory] [-o outp
 EOF
 }
 
+# Courtesy of: https://stackoverflow.com/a/4774063/19104786
+SCRIPT_DIR="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+
 WEIGHTS=""
 CONFIG=""
 DIR=""
@@ -50,7 +53,7 @@ do
         o) ODIR=${OPTARG};;
         g) GPU=${OPTARG};;
         p) IPAT=${OPTARG};;
-        *) usage; exit 1;;
+        *) usage; return 1 2>/dev/null; exit 1;;
     esac
 done
 
@@ -62,6 +65,7 @@ fi
 # Check for mandatory options
 if [[ -z "$WEIGHTS" || -z "$DIR" ]]; then
     usage
+    return 1 2>/dev/null
     exit 1
 fi
 
@@ -114,7 +118,7 @@ echo "Executing inference with:${PREDICT_CMD_STR}"
 
 # Compare the predictions with the ground truth
 #EVAL_CMD="fb_eval.py -p \"${ODIR}/preds/coco_instances.json\" -g \"$LDIR\" -I \"${DIR}\" -P  -c -o \"${ODIR}/eval\""
-EVAL_CMD=(fb_evaluate -p "${ODIR}/preds/coco_instances.json" -g "$LDIR" -I "${DIR}" -P -c -o "${ODIR}/eval" --combine)
+EVAL_CMD=(fb_evaluate -p "${ODIR}/preds/coco_instances.json" -g "${LDIR}" -I "${DIR}" -P -c -o "${ODIR}/eval" --combine)
 if [[ -n "$CONFIG" ]]; then
     EVAL_CMD+=("--config" "${CONFIG}")
 fi
@@ -124,7 +128,7 @@ echo "Executing evaluation with:${EVAL_CMD_STR}"
 
 # Produce the evaluation metrics and figures
 # METRIC_CMD="Rscript scripts/eval/eval-metrics.R --input_directory \"${ODIR}/eval\" --output_directory \"${ODIR}/results\""
-METRIC_CMD=(Rscript scripts/eval/eval-metrics.R --input_directory "${ODIR}/eval" --output_directory "${ODIR}/results")
+METRIC_CMD=(Rscript "${SCRIPT_DIR}/eval-metrics.R" --input_directory "${ODIR}/eval" --output_directory "${ODIR}/results")
 printf -v METRIC_CMD_STR ' %q' "${METRIC_CMD[@]}"
 echo "Executing evaluation metrics and figure creation with:${METRIC_CMD_STR}"
 "${METRIC_CMD[@]}" &&
@@ -138,4 +142,3 @@ printf "Time taken: %02d:%02d:%02d\n" "$((EVAL_TIME/3600))" "$((EVAL_TIME%3600/6
 echo "time: ${EVAL_TIME}" >> ${METADATA_FILE}
 
 echo "Evaluation complete. Results saved in ${ODIR}/results"
-exit 0
