@@ -284,7 +284,7 @@ class MySegmentationTrainer(SegmentationTrainer):
                 # stride=int(stride),
                 pad=0.0 if mode == "train" else 0.5,  # fixme... does not make sense...
                 single_cls=self.args.single_cls or False,
-                max_instances=np.Inf,
+                max_instances=np.inf,
                 task="segment",
                 subset_args={"n" : self._max_images, "pattern" : self.exclude_pattern}
             )
