@@ -119,11 +119,10 @@ def main():
         if isinstance(k, str) and k in ["model", "data", "project", "pretrained"]:
             overrides[k] = os.path.expanduser(overrides[k])
 
-    # DEBUG
-    print("#######################################################")
-    print("OVERRIDES")
-    print(overrides)
-    print("#######################################################")
+    logger.debug("#######################################################")
+    logger.debug("OVERRIDES")
+    logger.debug(overrides)
+    logger.debug("#######################################################")
 
     # Instantiate trainer
     trainer = MySegmentationTrainer(overrides=overrides)

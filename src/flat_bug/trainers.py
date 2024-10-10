@@ -53,7 +53,7 @@ def data2labels(data : Union[str, List[str]]) -> Union[str, List[str]]:
 def get_latest_weight(weight_dir : str) -> Union[str, None]:
     weights = glob.glob(f"{weight_dir}{os.sep}*.pt")
     if not weights:
-        LOGGER.warning(f"No weights found in {weight_dir}")
+        logger.warning(f"No weights found in {weight_dir}")
         return None
     return max(weights, key=os.path.getctime)
 
@@ -77,7 +77,7 @@ def _custom_end_to_end_validation(self : "MySegmentationTrainer"):
         # Construct end-to-end evaluation command
         custom_eval_path = os.path.join(os.path.dirname(__file__), "..", "..", "scripts", "eval", "end_to_end_eval.sh")
         command = f'bash "{custom_eval_path}" -w "{latest_weights}" -d "{val_data}" -l "{val_labels}" -o "{self.save_dir}{os.sep}e2e_val{os.sep}{self.epoch}" -g "{self.args.device}" -p "{val_pattern}"'
-        LOGGER.info(f"Running custom end-to-end validation command: `{command}`")
+        logger.debug(f"Running custom end-to-end validation command: `{command}`")
         # Run command
         os.system(command)
 
@@ -102,7 +102,7 @@ def findattr(o, name : str, filters : list=[lambda _ : True], exclude_prefix="_"
             values.update(findattr(val, name, filters=filters, exclude_prefix=exclude_prefix, label=new_label))
     return values
 
-def replaceattr(o, name : str, value, filters : list=[lambda _ : True], exclude_prefix="_", label : str="object", verbose : bool=False):
+def replaceattr(o, name : str, value, filters : list=[lambda _ : True], exclude_prefix="_", label : str="object"):
     isd = isinstance(o, dict)
     if isd:
         attrs = list(o.keys())
@@ -117,14 +117,13 @@ def replaceattr(o, name : str, value, filters : list=[lambda _ : True], exclude_
         new_label = f'{label}["{attr}"]' if isd else f"{label}.{attr}"
         val = o.get(attr) if isd else getattr(o, attr)
         if name == attr and all(map(lambda f : f(val), filters)):
-            if verbose:
-                print(f'{new_label} : {val} ==> {value}')
+            logger.debug(f'{new_label} : {val} ==> {value}')
             if isd:
                 o.update({attr : value})
             else:
                 setattr(o, attr, value)
         else:
-            replaceattr(o.get(attr) if isd else getattr(o, attr), name, value, filters=filters, exclude_prefix=exclude_prefix, label=new_label, verbose=verbose)
+            replaceattr(o.get(attr) if isd else getattr(o, attr), name, value, filters=filters, exclude_prefix=exclude_prefix, label=new_label)
 
 def apply_overrides_to_checkpoint(overrides):
     if not overrides.get("resume", False):
@@ -136,18 +135,20 @@ def apply_overrides_to_checkpoint(overrides):
     if not os.path.exists(resume_model):
         raise FileNotFoundError(f"Resume checkpoint {resume_model} not found.")
     # Load original checkpoint
+    logger.debug(f'Loading checkpoint for resuming {resume_model} to `resume_ckpt`')
     resume_ckpt = torch.load(resume_model)
+    logger.debug("Replacing values in `resume_ckpt`...")
     # Enforce overrides
     for k, v in overrides.items():
         if not k.startswith("fb_") and v is not None:
-            replaceattr(resume_ckpt, k, v, [lambda x : isinstance(x, (str, int, float)) or x is None], verbose=False)
+            replaceattr(resume_ckpt, k, v, [lambda x : isinstance(x, (str, int, float)) or x is None], label="resume_ckpt")
     # Change save dir
     if "name" not in overrides:
         overrides["name"] = (list(findattr(resume_ckpt, "name", [lambda x : isinstance(x, str)]).values()) or ["train"])[0]
     if "project" not in overrides:
         overrides["project"] = (list(findattr(resume_ckpt, "project", [lambda x : isinstance(x, str)]).values()) or ["runs/segment"])[0]
     new_save_dir = increment_path(os.path.join(overrides["project"], overrides["name"]), False)
-    replaceattr(resume_ckpt, "save_dir", new_save_dir, [lambda x : isinstance(x, (str, int, float)) or x is None], verbose=False)
+    replaceattr(resume_ckpt, "save_dir", new_save_dir, [lambda x : isinstance(x, (str, int, float)) or x is None], label="resume_ckpt")
     # Set epoch appropriately
     prior_epochs = resume_ckpt["train_results"]["epoch"]
     if len(prior_epochs) == 0 or max(prior_epochs) < 1:
@@ -163,10 +164,13 @@ def apply_overrides_to_checkpoint(overrides):
         dir=tmp_resume_weight_dir
     ) as tmp_model:
         torch.save(resume_ckpt, tmp_model)
+    logger.debug(f"Saved altered checkpoint for resuming `resume_ckpt` as {tmp_model.name}")
     # Replace the resume checkpoint with the updated checkpoint in the temporary file
     overrides["resume"] = tmp_model.name
+    logger.debug(f'Set {overrides["resume"]=}')
     if "model" in overrides:
         overrides["model"] = tmp_model.name
+        logger.debug(f'Set {overrides["model"]=}')
     # Return overrides for convenience, in fact this function mutates the original overrides object
     return overrides
 
@@ -249,7 +253,7 @@ class MySegmentationTrainer(SegmentationTrainer):
             mode : str='train', 
             batch : Optional[int]=None
         ) -> Union[MyYOLODataset, MyYOLOValidationDataset]:
-        logger.info(f"Building dataset with max instances ({self._max_instances}), max images ({self._max_images}) and exclude pattern ({self.exclude_pattern}).")
+        LOGGER.info(f"Building dataset with max instances ({self._max_instances}), max images ({self._max_images}) and exclude pattern ({self.exclude_pattern}).")
         if mode == "train":
             dataset = MyYOLODataset(
                 data=yaml_load(self.args.data),
