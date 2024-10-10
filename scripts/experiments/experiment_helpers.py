@@ -7,6 +7,8 @@ from typing import Self, Optional, Union, List, Tuple, Dict, Any, Callable, Iter
 
 import queue, threading, submitit
 
+import torch
+
 from submitit.slurm.slurm import _get_default_parameters as _default_submitit_slurm_params
 
 DATA_DIR = "<UNSET>"
@@ -423,7 +425,7 @@ def do_yolo_train_run(
         dry_run : bool=False, 
         execute : bool=True, 
         device : Optional[Union[int, str, List[Union[int, str]]]]=None
-    ) -> str:
+    ) -> Optional[str]:
     """
     Wrapper for conducting a Flat-Bug YOLO training run, with `fb_train`.
 
@@ -435,7 +437,7 @@ def do_yolo_train_run(
         device (Optional[Union[int, str]]): The GPU to use for the experiment. Defaults to None.
 
     Returns:
-        str: The (executed) command (to run).
+        Optional[str]: The (executed) command (to run) or None if training is already completed.
     """
     if DATA_DIR == "<UNSET>":
         raise RuntimeError("The data directory has not been set. Use `experiment_helpers.set_datadir(<path>)` to set it.")
@@ -454,15 +456,29 @@ def do_yolo_train_run(
         name_project_dir = prospective_name_project_dir
         name_project_num += 1
         prospective_name_project_dir = os.path.join(config["project"], f'{config["name"]}{name_project_num}', "weights")
-        print(name_project_dir)
     
     attempt_resume &= check_contains_weight(name_project_dir)
     
+    resume_weight = ""
     if attempt_resume:
         resume_weight = os.path.join(name_project_dir, "last.pt")
         if not (os.path.exists(resume_weight) and os.path.isfile(resume_weight)):
             attempt_resume = False
         else:
+            # Check if the run is already completed (checkpoint contains "epoch"=-1)
+            try:
+                resume_stored_epoch = torch.load(resume_weight, map_location="cpu", weights_only=False)["epoch"]
+            except KeyError:
+                raise KeyError(f'Malformed resume checkpoint {resume_weight} does not contain "epoch". Consider inspecting the checkpoint using `torch.load`.')
+            if isinstance(resume_stored_epoch, str) and resume_stored_epoch.isdigit():
+                resume_stored_epoch = int(resume_stored_epoch)
+            if isinstance(resume_stored_epoch, float) and resume_stored_epoch.is_integer():
+                resume_stored_epoch = int(resume_stored_epoch)
+            if not isinstance(resume_stored_epoch, int) or (resume_stored_epoch < 1 and not resume_stored_epoch == -1):
+                raise RuntimeError(f'Malformed resume checkpoint {resume_weight} contains invalid "epoch" value {resume_stored_epoch}. Only integers greater than 0, and -1, are valid. Consider inspecting the checkpoint using `torch.load`.')
+            if resume_stored_epoch == -1:
+                print(f"Skipping finished experiment: {config['name']} with config:{ITEMIZE + ITEMIZE.join([f'{k}: {v}' for k, v in config.items()])}")
+                return
             config["model"] = resume_weight
 
     # The config file is written to a "temporary" directory, which can be cleaned once the commands have been executed. In the case of non-SLURM execution, this is done automatically if using the `ExperimentRunner` class.
@@ -476,7 +492,7 @@ def do_yolo_train_run(
         command += f' -r'
     if execute:
         if dry_run:
-            print(command)
+            print(f'Dry run would executed: {command}')
         else:
             run_command(command)
     return command
@@ -616,7 +632,8 @@ class ExperimentRunner:
                 input = self.experiment_queue.get()
                 if self.slurm:
                     cmd = self.experiment_fn(input, execute=False, device=self.devices, **self.kwargs)
-                    cmds.append(cmd)
+                    if cmd is not None:
+                        cmds.append(cmd)
                 else:
                     self.experiment_fn(input, execute=True, device=self.devices, **self.kwargs)
             if self.slurm:
