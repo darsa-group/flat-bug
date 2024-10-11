@@ -1,15 +1,17 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-function usage {
-    cat << EOF
-Usage: $0 -w weights -d directory [-l local_directory] [-o output_directory] [-g PyTorch_device_string] [-p inference_file_regex_pattern]
+usage () {
+  cat <<EOF
+Usage: $0 -w weights -d directory [-c config.yaml] [-l local_directory] [-o output_directory] [-g PyTorch_device_string] [-p inference_file_regex_pattern]
     -w weights (MANDATORY):
         The path to the weights file.
 
     -d directory (MANDATORY): 
-        The directory where the data is located and where the results will be saved the directory
-        should have a 'reference' directory with the ground truth json in
-        'instances_default.json' and the matching images'.
+        The directory where the data is located, the directory should have a 'reference' directory 
+        with the ground truth json in 'instances_default.json' and the matching images'.
+
+    -c config (OPTIONAL):
+        The path to the config file.
 
     -l local_directory (OPTIONAL): 
         The path to the local directory where the ground truth json is located.
@@ -29,7 +31,11 @@ Usage: $0 -w weights -d directory [-l local_directory] [-o output_directory] [-g
 EOF
 }
 
+# Courtesy of: https://stackoverflow.com/a/4774063/19104786
+SCRIPT_DIR="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+
 WEIGHTS=""
+CONFIG=""
 DIR=""
 GPU=""
 LDIR=""
@@ -37,27 +43,29 @@ ODIR=""
 IPAT=""
 
 # Parse the command line arguments
-while getopts "w:d:l:o:g:p:" flag
+while getopts "w:d:c:l:o:g:p:" flag
 do
     case "${flag}" in
         w) WEIGHTS=${OPTARG};;
         d) DIR=${OPTARG};;
+        c) CONFIG=${OPTARG};;
         l) LDIR=${OPTARG};;
         o) ODIR=${OPTARG};;
         g) GPU=${OPTARG};;
         p) IPAT=${OPTARG};;
-        *) usage; exit 1;;
+        *) usage; return 1 2>/dev/null; exit 1;;
     esac
 done
 
 # If LDIR is not supplied, set it equal to DIR
-if [ -z "$LDIR" ]; then
+if [[ -z "$LDIR" ]]; then
     LDIR="$DIR/instances_default.json"
 fi
 
 # Check for mandatory options
 if [[ -z "$WEIGHTS" || -z "$DIR" ]]; then
     usage
+    return 1 2>/dev/null
     exit 1
 fi
 
@@ -94,12 +102,15 @@ START_TIME=$(date +%s)
 
 # Run the model on the validation set
 # PREDICT_CMD="fb_predict.py -i \"${DIR}\" -w \"${WEIGHTS}\" -o \"${ODIR}/preds\"${GPU}${IPAT} --no-crops"
-PREDICT_CMD=(python src/bin/fb_predict.py -i "${DIR}" -w "${WEIGHTS}" -o "${ODIR}/preds" --no-crops --no-overviews --fast)
+PREDICT_CMD=(fb_predict -i "${DIR}" -w "${WEIGHTS}" -o "${ODIR}/preds" --no-crops --no-overviews --fast)
 if [[ -n "$GPU" ]]; then
     PREDICT_CMD+=("--gpu" "${GPU}")
 fi
 if [[ -n "$IPAT" ]]; then
     PREDICT_CMD+=("-p" "${IPAT}")
+fi
+if [[ -n "$CONFIG" ]]; then
+    PREDICT_CMD+=("--config" "${CONFIG}")
 fi
 printf -v PREDICT_CMD_STR ' %q' "${PREDICT_CMD[@]}"
 echo "Executing inference with:${PREDICT_CMD_STR}"
@@ -107,14 +118,17 @@ echo "Executing inference with:${PREDICT_CMD_STR}"
 
 # Compare the predictions with the ground truth
 #EVAL_CMD="fb_eval.py -p \"${ODIR}/preds/coco_instances.json\" -g \"$LDIR\" -I \"${DIR}\" -P  -c -o \"${ODIR}/eval\""
-EVAL_CMD=(python src/bin/fb_eval.py -p "${ODIR}/preds/coco_instances.json" -g "$LDIR" -I "${DIR}" -P -c -o "${ODIR}/eval" --combine)
+EVAL_CMD=(fb_evaluate -p "${ODIR}/preds/coco_instances.json" -g "${LDIR}" -I "${DIR}" -P -c -o "${ODIR}/eval" --combine)
+if [[ -n "$CONFIG" ]]; then
+    EVAL_CMD+=("--config" "${CONFIG}")
+fi
 printf -v EVAL_CMD_STR ' %q' "${EVAL_CMD[@]}"
 echo "Executing evaluation with:${EVAL_CMD_STR}"
 "${EVAL_CMD[@]}" &&
 
 # Produce the evaluation metrics and figures
 # METRIC_CMD="Rscript scripts/eval/eval-metrics.R --input_directory \"${ODIR}/eval\" --output_directory \"${ODIR}/results\""
-METRIC_CMD=(Rscript scripts/eval/eval-metrics.R --input_directory "${ODIR}/eval" --output_directory "${ODIR}/results")
+METRIC_CMD=(Rscript "${SCRIPT_DIR}/eval-metrics.R" --input_directory "${ODIR}/eval" --output_directory "${ODIR}/results")
 printf -v METRIC_CMD_STR ' %q' "${METRIC_CMD[@]}"
 echo "Executing evaluation metrics and figure creation with:${METRIC_CMD_STR}"
 "${METRIC_CMD[@]}" &&
@@ -128,4 +142,3 @@ printf "Time taken: %02d:%02d:%02d\n" "$((EVAL_TIME/3600))" "$((EVAL_TIME%3600/6
 echo "time: ${EVAL_TIME}" >> ${METADATA_FILE}
 
 echo "Evaluation complete. Results saved in ${ODIR}/results"
-exit 0

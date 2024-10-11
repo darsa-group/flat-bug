@@ -3,8 +3,8 @@ import argparse
 import torch
 from torchvision.io import read_image
 
-from test_predictor import DummyModel
-from test_predictor import ASSET_DIR
+from flat_bug.tests.test_predictor import DummyModel
+from flat_bug.tests.test_predictor import ASSET_DIR
 
 # Command I used: python3 src/flat_bug/tests/generate_model_outputs.py --model model_snapshots/fb_2024-03-18_large_best.pt --image src/flat_bug/tests/assets/ALUS_Non-miteArachnids_Unknown_2020_11_03_4545.jpg --type both
 

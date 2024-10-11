@@ -171,12 +171,21 @@ runs/
 *.out
 datasets/
 
-test/
 s3/
 dev/
+test/
+prototypes/
+slurm_logs/
+scripts/experiments/results/
+
 utils/eval_slurm.sh
+utils/tune_slurm.sh
 utils/zip_output_for_ERDA.sh
+
 src/flat_bug/tests/assets/*.txt
 !src/flat_bug/tests/assets/ALUS_Non-miteArachnids_Unknown_2020_11_03_4545.jpg
 
-scripts/experiments/results/**
+install_digital_research_alliance_canada.sh
+pyvenv.cfg
+*.whl
+*.gz

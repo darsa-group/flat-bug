@@ -7,6 +7,8 @@ from typing import Union, List, Tuple, Dict, Optional
 import cv2
 import numpy as np
 
+from flat_bug import logger
+
 # COCO Format:
 #
 #     {
@@ -78,7 +80,10 @@ import numpy as np
 
 
 
-def fb_to_coco(d: dict, coco: dict) -> dict:
+def fb_to_coco(
+        d: Dict, 
+        coco: Dict
+    ) -> Dict:
     """
     Converts a FlatBug dataset to a COCO dataset.
 
@@ -174,7 +179,7 @@ def fb_to_coco(d: dict, coco: dict) -> dict:
     return coco
 
 
-def format_contour(c) -> np.array:
+def format_contour(c : List) -> np.array:
     """
     Formats a contour to the OpenCV format.
 
@@ -201,7 +206,10 @@ def contour_bbox(c: np.array) -> np.array:
     return np.array([c[:, 0].min(), c[:, 1].min(), c[:, 0].max(), c[:, 1].max()])
 
 
-def split_annotations(coco: Dict, strip_directories: bool = True) -> Dict[str, dict]:
+def split_annotations(
+        coco: Dict, 
+        strip_directories: bool = True
+    ) -> Dict[str, dict]:
     """
     Splits COCO annotations by image ID.
 
@@ -276,7 +284,12 @@ def annotations_to_numpy(annotations: List[Dict[str, Union[int, List[int]]]]) ->
     bboxes = np.array([contour_bbox(c) for c in contours])
     return bboxes, contours
 
-def filter_coco(coco : Dict, confidence : Optional[float] = None, area : Optional[int] = None, verbose=False) -> Dict:
+def filter_coco(
+        coco : Dict, 
+        confidence : Optional[float] = None, 
+        area : Optional[int] = None, 
+        verbose : bool=False
+    ) -> Dict:
     """
     Filters COCO annotations by confidence.
 
@@ -284,6 +297,7 @@ def filter_coco(coco : Dict, confidence : Optional[float] = None, area : Optiona
         coco (Dict): COCO dataset.
         confidence (float): Confidence threshold.
         area (int): Area threshold.
+        verbose (bool): Verbose mode.
 
     Returns:
         Dict: Filtered COCO dataset.
@@ -297,7 +311,7 @@ def filter_coco(coco : Dict, confidence : Optional[float] = None, area : Optiona
             _, _, w, h = a["bbox"]
             if (w * h) < area:
                 if verbose:
-                    print("SKIPPED")
+                    logger.info("SKIPPED")
                 continue
         filtered_annotations += [a]
 

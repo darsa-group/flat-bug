@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
 
 import argparse
-import logging
 import os
 import glob
 import re
 
+from tqdm import tqdm
+
+from flat_bug import logger, set_log_level
 from flat_bug.coco_utils import fb_to_coco
 from flat_bug.predictor import Predictor
+from flat_bug.config import read_cfg, DEFAULT_CFG
+
 import torch
-from tqdm import tqdm
+
 
 def main():
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
@@ -47,17 +51,18 @@ def main():
     args = args_parse.parse_args()
     option_dict = vars(args)
 
-    print("OPTIONS:", option_dict)
+    logger.debug("OPTIONS:", option_dict)
 
     isERDA = option_dict["input_dir"].startswith("erda://")
     if isERDA:
         from pyremotedata.implicit_mount import IOHandler, RemotePathIterator
-        print("Assuming directory exists on ERDA")
+        logger.debug("Assuming directory exists on ERDA")
     else:
         _, ext = os.path.splitext(option_dict["input_dir"])
         isVideo = ext in [".mp4", ".avi"]
         if not isVideo:
-            assert os.path.isdir(option_dict["input_dir"])
+            if not os.path.isdir(option_dict["input_dir"]):
+                raise FileNotFoundError(f"Directory '{option_dict['input_dir']}' not found.")
     assert os.path.isfile(option_dict["model_weights"])
 
     device = option_dict["gpu"]
@@ -70,16 +75,20 @@ def main():
         device = device.split(";")
     if isinstance(device, list):
         device = [f"cuda:{d}" if d.isdigit() else d for d in device]
-        device = [torch.device(d) for d in device]
+        device = [torch.ones(1).to(torch.device(d)).device for d in device]
     else:
         device = f"cuda:{device}" if device.isdigit() else device
-        device = torch.device(device)
+        device = torch.ones(1).to(torch.device(device)).device
 
     dtype = getattr(torch, option_dict["dtype"])
     if dtype not in [torch.float16, torch.float32, torch.bfloat16]:
         raise ValueError(f"Dtype '{option_dict['dtype']}' is not supported.")
     
     config = option_dict["config"]
+    if config:
+        config = read_cfg(config)
+    else:
+        config = DEFAULT_CFG
     
     crops = not option_dict["no_crops"]
     metadata = not option_dict["no_metadata"]
@@ -107,6 +116,7 @@ def main():
     verbose = option_dict["verbose"]
     if verbose:
         config["TIME"] = True
+        set_log_level("DEBUG")
 
     pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype, cfg=config)
 
@@ -196,9 +206,8 @@ def main():
             # f = os.path.join(option_dict["results_dir"], file_name)
             # os.rename(tmp_file, f)
         if option_dict["verbose"]:
-            print(f"Processing {os.path.basename(f)}")
+            logger.info(f"Processing {os.path.basename(f)}")
         pbar.set_postfix_str(f"Processing {os.path.basename(f)}")
-        logging.info(f"Processing {os.path.basename(f)}")
         try:
             # Run the model
             prediction = pred.pyramid_predictions(f, scale_increment=1/2, scale_before=option_dict["scale_before"], single_scale=option_dict["single_scale"])
@@ -234,13 +243,13 @@ def main():
                         raise ValueError(f"Unexpected video inference settings. {result_directory=}, {overviews=}")
                     frames.append(overview_file)
         except Exception as e:
-            logging.error(f"Issue whilst processing {f}")
+            logger.error(f"Issue whilst processing {f}")
             #fixme, what is going on with /home/quentin/todo/toup/20221008_16-01-04-226084_raw_jpg.rf.0b8d397da3c47408694eeaab2cde06e5.jpg?
-            logging.error(e)
+            logger.error(e)
             raise e
     if not option_dict["no_compiled_coco"]:
         if len(all_json_results) == 0:
-            print("No results found, unable to compile COCO file.")
+            logger.info("No results found, unable to compile COCO file.")
         else:
             import json
 

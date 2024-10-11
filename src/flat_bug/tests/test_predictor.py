@@ -1,15 +1,16 @@
 import unittest
 
-import os, shutil, re, tempfile, urllib
+import os, shutil, re, tempfile
 from glob import glob
-import urllib.request
 
 import torch
 import numpy as np
 from torchvision.io import read_image
 import torch
 
+from flat_bug import logger
 from flat_bug.predictor import TensorPredictions, Predictor
+from flat_bug.tests.remote_lfs_fallback import check_file_with_remote_fallback
 
 ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")
 ASSET_NAME = "ALUS_Non-miteArachnids_Unknown_2020_11_03_4545"
@@ -37,21 +38,6 @@ TEST_CFG = {
     "TILE_SIZE": 1024,
     "BATCH_SIZE": 16
 }
-
-def file_is_lfs_pointer(file):
-    with open(file, "r") as f:
-        try:
-            return bool(re.search(r"git-lfs\.github\.com", f.read()))
-        except UnicodeDecodeError:
-            return False
-    
-def check_file_with_remote_fallback(file, file_storage : str="https://anon.erda.au.dk/share_redirect/ecgKtuRWe5"):
-    if not os.path.exists(file) or file_is_lfs_pointer(file):
-        try:
-            urllib.request.urlretrieve(f"{file_storage}/{os.path.basename(file)}", file)
-        except Exception as e:
-            raise type(e)(f"Failed to download test file {file} from remote file storage (https://anon.erda.au.dk/cgi-sid/ls.py?share_id=dR1l3pwJPf), perhaps the file is not available." + str(e))
-    return file
 
 class TestTensorPredictions(unittest.TestCase):
     def test_load(self):
@@ -119,7 +105,14 @@ class DummyModel(torch.nn.Module):
             check_file_with_remote_fallback(this_asset)
             out = cast_nested(torch.load(this_asset, map_location=image.device), image.dtype)
         except Exception as e:
-            print(f'Failed to load test file "{self.type}_tps_{self.index}.pt" - consider generating the test files with `python3 src/flat_bug/tests/generate_model_outputs.py --model model_snapshots/fb_2024-03-18_large_best.pt --image src/flat_bug/tests/assets/ALUS_Non-miteArachnids_Unknown_2020_11_03_4545.jpg --type both`')
+            logger.error(
+                f'Failed to load test file "{self.type}_tps_{self.index}.pt" - '
+                'consider generating the test files with '
+                '`python3 src/flat_bug/tests/generate_model_outputs.py '
+                '--model model_snapshots/fb_2024-03-18_large_best.pt '
+                '--image src/flat_bug/tests/assets/ALUS_Non-miteArachnids_Unknown_2020_11_03_4545.jpg '
+                '--type both`'
+            )
             raise e
         self.index += 1
         return out

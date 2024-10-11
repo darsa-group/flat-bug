@@ -1,0 +1,11 @@
+# 
+srun --ntasks=$SLURM_NNODES --ntasks-per-node=1 bash <<EOF
+#!/bin/bash
+nvidia-smi 
+lscpu
+export SLURM_TMPDIR="$HOME/test_fb_bug/$(uuidgen)"
+mkdir -p $SLURM_TMPDIR
+cp -r /home/altair/flat-bug/dev/fb_yolo $SLURM_TMPDIR/fb_yolo
+EOF
+
+echo "Running jobs..."
