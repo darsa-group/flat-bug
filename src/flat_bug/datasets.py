@@ -19,14 +19,14 @@ IMG_FORMATS = 'bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 
 
 def calculate_image_weights(image_paths : List[str]) -> List[float]:
     """
-    Calculate normalized weights for each image based on the sqrt of the file sizes,
+    Calculate normalized weights for each image based on the file sizes,
     normalized by the minimum file size, so that the values are between 1 and infinity.
     
     Args:
         image_paths (list of str): List of image file paths.
     
     Returns:
-        list of float: Sqrt-normalized weights for each image.
+        list of float: normalized weights for each image.
     """
     file_sizes = [os.path.getsize(path) + 1 for path in image_paths]
     min_size = min(file_sizes)
@@ -137,12 +137,12 @@ def train_augmentation_pipeline(
     ) -> Compose:
     return Compose([
         RandomCrop(imsize=int(image_size * 1.5)),
+        MyRandomPerspective(imgsz=int(image_size * 1.5), degrees=180, translate=0, scale=0),
+        CenterCrop(image_size),
         RandomHSV(hgain=hyperparameters.hsv_h, sgain=hyperparameters.hsv_s, vgain=hyperparameters.hsv_v),
         RandomColorInv(p=0.25),
         RandomFlip(direction="vertical", p=hyperparameters.flipud),
         RandomFlip(direction="horizontal", p=hyperparameters.fliplr),
-        MyRandomPerspective(imgsz=int(image_size * 1.5), degrees=180, translate=0, scale=0),
-        CenterCrop(image_size),
         # MyAlbumentations(self.imgsz),
         # LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False),
         FixInstances(area_thr=0.99, max_targets=max_instances, min_size=min_size),

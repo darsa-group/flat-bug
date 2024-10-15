@@ -18,18 +18,18 @@ import torch
 def main():
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
-    args_parse.add_argument("-i", "--input-data", dest="input_dir",
+    args_parse.add_argument("-i", "--input-data", dest="input_dir", required=True,
                             help="A directory that contains subdirectories for each COCO sub-datasets."
                                  "Each sub-dataset contains a single json file named 'instances_default.json' "
                                  "and the associated images"
                             )
+    args_parse.add_argument("-o", "--output-dir", dest="results_dir", required=True,
+                        help="The result directory")
+    args_parse.add_argument("-w", "--model-weights", dest="model_weights", required=True,
+                            help="The .pt file")
     args_parse.add_argument("-p", "--input-pattern", dest="input_pattern", default=r"[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$",
                             help=r"The pattern to match the images. Default is '[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$' i.e. jpg/jpeg/png case-insensitive.")
     args_parse.add_argument("-n", "--max-images", type=int, default=None, help="Maximum number of images to process. Default is None. Truncates in alphabetical order.")
-    args_parse.add_argument("-o", "--output-dir", dest="results_dir",
-                            help="The result directory")
-    args_parse.add_argument("-w", "--model-weights", dest="model_weights",
-                            help="The .pt file")
     args_parse.add_argument("-s", "--scale-before", dest="scale_before", default=1.0, type=float,
                             help="Downscale the image before detection, but crops from the original image."
                                  "Note that the COCO dataset dimentions match the scaled image" # fixme, is that true?!
