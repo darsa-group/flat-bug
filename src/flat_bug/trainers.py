@@ -160,7 +160,7 @@ def apply_overrides_to_checkpoint(overrides):
     with NamedTemporaryFile(
         delete=False, 
         suffix=ckpt_ext, 
-        prefix="resume--" + "_".join(os.path.splitext(resume_model)[0].replace("_", r"\_").split(os.sep)) + "--", 
+        prefix="resume--" + "__".join(os.path.splitext(resume_model)[0].split(os.sep)) + "--", 
         dir=tmp_resume_weight_dir
     ) as tmp_model:
         torch.save(resume_ckpt, tmp_model)
