@@ -294,7 +294,7 @@ def remove_instances(
         n_remove, n_keep = np.sum(valid) - max_targets, max_targets
         valid[valid] &= np.random.permutation(np.array([True] * n_keep + [False] * n_remove, dtype=bool))
 
-    # here, we paint the edge cases (partially outside the image, as (0,0,0)),
+    # here, we paint the edge cases (partially outside the image, using telea inpainting),
     # this should help learning. Indeed it would be very confusing if an image if an insect that is
     # 10% outside is flagged as NOT insect!
 
@@ -605,10 +605,10 @@ class RandomCrop(Crop):
 
         # If the image is larger than the target size we scale between crop_dim/image_dim, 1
         if min_target_source_ratio < 1:
-            scale = np.random.uniform(min_target_source_ratio, 1)
+            scale = np.random.uniform(min_target_source_ratio, 1) ** 2
         # If the image is smaller than the target size we scale between 1, and crop_dim/image_dim
         else:
-            scale = np.random.uniform(1, min_target_source_ratio)
+            scale = np.random.uniform(1, min_target_source_ratio) ** (1/2)
 
         # When we scale up, this is done before cropping
         do_scale_before = scale > 1
@@ -616,7 +616,7 @@ class RandomCrop(Crop):
             labels = scale_labels(labels, scale)
             target_xsize, target_ysize = self.xsize, self.ysize
         else:
-            target_size = max(int(self.xsize * scale), int(self.ysize * scale))
+            target_size = max(int(w * scale), int(h * scale))
             target_xsize, target_ysize = target_size, target_size
             # Reset the scale such that when the labels/image are scaled after cropping the size is self.xsize, self.ysize (assuming these are equal)
             scale = self.xsize / target_xsize

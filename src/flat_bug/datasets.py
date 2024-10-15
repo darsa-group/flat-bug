@@ -5,6 +5,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from PIL import Image
 
 from typing import Union, List, Tuple, Dict, Optional, Self
 
@@ -17,6 +18,10 @@ from flat_bug.augmentations import CenterCrop, RandomCrop, MyRandomPerspective, 
 HELP_URL = 'See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
 IMG_FORMATS = 'bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 'pfm'  # include image suffixes
 
+def get_area(image_path):
+    image = Image.open(image_path)
+    return image.size[0] * image.size[1]
+
 def calculate_image_weights(image_paths : List[str]) -> List[float]:
     """
     Calculate normalized weights for each image based on the file sizes,
@@ -28,7 +33,7 @@ def calculate_image_weights(image_paths : List[str]) -> List[float]:
     Returns:
         list of float: normalized weights for each image.
     """
-    file_sizes = [os.path.getsize(path) + 1 for path in image_paths]
+    file_sizes = [get_area(path) + 1 for path in image_paths]
     min_size = min(file_sizes)
     return [(size / min_size) for size in file_sizes]
 
@@ -127,6 +132,15 @@ def hook_get_labels_with_subset(
         return obj.get_labels()
     obj.get_labels = subset_then_get
 
+class PrintNumInstances:
+    def __init__(self, title : str):
+        self.fmt = f'({"{num:>5}"}) ({"{imsize:^10}"}) | {title}'
+
+    def __call__(self, labels : Dict):
+        n = len(labels["instances"]) if "instances" in labels else labels["masks"].max().item()
+        print(self.fmt.format(num=n, imsize="x".join([str(d) for d in labels["img"].shape])))
+        return labels
+
 def train_augmentation_pipeline(
         hyperparameters : IterableSimpleNamespace, 
         image_size : int, 
@@ -136,17 +150,15 @@ def train_augmentation_pipeline(
         use_keypoints : bool
     ) -> Compose:
     return Compose([
-        RandomCrop(imsize=int(image_size * 1.5)),
-        MyRandomPerspective(imgsz=int(image_size * 1.5), degrees=180, translate=0, scale=0),
-        CenterCrop(image_size),
+        RandomCrop(imsize=int(image_size * 1.5)), # Crop to slightly larger than needed for training
+        MyRandomPerspective(imgsz=int(image_size * 1.5), degrees=180, translate=0, scale=0), # Affine transformation at same size as above
+        CenterCrop(image_size), # Crop to needed size
         RandomHSV(hgain=hyperparameters.hsv_h, sgain=hyperparameters.hsv_s, vgain=hyperparameters.hsv_v),
         RandomColorInv(p=0.25),
         RandomFlip(direction="vertical", p=hyperparameters.flipud),
         RandomFlip(direction="horizontal", p=hyperparameters.fliplr),
-        # MyAlbumentations(self.imgsz),
-        # LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False),
-        FixInstances(area_thr=0.99, max_targets=max_instances, min_size=min_size),
-        Format(
+        FixInstances(area_thr=0.975, max_targets=max_instances, min_size=min_size), # Remove instances outside crop
+        Format( # YOLO-native preprocessing
             bbox_format="xywh",
             normalize=True,
             return_mask=use_segments,
@@ -154,7 +166,7 @@ def train_augmentation_pipeline(
             batch_idx=True,
             mask_ratio=hyperparameters.mask_ratio,
             mask_overlap=hyperparameters.overlap_mask
-        )
+        ),
     ])
 
 def validation_augmentation_pipeline(
@@ -164,8 +176,9 @@ def validation_augmentation_pipeline(
         use_keypoints : bool
     ) -> Compose:
     return Compose([
-        RandomCrop(imsize=image_size),
-        FixInstances(area_thr=0.99, max_targets=None, min_size=min_size),
+        RandomCrop(imsize=int(image_size * 1.5)),
+        CenterCrop(image_size),
+        FixInstances(area_thr=0.975, max_targets=None, min_size=min_size),
         Format(
             bbox_format="xywh",
             normalize=True,
@@ -179,7 +192,7 @@ def validation_augmentation_pipeline(
 
 
 class MyYOLODataset(YOLODataset):
-    _min_size : int=4 # What is the minimum size of an instance to be considered (width or height in pixels after augmentations)
+    _min_size : int=16 # What is the minimum size of an instance to be considered (width or height in pixels after augmentations)
     _oversample_factor : int=2 # How much do we allow the dataset to grow when oversampling - this is done to ensure larger images are not underrepresented
 
     def __init__(

@@ -1266,7 +1266,7 @@ class Predictor(object):
                 this_postprocessed_results = postprocess(
                     raw_results,
                     imgs = batch,
-                    max_det = 1000,
+                    max_det = 300,
                     min_confidence = self.SCORE_THRESHOLD,
                     iou_threshold = self.IOU_THRESHOLD,
                     nms = 3,

@@ -204,7 +204,7 @@ class MySegmentationTrainer(SegmentationTrainer):
             self.args.__dict__.update(overrides)
         
         self.args.__dict__.update(custom_fb_args) # But we need to add them back, otherwise they will be missing in DDP mode
-        if overrides["resume"]:
+        if overrides.get("resume", False):
             self.args.resume = True
         self.add_callback("on_train_epoch_start", MySegmentationTrainer.log_lr)
         # self.use_ewa_sampler()
