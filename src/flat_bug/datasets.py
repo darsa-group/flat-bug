@@ -192,7 +192,7 @@ def validation_augmentation_pipeline(
 
 
 class MyYOLODataset(YOLODataset):
-    _min_size : int=16 # What is the minimum size of an instance to be considered (width or height in pixels after augmentations)
+    _min_size : int=32 # What is the minimum size of an instance to be considered (width or height in pixels after augmentations)
     _oversample_factor : int=2 # How much do we allow the dataset to grow when oversampling - this is done to ensure larger images are not underrepresented
 
     def __init__(
