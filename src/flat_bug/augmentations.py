@@ -1,4 +1,3 @@
-import os
 import math
 import random
 
@@ -273,6 +272,13 @@ def remove_instances(
     image_bbox = box(0, 0, *imsize)
     area_ratios = np.zeros(bboxes.shape[0])
     for i, s in enumerate(instances.segments):
+        # Initiate overlap using bounding box
+        x, y, w, h = bboxes[i]
+        bbox = box(x - w/2, y - h/2, x + w/2, y + h/2)
+        bbox_iarea = bbox.intersection(image_bbox).area
+        area_ratios[i] = (bbox_iarea + eps) / (bbox.area + eps) if bbox.area > 0 and bbox_iarea > 0 else 0
+        if area_ratios[i] < area_thr:
+            continue
         poly = make_valid(Polygon(s))
         intersection_area = poly.intersection(image_bbox).area
         area_ratios[i] = (intersection_area + eps) / (poly.area + eps) if poly.area > 0 and intersection_area > 0 else 0
@@ -299,8 +305,9 @@ def remove_instances(
     # 10% outside is flagged as NOT insect!
 
     invalid = np.bitwise_not(valid)
+    invalid_visible = np.bitwise_and(invalid, area_ratios > 0) # We only need to inpaint polygons within the frame
 
-    invalid_i = np.nonzero(invalid)[0]
+    invalid_i = np.nonzero(invalid_visible)[0]
     invalid_segments = instances.segments[invalid_i]
     invalid_segments = [np.array(s, dtype=np.int32) for s in invalid_segments]
     valid_segments = [np.array(s, dtype=np.int32) for s in instances.segments[np.nonzero(valid)[0]]]
@@ -520,22 +527,24 @@ class Crop:
         img = labels["img"]
         orig_shape = img.shape
         h, w = img.shape[:2]
-        if w < size_x:
-            px = size_x - w
-            px0 = int(math.floor(px / 2))
-            px1 = px - px0
-        else:
-            px0 = px1 = 0
 
-        if h < size_y:
-            py = size_y - h
-            py0 = int(math.floor(py / 2))
-            py1 = py - py0
-        else:
-            py0 = py1 = 0
+        px0 = -min(0, start_x)
+        n_start_x = max(0, start_x)
+        px1 = -min(0, w - (start_x + size_x))
+        px = px0 + px1
+        n_size_x = size_x - px
 
-        img = inpaint_pad(img, (py0, py1, px0, px1))
-        img = img[start_y: start_y + size_y, start_x: start_x + size_x, :]
+        py0 = -min(0, start_y)
+        n_start_y = max(0, start_y)
+        py1 = -min(0, h - (start_y + size_y))
+        py = py0 + py1
+        n_size_y = size_y - py
+
+        img = img[n_start_y: n_start_y + n_size_y, n_start_x: n_start_x + n_size_x, :]
+
+        if px > 0 or py > 0:
+            img = np.pad(img, pad_width=((py0, py1), (px0, px1), (0, 0)), mode="constant", constant_values=0.)
+            # img = inpaint_pad(img, (py0, py1, px0, px1)) # Fixme: this is very slow for large images
 
         if img.shape != (size_x, size_y, 3): 
             logger.info("shape:", img.shape)
@@ -547,7 +556,7 @@ class Crop:
 
         labels["ori_shape"] = (size_x, size_y)
         labels["resized_shape"] = (size_x, size_y)
-        labels["img"] = np.copy(np.ascontiguousarray(img))
+        labels["img"] = np.copy(img, order="C")
 
         # Fix label positions
 
@@ -558,8 +567,8 @@ class Crop:
             instances.denormalize(*orig_shape[:2][::-1])
 
         labels['ratio_pad'] = ((1.0, 1.0), (0.0, 0.0))
-        x_offset = -start_x + px0
-        y_offset = -start_y + py0
+        x_offset = -n_start_x + px0
+        y_offset = -n_start_y + py0
 
         # positions in the cropped image
         instances._bboxes.add([x_offset, y_offset, 0, 0])
@@ -624,14 +633,13 @@ class RandomCrop(Crop):
         # Calculate possible crop start positions
         h, w = labels["img"].shape[:2]
         if w <= target_xsize:
-            start_x = 0
+            start_x = (w - target_xsize) // 2
         else:
-            start_x = np.random.randint(w - target_xsize, size=1)[0]
+            start_x = np.random.randint(-target_xsize // 2, w - target_xsize // 2, size=1)[0]
         if h <= target_ysize:
-            start_y = 0
+            start_y = (h - target_ysize) // 2
         else:
-            start_y = np.random.randint(h - target_ysize, size=1)[0]
-
+            start_y = np.random.randint(-target_ysize // 2, h - target_ysize // 2, size=1)[0]
         labels = self.crop_image(labels, start_x, start_y, target_xsize, target_ysize)
 
         # When we scale down we do this after cropping
