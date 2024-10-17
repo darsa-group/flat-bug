@@ -80,9 +80,7 @@ def main():
         device = f"cuda:{device}" if device.isdigit() else device
         device = torch.ones(1).to(torch.device(device)).device
 
-    dtype = getattr(torch, option_dict["dtype"])
-    if dtype not in [torch.float16, torch.float32, torch.bfloat16]:
-        raise ValueError(f"Dtype '{option_dict['dtype']}' is not supported.")
+    dtype = option_dict["dtype"]
     
     config = option_dict["config"]
     if config:

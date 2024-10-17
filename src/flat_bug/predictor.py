@@ -1129,8 +1129,8 @@ class Predictor(object):
             self, 
             model : Union[str, pathlib.Path], 
             cfg : Optional[Union[dict, str, os.PathLike]]=None, 
-            device : Union[DeviceLikeType, List[DeviceLikeType]]=torch.device("cpu"), 
-            dtype : torch.types._dtype=torch.float32
+            device : Union[str, torch.device, int, List[Union[str, torch.device, int]]]=torch.device("cpu"), 
+            dtype : Union[torch.types._dtype, str]=torch.float32
         ):
         if cfg is None:
             cfg = DEFAULT_CFG
@@ -1143,6 +1143,10 @@ class Predictor(object):
         if len(self._devices) > 1:
             raise NotImplementedError("Multi-GPU is not implemented yet")
         self._device = self._devices[0]
+        if isinstance(dtype, str):
+            dtype = getattr(torch, dtype)
+        if dtype not in [torch.float16, torch.float32, torch.bfloat16]:
+            raise ValueError(f"Dtype '{dtype}' is not supported.")
         self._dtype = dtype
 
         if isinstance(model, str):
@@ -1153,10 +1157,10 @@ class Predictor(object):
                     self.__dict__ = d
             args = dict2attr({
                 "device": self._device,
-                "half": dtype == torch.float16,
+                "half": self._dtype == torch.float16,
                 "batch": self.BATCH_SIZE,
                 "model": yolo.model,
-                "fp16" : dtype == torch.float16,
+                "fp16" : self._dtype == torch.float16,
                 "dnn" : False,
                 "data" : None # If we want to support multiclass inference, this needs to point to "Path to the additional data.yaml file containing class names. Optional." 
                               # see: https://github.com/ultralytics/ultralytics/blob/bc9fd45cdf10ebe8009037aaf8def2353761c9ed/ultralytics/nn/autobackend.py#L53
