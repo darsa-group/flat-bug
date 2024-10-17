@@ -3,7 +3,7 @@ import argparse
 import os.path
 import yaml
 
-from flat_bug.trainers import MySegmentationTrainer
+from flat_bug.trainers import FlatBugSegmentationTrainer
 from flat_bug import logger
 
 import ultralytics.data.utils as ultralytics_data_utils 
@@ -125,7 +125,7 @@ def main():
     logger.debug("#######################################################")
 
     # Instantiate trainer
-    trainer = MySegmentationTrainer(overrides=overrides)
+    trainer = FlatBugSegmentationTrainer(overrides=overrides)
 
     if not option_dict["resume"]:
         trainer.start_epoch = 0

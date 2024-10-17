@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=fb_end_to_end_eval
-#SBATCH --output=eval.out
+#SBATCH --output=slurm_logs/R-%x.%j.out
 #SBATCH --partition=GPUNodes
 #SBATCH --time=23:00:00
 #SBATCH --mem=24G
@@ -31,9 +31,15 @@ cd /home/altair/flat-bug
 #     --gpu cuda:0 \
 #     -s 1 \
 #     -n 3
-fb_train \
-    -d dev/fb_yolo \
-    -c utils/default_train.yaml
+# fb_train \
+#     -d dev/fb_yolo \
+#     -c utils/default_train.yaml
+scripts/eval/end_to_end_eval.sh \
+    -w runs/ucloud/M_ucloud_output_09-10-2024_20-24-12/compare_backbone_sizes/fb_compare_backbone_sizes_M/weights/epoch25.pt \
+    -d dev/fb_yolo/insects/images/val \
+    -c dev/test/tmp.yaml \
+    -l dev/fb_yolo/insects/labels/val/instances_default.json \
+    -o dev/test/error_m
 
 ## End of script ##
 echo "Job finished"

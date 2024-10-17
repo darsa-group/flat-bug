@@ -16,7 +16,7 @@ from ultralytics.utils.instance import Instances
 from flat_bug import logger
 from flat_bug.config import check_types
 
-### From Ultralytics reposity, remove clipping from `RandomPerspective` and add `apply_segments` function
+### From Ultralytics repository, remove clipping from `RandomPerspective` and add `apply_segments` function
 def segment2box(
         segment : torch.Tensor, 
         width : int=640, 
@@ -379,7 +379,7 @@ def scale_labels(
     labels["instances"].denormalize(*new_shape[::-1])
     return labels
 
-class MyRandomPerspective(RandomPerspective):
+class FlatBugRandomPerspective(RandomPerspective):
     fill_value = (0, 0, 0)
 
     def __init__(self, imgsz : int, *args, **kwargs):
@@ -588,17 +588,10 @@ class CenterCrop(Crop):
     def __call__(self, labels : Dict) -> Dict:
         h, w = labels["img"].shape[:2]
 
-        if w <= self.xsize:
-            start_x = 0
-        else:
-            start_x = (w - self.xsize) // 2
-        if h <= self.ysize:
-            start_y = 0
-        else:
-            start_y = (h - self.ysize) // 2
+        start_x = (w - self.xsize) // 2
+        start_y = (h - self.ysize) // 2
 
-        labels = self.crop_image(labels, start_x, start_y, self.xsize, self.ysize)
-        return labels
+        return self.crop_image(labels, start_x, start_y, self.xsize, self.ysize)
 
 class RandomCrop(Crop):
     def __init__(self, *args, **kwargs):
@@ -672,9 +665,6 @@ class FixInstances:
     
     def __call__(self, labels : Dict) -> Dict:
         return remove_instances(labels, area_thr=self.area_thr, max_targets=self.max_targets, min_size=self.min_size)
-
-class MyCrop(RandomCrop):
-    pass
 
 class RandomColorInv(object):
     """

@@ -13,7 +13,7 @@ from ultralytics.utils import IterableSimpleNamespace
 from ultralytics.data import YOLODataset
 from ultralytics.data.dataset import LOGGER
 from ultralytics.data.augment import RandomFlip, RandomHSV, Compose, Format
-from flat_bug.augmentations import CenterCrop, RandomCrop, MyRandomPerspective, RandomColorInv, FixInstances
+from flat_bug.augmentations import CenterCrop, RandomCrop, FlatBugRandomPerspective, RandomColorInv, FixInstances
 
 HELP_URL = 'See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
 IMG_FORMATS = 'bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 'pfm'  # include image suffixes
@@ -93,7 +93,7 @@ def get_datasets(files : List[str]) -> Dict[str, List[str]]:
 
 
 def subset(
-        self : "MyYOLODataset", 
+        self : "FlatBugYOLODataset", 
         n : Optional[int]=None, 
         pattern : Optional[str]=None
     ):
@@ -119,13 +119,13 @@ def subset(
     self.im_files = [f for i, f in enumerate(self.im_files) if i in indices]
 
 def hook_get_labels_with_subset(
-        obj : "MyYOLODataset", 
+        obj : "FlatBugYOLODataset", 
         args : Dict
     ):
     if not isinstance(args, dict):
         raise ValueError("args must be a dictionary")
-    if not isinstance(obj, MyYOLODataset):
-        raise ValueError("obj must be an instance of MyYOLODataset")
+    if not isinstance(obj, FlatBugYOLODataset):
+        raise ValueError("obj must be an instance of FlatBugYOLODataset")
     def subset_then_get():
         subset(obj, **args)
         obj.get_labels = getattr(super(type(obj), obj), "get_labels")
@@ -151,7 +151,7 @@ def train_augmentation_pipeline(
     ) -> Compose:
     return Compose([
         RandomCrop(imsize=int(image_size * 1.5)), # Crop to slightly larger than needed for training
-        MyRandomPerspective(imgsz=int(image_size * 1.5), degrees=180, translate=0, scale=0), # Affine transformation at same size as above
+        FlatBugRandomPerspective(imgsz=int(image_size * 1.5), degrees=180, translate=0, scale=0), # Affine transformation at same size as above
         CenterCrop(image_size), # Crop to needed size
         RandomHSV(hgain=hyperparameters.hsv_h, sgain=hyperparameters.hsv_s, vgain=hyperparameters.hsv_v),
         RandomColorInv(p=0.25),
@@ -191,7 +191,7 @@ def validation_augmentation_pipeline(
     ])
 
 
-class MyYOLODataset(YOLODataset):
+class FlatBugYOLODataset(YOLODataset):
     _min_size : int=32 # What is the minimum size of an instance to be considered (width or height in pixels after augmentations)
     _oversample_factor : int=2 # How much do we allow the dataset to grow when oversampling - this is done to ensure larger images are not underrepresented
 
@@ -298,7 +298,7 @@ class MyYOLODataset(YOLODataset):
         return self.transforms(self.get_image_and_label(self.__indices[index]))
 
 
-class MyYOLOValidationDataset(MyYOLODataset):
+class FlatBugYOLOValidationDataset(FlatBugYOLODataset):
     _resample_n : int= 5
 
     def build_transforms(

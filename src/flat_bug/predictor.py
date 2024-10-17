@@ -205,6 +205,15 @@ class TensorPredictions:
         self.polygons = [p._predictions.polygons[nd_i] for p, nd in zip(predictions, valid_chunked) for nd_i in nd]
         self.classes = torch.cat([p.classes[nd] for p, nd in zip(predictions, valid_chunked)])  # N
         self.scales = [predictions[i].scale for i, p in enumerate(valid_chunked) for _ in range(len(p))]  # N
+        
+        # Sort the polygons, masks, boxes, classes, scales and confidences by confidence
+        sorted_indices = self.confs.argsort(descending=True)
+        self.masks = self.masks[sorted_indices]
+        self.polygons = [self.polygons[i] for i in sorted_indices]
+        self.boxes = self.boxes[sorted_indices]
+        self.classes = self.classes[sorted_indices]
+        self.scales = [self.scales[i] for i in sorted_indices]
+        self.confs = self.confs[sorted_indices]
 
         # # Check that everything is the correct size
         assert len(self) == len(self.boxes), RuntimeError(f"len(self) {len(self)} != len(self.boxes) {len(self.boxes)}")
@@ -250,8 +259,7 @@ class TensorPredictions:
         if len(self) > 0:
             # Boxes is easy
             self.boxes = offset_box(self.boxes, offset)  # Add the offsets to the box-coordinates
-            self.boxes[:, :4] = (self.boxes[:,
-                                :4] * scale).round()  # Multiply the box-coordinates by the scale factor (round so it doesn't implicitly gets floored when cast to an integer later)
+            self.boxes[:, :4] = (self.boxes[:, :4] * scale).round()  # Multiply the box-coordinates by the scale factor
             # Pad the boxes a bit to be safe
             self.boxes[:, :2] -= pad
             self.boxes[:, 2:] += pad
@@ -263,11 +271,17 @@ class TensorPredictions:
             self.polygons = [(poly + offset.unsqueeze(0)) * scale for poly in self.polygons]
 
             # However masks are more complicated since they don't have the same size as the image
-            image_shape = torch.tensor([self.image.shape[1], self.image.shape[2]], device=self.device,
-                                    dtype=self.dtype)  # Get the shape of the original image
-            # Calculate the normalized offset (i.e. the offset as a fraction of the scaled and padded image size, here the scaled and padded image size is calculated from the original image shape, but it would probably be easier just to pass it...)
+            image_shape = torch.tensor( # Get the shape of the original image
+                [self.image.shape[1], self.image.shape[2]], 
+                device=self.device,
+                dtype=self.dtype
+            ) 
+            # Calculate the normalized offset 
+            # i.e. the offset as a fraction of the scaled and padded image size, 
+            # here the scaled and padded image size is calculated from the original image shape
+            # (but it would probably be easier just to pass it...)
             offset_norm = -offset / (image_shape / scale - 2 * offset)
-            orig_mask_shape = torch.tensor([self.masks.shape[1], self.masks.shape[2]], device=self.device, dtype=self.dtype) - 1  # Get the shape of the masks
+            orig_mask_shape = torch.tensor([self.masks.shape[1], self.masks.shape[2]], device=self.device, dtype=self.dtype) - 1
             # Convert the normalized offset to the coordinates of the masks
             offset_mask_coords = offset_norm * orig_mask_shape
             # Round the coordinates to the nearest integer and convert to long (needed for indexing)
@@ -345,7 +359,7 @@ class TensorPredictions:
                     [self.image.shape[1] / self.masks.data.shape[1], self.image.shape[2] / self.masks.data.shape[2]],
                     device=self.device, dtype=self.dtype
                 )
-                nms_ind = nms_masks(
+                nms_ind : torch.Tensor = nms_masks(
                     masks=self.masks.data,
                     scores=self.confs,# * torch.tensor(self.scales, dtype=self.dtype, device=self.device),
                     iou_threshold=iou_threshold, 
@@ -354,7 +368,7 @@ class TensorPredictions:
                     **kwargs
                 )
             # Remove the instances that were not selected
-            self = self[nms_ind]
+            self = self[nms_ind.sort().values]
         else:
             nms_ind = []
         
