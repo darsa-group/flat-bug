@@ -1,10 +1,12 @@
 import math
 import os
 import glob
+import json
 
-from typing import List, Optional
+from typing import List, Tuple, Optional
 
 from tqdm import tqdm
+from tqdm.contrib.concurrent import process_map
 
 import pandas as pd
 import numpy as np
@@ -12,77 +14,63 @@ import cv2
 
 import torch
 
-from flat_bug.predictor import Predictor
+from flat_bug.predictor import Predictor, TensorPredictions
+from flat_bug.coco_utils import annotations_to_numpy, split_annotations
 
-MOSAIC_SPACING = 0
+## HELPERS
 
-ANNOTATED_IM_DIR = "dev/fb_yolo/insects"
-RAW_IM_DIR = "dev/fb_yolo/insects"
-THIS_DIR = os.path.dirname(__file__)
-OUR_ANNOT = os.path.join(THIS_DIR, "annotated_tiles")
-OUR_RAW = os.path.join(THIS_DIR, "raw_tiles")
-OUR_PRED = os.path.join(THIS_DIR, "pred_tiles")
-OUR_MOSAIC = os.path.join(THIS_DIR, "mosaic")
+def match_examples(files : List[str], *filters):
+    matches = []
+    for this_filters in zip(*filters):
+        for file in files:
+            if all([filter in os.path.basename(file) for filter in this_filters]):
+                matches.append(file)
+    return matches
 
-MODEL = "model_snapshots/fb_tmp3_medium.pt"
+def annotations_to_tensor_predictions(annotations : List[np.ndarray], offset : Tuple[int, int], image : np.ndarray, path : str) -> TensorPredictions:
+    h, w, c = image.shape
+    if h != w:
+        raise NotImplementedError("Plotting annotations is only implemented for square images. TODO: implement this.")
+    im_size = h
+    
+    n_instances = len(annotations[0])
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-model = Predictor(MODEL, device=device, dtype=torch.float16)
+    # Offset boxes and switch x and y
+    annotations[0][:, ::2] += offset[0]
+    annotations[0][:, 1::2] += offset[1]
+    annotations[0][:, :2] = annotations[0][:, :2][:, ::-1]
+    annotations[0][:, 2:] = annotations[0][:, 2:][:, ::-1]
 
+    box_oob = ~(np.any(annotations[0] > 0, 1) |  np.any(annotations[0] < im_size, 1))
+    annotations[0] = annotations[0][~box_oob] 
 
-df = pd.read_csv(os.path.join(THIS_DIR, "clean_flatbug_datasets.csv"))
-df["annotation_file_path"] = [""] * df.shape[0]
+    # Offset contours and switch x and y
+    offset = np.array(offset, dtype=np.int32)
+    for i in range(n_instances):
+        if box_oob[i]:
+            continue
+        new_coords = np.flip(annotations[1][i] + offset, 1)
+        annotations[1][i] = new_coords
+    
+    annotations[1] = [c for oob, c in zip(box_oob, annotations[1]) if not oob]
 
-for f in glob.glob(os.path.join(ANNOTATED_IM_DIR, "**", "*.jpg"), recursive=True):
-    if "00-all" in f:
-        continue
-    bn = os.path.basename(f)
-    for i, (d,t) in enumerate(zip(df.dataset, df._example_name)):
-        if t in bn and d in f:
-            # df["annotation_file_path"][i] = f
-            df.loc[i, "annotation_file_path"] = f
+    tensor_predictions_data = {
+        "boxes": annotations[0],
+        "contours": [torch.tensor(c.copy(order="C")) for c in annotations[1]],
+        "confs": [1 for _ in range(n_instances)],
+        "classes": [1 for _ in range(n_instances)],
+        "scales": [-1 for _ in range(n_instances)],
+        "image_path": path,
+        "image_width": w,
+        "image_height": h,
+        "mask_width": w,
+        "mask_height": h,
+        "identifier": None
+    }
 
-
-for f in glob.glob(os.path.join(RAW_IM_DIR, "**", "*.jpg"), recursive=True):
-    if "00-all" in f:
-        continue
-    bn = os.path.basename(f)
-    for i, (d,t) in enumerate(zip(df.dataset, df._example_name)):
-        if t in bn and d in f:
-            # df["annotation_file_path"][i] = f
-            df.loc[i, "raw_file_path"] = f
-
-
-os.makedirs(OUR_ANNOT, exist_ok=True)
-os.makedirs(OUR_RAW, exist_ok=True)
-os.makedirs(OUR_PRED, exist_ok=True)
-os.makedirs(OUR_MOSAIC, exist_ok=True)
-
-rois = {tp : [] for tp in ["annotation", "raw", "prediction"]}
-
-for i,r in tqdm(df.iterrows(), desc="Processing ROIs", leave=False, total=len(df)):
-    im = cv2.imread(r.annotation_file_path)
-    im_raw = cv2.imread(r.raw_file_path)
-
-    h,w = im.shape[0:2]
-
-    if w < 1000:
-        left = math.ceil((1000 - w )/2)
-        right = math.floor((1000 - w) / 2)
-        im = cv2.copyMakeBorder(im, 0, 0, left, right, cv2.BORDER_CONSTANT, value=(0,0,0))
-        im_raw = cv2.copyMakeBorder(im_raw, 0, 0, left, right, cv2.BORDER_CONSTANT, value=(0,0,0))
-
-    roi = im[r._example_y: r._example_y + 1000, r._example_x : r._example_x + 1000, :]
-    roi_raw = im_raw[r._example_y: r._example_y + 1000, r._example_x : r._example_x + 1000, :]
-    roi_pred = model.pyramid_predictions(torch.tensor(roi_raw).permute(2, 1, 0).to(device), im_raw).plot(conf=False)
-
-    rois["annotation"].append(roi)
-    rois["raw"].append(roi_raw)
-    rois["prediction"].append(roi_pred)
-
-    cv2.imwrite(os.path.join(OUR_ANNOT, f"{r.short_name}.jpg"), roi)
-    cv2.imwrite(os.path.join(OUR_RAW, f"{r.short_name}.jpg"), roi_raw)
-    cv2.imwrite(os.path.join(OUR_PRED, f"{r.short_name}.jpg"), roi_pred)
+    tensor_predictions = TensorPredictions().load(tensor_predictions_data)
+    tensor_predictions.image = torch.tensor(image).permute(2, 1, 0)
+    return tensor_predictions
 
 def create_mosaic(ims : List[np.ndarray], spacing : int = 100, labels : Optional[List[str]]=None):
     n = len(ims)
@@ -134,13 +122,86 @@ def create_mosaic(ims : List[np.ndarray], spacing : int = 100, labels : Optional
 
     return mosaic
 
-for tp, ims in tqdm(rois.items(), desc="Creating mosaics", leave=False):
-    mosaic = create_mosaic(ims, MOSAIC_SPACING, labels=df.short_name.tolist())
-    cv2.imwrite(os.path.join(OUR_MOSAIC, f"{tp}.jpg"), mosaic)
+## STATICS
 
-"""
-cd annotated_tiles && for i in *.jpg; do magick $i -fill '#0008' -draw 'rectangle  0,100,1000,0' -fill white   -font DejaVu-Sans-Mono-Book -pointsize 64  -annotate +40+70 "$(echo $i| cut -f 1 -d .)" $i; done && magick -size 1000x1000 canvas:white AAA.jpg && montage *.jpg -tile 4x6 -geometry 500x500+10+10 tiles.jpeg && cd ..
-cd raw_tiles && for i in *.jpg; do magick $i -fill '#0008' -draw 'rectangle  0,100,1000,0' -fill white   -font DejaVu-Sans-Mono-Book -pointsize 64  -annotate +40+70 "$(echo $i| cut -f 1 -d .)" $i; done &&  magick -size 1000x1000 canvas:white AAA.jpg && montage *.jpg -tile 4x6 -geometry 500x500+10+10 tiles.jpeg && cd ..
-"""
+MOSAIC_SPACING = 0
+MODEL = "model_snapshots/fb_tmp3_medium.pt"
+
+# ANNOTATED_IM_DIR = "dev/fb_yolo/insects"
+ANNOTATION_COCO = "dev/fb_yolo/insects/labels/val/instances_default.json"
+RAW_IM_DIR = "dev/fb_yolo/insects"
+
+
+THIS_DIR = os.path.dirname(__file__)
+
+OUR_ANNOT = os.path.join(THIS_DIR, "annotated_tiles")
+OUR_RAW = os.path.join(THIS_DIR, "raw_tiles")
+OUR_PRED = os.path.join(THIS_DIR, "pred_tiles")
+OUR_MOSAIC = os.path.join(THIS_DIR, "mosaic")
+
+if __name__ == "__main__":
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model = Predictor(MODEL, device=device, dtype=torch.float16)
+
+    example_df = pd.read_csv(os.path.join(THIS_DIR, "clean_flatbug_datasets.csv"))
+    with open(ANNOTATION_COCO, "r") as f:
+        annotations = split_annotations(json.load(f))
+
+    example_df["raw_file_path"] = match_examples(
+        glob.glob(os.path.join(RAW_IM_DIR, "**", "*.jpg"), recursive=True),
+        example_df.dataset,
+        example_df._example_name    
+    )
+    example_df["annotations"] = [list(annotations_to_numpy(annotations[os.path.basename(file)])) for file in example_df.raw_file_path]
+
+    os.makedirs(OUR_ANNOT, exist_ok=True)
+    os.makedirs(OUR_RAW, exist_ok=True)
+    os.makedirs(OUR_PRED, exist_ok=True)
+    os.makedirs(OUR_MOSAIC, exist_ok=True)
+
+    rois = {tp : [] for tp in ["annotation", "raw", "prediction"]}
+
+    for i, row in tqdm(example_df.iterrows(), desc="Processing ROIs", leave=False, total=len(example_df)):
+        im_raw = cv2.imread(row.raw_file_path) # Remember color is BGR
+
+        h,w = im_raw.shape[0:2]
+
+        if w < 1000:
+            left = math.ceil((1000 - w ) / 2)
+            right = math.floor((1000 - w) / 2)
+            im_raw = cv2.copyMakeBorder(im_raw, 0, 0, left, right, cv2.BORDER_CONSTANT, value=(0,0,0))
+        else:
+            left, right = 0, 0
+            
+        offset = left - row._example_x, -row._example_y
+
+        roi_raw = im_raw[row._example_y: row._example_y + 1000, row._example_x : row._example_x + 1000, :]
+        roi_annot = annotations_to_tensor_predictions(row.annotations, offset, roi_raw, "").plot(confidence=False, contour_color=(34, 139, 34)) # Green contours
+        roi_pred = model.pyramid_predictions(torch.tensor(roi_raw).permute(2, 1, 0).to(device), im_raw).plot(confidence=False, contour_color=(178, 34, 34)) # Red contours
+
+        rois["raw"].append(roi_raw)
+        rois["annotation"].append(roi_annot)
+        rois["prediction"].append(roi_pred)
+    
+    def save_rois(i):
+        row = example_df.iloc[i]
+        roi_raw_path = os.path.join(OUR_RAW, f"{row.short_name}.jpg")
+        roi_annot_path = os.path.join(OUR_ANNOT, f"{row.short_name}.jpg")
+        roi_pred_path = os.path.join(OUR_PRED, f"{row.short_name}.jpg")
+
+        cv2.imwrite(roi_raw_path, rois["raw"][i])
+        cv2.imwrite(roi_annot_path, rois["annotation"][i])
+        cv2.imwrite(roi_pred_path, rois["prediction"][i])
+
+    process_map(save_rois, range(len(example_df)), tqdm_class=tqdm, desc="Saving ROIs", leave=False)
+
+    for tp, ims in tqdm(rois.items(), desc="Creating mosaics", leave=False):
+        mosaic = create_mosaic(ims, MOSAIC_SPACING, labels=example_df.short_name.tolist())
+        cv2.imwrite(os.path.join(OUR_MOSAIC, f"{tp}.jpg"), mosaic)
+
+    """
+    cd annotated_tiles && for i in *.jpg; do magick $i -fill '#0008' -draw 'rectangle  0,100,1000,0' -fill white   -font DejaVu-Sans-Mono-Book -pointsize 64  -annotate +40+70 "$(echo $i| cut -f 1 -d .)" $i; done && magick -size 1000x1000 canvas:white AAA.jpg && montage *.jpg -tile 4x6 -geometry 500x500+10+10 tiles.jpeg && cd ..
+    cd raw_tiles && for i in *.jpg; do magick $i -fill '#0008' -draw 'rectangle  0,100,1000,0' -fill white   -font DejaVu-Sans-Mono-Book -pointsize 64  -annotate +40+70 "$(echo $i| cut -f 1 -d .)" $i; done &&  magick -size 1000x1000 canvas:white AAA.jpg && montage *.jpg -tile 4x6 -geometry 500x500+10+10 tiles.jpeg && cd ..
+    """
 
 

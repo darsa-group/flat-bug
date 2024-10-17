@@ -560,7 +560,7 @@ class TensorPredictions:
     def plot(self, *args, **kwargs):
         return self._plot_jpeg(*args, **kwargs)
 
-    def _plot_svg(self, linewidth=2, masks=True, boxes=True, conf=True, outpath=None, scale=1):
+    def _plot_svg(self, linewidth=2, masks=True, boxes=True, confidence=True, outpath=None, scale=1):
         image = self.image.round().to(torch.uint8).permute(1, 2, 0).cpu().numpy()
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         embed_jpeg = True
@@ -623,9 +623,12 @@ class TensorPredictions:
             linewidth : int=2, 
             masks : bool=True, 
             boxes : bool=True, 
-            conf : bool=True, 
+            confidence : bool=True, 
             outpath : Optional[str]=None, 
-            scale : float=1
+            scale : float=1,
+            contour_color : Tuple[int, int, int] = (0, 0, 255),
+            box_color : Tuple[int, int, int] = (0, 0, 0),
+            alpha : float = 0.3
         ) -> Optional[cv2.UMat]:
         # Convert torch tensor to numpy array
         image = torchvision.transforms.ConvertImageDtype(torch.uint8)(self.image).permute(1, 2, 0).cpu().numpy()
@@ -638,8 +641,7 @@ class TensorPredictions:
             if masks:
                 contours = [simplify_contour((c * scale).round().to(torch.int32).cpu().numpy(), scale / 2) for c in self.contours]
                 ih, iw = image.shape[:2]
-                ALPHA = 0.3
-                _alpha = int(255 * ALPHA)
+                _alpha = int(255 * alpha)
 
                 poly_alpha = np.zeros((ih, iw, 1), dtype=np.int32)
                 for i, c in enumerate(contours):
@@ -650,12 +652,13 @@ class TensorPredictions:
                 
                 # Create a red fill for the polygons
                 poly_fill = np.zeros_like(image)
-                poly_fill[:, :, 2] = 255
+                for i, channel_color in enumerate(contour_color):
+                    poly_fill[:, :, i] = channel_color
                 # Add the polygons to the image by blending the fill and the image using the alpha mask
                 image = (image.astype(np.float32) * (1 - poly_alpha) + poly_fill * poly_alpha).round().astype(np.uint8)
                 # Draw the contours
                 for i, c in enumerate(contours):
-                    cv2.drawContours(image, [c], -1, (0, 0, 255), linewidth)
+                    cv2.drawContours(image, [c], -1, contour_color, linewidth)
 
             # Draw boxes and confidences
             if boxes:
@@ -666,8 +669,8 @@ class TensorPredictions:
                     box = box.long()
                     start_point = (int(box[0]), int(box[1]))
                     end_point = (int(box[2]), int(box[3]))
-                    cv2.rectangle(image, start_point, end_point, (0, 0, 0), linewidth)  # Red box
-                    if conf:
+                    cv2.rectangle(image, start_point, end_point, box_color, linewidth)  # black box
+                    if confidence:
                         # Get the width and height of the text
                         (text_width, text_height), _ = cv2.getTextSize(
                             f"{conf * 100:.3g}%",
@@ -831,71 +834,73 @@ class TensorPredictions:
 
     def load(
             self, 
-            path: str, 
+            data: Union[str, dict], 
             device : Optional[DeviceLikeType]=None, 
             dtype : Optional[torch.types._dtype]=None
         ) -> Self:
         """
-        Deserializes a TensorPredictions object from a .pt or .json file. OBS: Mutates and returns the current object.
+        Deserializes a TensorPredictions object from a .pt or .json file, or a dictionary. OBS: Mutates and returns the current object.
 
         Args:
-            path (str): The path to the file to load.
+            data (Union[str, dict]): The path to the file to load or a dictionary with the deserialized json data.
             device (Optional[DeviceLikeType], optional): The device to load the data to. Defaults to None. If None, the device is set to "cpu".
             dtype (Optional[torch.types._dtype], optional): The data type to load the data as. Defaults to None. If None, the data type is set to torch.float32.
 
         Returns:
             Self: This object with the deserialized data.
         """
-        assert isinstance(path, str) and os.path.isfile(path), RuntimeError(f"Invalid path: {path}")
-        # Check whether the path is a .pt file or a .json file
-        _, ext = os.path.splitext(path)
-        if ext == ".pt":
-            # When loading from .pt we get an exact copy of the saved TensorPredictions object
-            self = torch.load(path)
-            return self
-        elif ext == ".json":
-            with open(path, 'r') as f:
-                json_data = json.load(f)
+        if isinstance(data, str):
+            path = data
+            assert os.path.isfile(path), RuntimeError(f"Invalid path: {path}")
+            # Check whether the path is a .pt file or a .json file
+            _, ext = os.path.splitext(path)
+            if ext == ".pt":
+                # When loading from .pt we get an exact copy of the saved TensorPredictions object
+                self = torch.load(path)
+                return self
+            elif ext == ".json":
+                with open(path, 'r') as f:
+                    data = json.load(f)
+            else:
+                raise RuntimeError(f"Unknown file-extension: {ext} for path: {path}")
 
-            if device is None:
-                device = torch.device("cpu")
-            if dtype is None:
-                dtype = torch.float32
+        if device is None:
+            device = torch.device("cpu")
+        if dtype is None:
+            dtype = torch.float32
 
-            empty_image = torch.zeros((3, json_data["image_height"], json_data["image_width"]), device=device, dtype=dtype) + 255
-            self.__init__(image=empty_image, device=device, dtype=dtype)
-            setattr(self, "PREFER_POLYGONS", True) # Since we only store contours in the .json file, we prefer polygons on loading
+        empty_image = torch.zeros((3, data["image_height"], data["image_width"]), device=device, dtype=dtype) + 255
+        self.__init__(image=empty_image, device=device, dtype=dtype)
+        setattr(self, "PREFER_POLYGONS", True) # Since we only store contours in the .json file, we prefer polygons on loading
 
-            # Load constants
-            for k, v in json_data.items():
-                if k in self.CONSTANTS:
-                    setattr(self, k, v)
-
-            # Load the data
-            for k, v in json_data.items():
-                # Skip constants in second round
-                if k in self.CONSTANTS:
-                    continue
-                # Skip the identifier 
-                if k in ["identifier", "image_height", "image_width"]:
-                    continue                
-                # Catch attributes that don't need special treatment
-                elif k in ["scales", "contours"]:
-                    pass
-                # Bounding boxes are easy (as usual)
-                elif k == "boxes":
-                    v = torch.tensor(v, device=self.device, dtype=self.dtype)
-                # While masks are a bit more complicated
-                # Confidences and classes are 1-d tensors (arrays)
-                elif k in ["confs", "classes"]:
-                    v = torch.tensor(v, device=self.device, dtype=self.dtype)
-                else:
-                    raise RuntimeError(f"Unknown key in json file: {k}")
+        # Load constants
+        for k, v in data.items():
+            if k in self.CONSTANTS:
                 setattr(self, k, v)
 
-            return self
-        else:
-            raise RuntimeError(f"Unknown file-extension: {ext} for path: {path}")
+        # Load the data
+        for k, v in data.items():
+            # Skip constants in second round
+            if k in self.CONSTANTS:
+                continue
+            # Skip the identifier 
+            if k in ["identifier", "image_height", "image_width"]:
+                continue                
+            # Catch attributes that don't need special treatment
+            elif k in ["scales", "contours"]:
+                pass
+            # Bounding boxes are easy (as usual)
+            elif k == "boxes":
+                v = torch.tensor(v, device=self.device, dtype=self.dtype)
+            # While masks are a bit more complicated
+            # Confidences and classes are 1-d tensors (arrays)
+            elif k in ["confs", "classes"]:
+                v = torch.tensor(v, device=self.device, dtype=self.dtype)
+            else:
+                raise RuntimeError(f"Unknown key in json file: {k}")
+            setattr(self, k, v)
+
+        return self
 
     def save(
             self, 
