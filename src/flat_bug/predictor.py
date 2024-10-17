@@ -1475,7 +1475,7 @@ class Predictor(object):
         # Check correct dimensions
         assert len(transformed_image.shape) == 3, RuntimeError(f"transformed_image.shape {transformed_image.shape} != 3") 
         # Check correct number of channels
-        assert transformed_image.shape[0] == 3, RuntimeError(f"transformed_image.shape[0] {transformed_image.shape[0]} != 3")
+        assert transformed_image.shape[0] == 3, RuntimeError(f"transformed_image.shape[0] {transformed_image.shape[0]} != 3. The image is probably supplied in WxHxC instead of CxWxH, try image.permute(2, 1, 0) before passing it.")
 
         max_dim = max(transformed_image.shape[1:])
         min_dim = min(transformed_image.shape[1:])
