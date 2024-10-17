@@ -215,6 +215,15 @@ class TensorPredictions:
         self.scales = [self.scales[i] for i in sorted_indices]
         self.confs = self.confs[sorted_indices]
 
+        # Sort the polygons, masks, boxes, classes, scales and confidences by confidence
+        sorted_indices = self.confs.argsort(descending=True)
+        self.masks = self.masks[sorted_indices]
+        self.polygons = [self.polygons[i] for i in sorted_indices]
+        self.boxes = self.boxes[sorted_indices]
+        self.classes = self.classes[sorted_indices]
+        self.scales = [self.scales[i] for i in sorted_indices]
+        self.confs = self.confs[sorted_indices]
+
         # # Check that everything is the correct size
         assert len(self) == len(self.boxes), RuntimeError(f"len(self) {len(self)} != len(self.boxes) {len(self.boxes)}")
         assert len(self) == len(self.confs), RuntimeError(f"len(self) {len(self)} != len(self.confs) {len(self.confs)}")
@@ -350,7 +359,9 @@ class TensorPredictions:
                 nms_ind = nms_polygons(
                     polygons=self.polygons,
                     scores=self.confs,# * torch.tensor(self.scales, dtype=self.dtype, device=self.device),
-                    iou_threshold=iou_threshold, return_indices=True, dtype=self.dtype,
+                    iou_threshold=iou_threshold, 
+                    return_indices=True, 
+                    dtype=self.dtype,
                     boxes=self.boxes, 
                     **kwargs
                 )
@@ -1473,7 +1484,7 @@ class Predictor(object):
         else:
             s = 1024 / max_dim
 
-            if s > 1:
+            if s >= 1:
                 scales.append(s)
             else:
                 while s <= 0.9:  # Cut off at 90%, to avoid having s~1 and s=1.
@@ -1489,9 +1500,13 @@ class Predictor(object):
         all_preds = [self._detect_instances(transformed_image, scale=s, max_scale=s == min(scales)) for s in reversed(scales)]
 
         if self.TIME:
+            if self.total_detection_time > 0:
+                perc_forward = f'{self.total_forward_time / self.total_detection_time * 100:.3g}'
+            else:
+                perc_forward = "N/A"
             logger.info(
                 f'Total detection time: {self.total_detection_time:.3f}s'
-                f' ({self.total_forward_time / self.total_detection_time * 100:.3g}% forward)'
+                f' ({perc_forward}% forward)'
             )
 
         all_preds = TensorPredictions(
