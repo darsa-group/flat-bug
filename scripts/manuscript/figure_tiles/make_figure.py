@@ -17,6 +17,25 @@ import torch
 from flat_bug.predictor import Predictor, TensorPredictions
 from flat_bug.coco_utils import annotations_to_numpy, split_annotations
 
+## STATICS
+
+ROI_SIZE = 1000
+ROI_PADDING = 100
+MOSAIC_SPACING = 0
+MODEL = "model_snapshots/fb_tmp_large.pt"
+
+# ANNOTATED_IM_DIR = "dev/fb_yolo/insects"
+ANNOTATION_COCO = "dev/fb_yolo/insects/labels/val/instances_default.json"
+RAW_IM_DIR = "dev/fb_yolo/insects"
+
+
+THIS_DIR = os.path.dirname(__file__)
+
+OUR_ANNOT = os.path.join(THIS_DIR, "annotated_tiles")
+OUR_RAW = os.path.join(THIS_DIR, "raw_tiles")
+OUR_PRED = os.path.join(THIS_DIR, "pred_tiles")
+OUR_MOSAIC = os.path.join(THIS_DIR, "mosaic")
+
 ## HELPERS
 
 def match_examples(files : List[str], *filters):
@@ -27,8 +46,8 @@ def match_examples(files : List[str], *filters):
                 matches.append(file)
     return matches
 
-def annotations_to_tensor_predictions(annotations : List[np.ndarray], offset : Tuple[int, int], image : np.ndarray, path : str) -> TensorPredictions:
-    h, w, c = image.shape
+def annotations_to_tensor_predictions(annotations : List[np.ndarray], offset : Tuple[int, int], image : torch.tensor, path : str) -> TensorPredictions:
+    c, h, w = image.shape
     if h != w:
         raise NotImplementedError("Plotting annotations is only implemented for square images. TODO: implement this.")
     im_size = h
@@ -69,7 +88,7 @@ def annotations_to_tensor_predictions(annotations : List[np.ndarray], offset : T
     }
 
     tensor_predictions = TensorPredictions().load(tensor_predictions_data)
-    tensor_predictions.image = torch.tensor(image).permute(2, 1, 0)
+    tensor_predictions.image = image
     return tensor_predictions
 
 def create_mosaic(ims : List[np.ndarray], spacing : int = 100, labels : Optional[List[str]]=None):
@@ -122,26 +141,9 @@ def create_mosaic(ims : List[np.ndarray], spacing : int = 100, labels : Optional
 
     return mosaic
 
-## STATICS
-
-MOSAIC_SPACING = 0
-MODEL = "model_snapshots/fb_tmp3_medium.pt"
-
-# ANNOTATED_IM_DIR = "dev/fb_yolo/insects"
-ANNOTATION_COCO = "dev/fb_yolo/insects/labels/val/instances_default.json"
-RAW_IM_DIR = "dev/fb_yolo/insects"
-
-
-THIS_DIR = os.path.dirname(__file__)
-
-OUR_ANNOT = os.path.join(THIS_DIR, "annotated_tiles")
-OUR_RAW = os.path.join(THIS_DIR, "raw_tiles")
-OUR_PRED = os.path.join(THIS_DIR, "pred_tiles")
-OUR_MOSAIC = os.path.join(THIS_DIR, "mosaic")
-
 if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = Predictor(MODEL, device=device, dtype=torch.float16)
+    model = Predictor(MODEL, cfg="dev/test/tmp.yaml", device=device, dtype=torch.float16)
 
     example_df = pd.read_csv(os.path.join(THIS_DIR, "clean_flatbug_datasets.csv"))
     with open(ANNOTATION_COCO, "r") as f:
@@ -161,23 +163,42 @@ if __name__ == "__main__":
 
     rois = {tp : [] for tp in ["annotation", "raw", "prediction"]}
 
+    def preprocess_one_roi(row):
+        _, row = row
+        im = cv2.imread(row.raw_file_path)
+
+        h, w = im.shape[0:2]
+
+        # Correct padding calculations
+        top = max(0, ROI_PADDING - row._example_y)
+        bottom = max(0, (row._example_y + ROI_SIZE + ROI_PADDING) - h)
+        left = max(0, ROI_PADDING - row._example_x)
+        right = max(0, (row._example_x + ROI_SIZE + ROI_PADDING) - w)
+
+        # Apply padding if needed
+        if left > 0 or top > 0 or right > 0 or bottom > 0:
+            im = cv2.copyMakeBorder(im, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+
+        # Calculate offsets (with original X/Y coordinates to map back)
+        offset = -(row._example_x - ROI_PADDING), -(row._example_y - ROI_PADDING)
+
+        # Extract ROI using correct indices
+        roi = im[
+            top + (row._example_y - ROI_PADDING) : top + (row._example_y + ROI_SIZE + ROI_PADDING),
+            left + (row._example_x - ROI_PADDING) : left + (row._example_x + ROI_SIZE + ROI_PADDING),
+            :
+        ]
+        roi = np.copy(roi, order="C")
+        roi_tensor = torch.tensor(roi).permute(2, 1, 0).clone(memory_format=torch.contiguous_format)
+
+        return roi, roi_tensor, offset
+
+    roi_offsets = process_map(preprocess_one_roi, example_df.iterrows(), desc="Reading images into RAM", leave=False, total=len(example_df))
+
     for i, row in tqdm(example_df.iterrows(), desc="Processing ROIs", leave=False, total=len(example_df)):
-        im_raw = cv2.imread(row.raw_file_path) # Remember color is BGR
-
-        h,w = im_raw.shape[0:2]
-
-        if w < 1000:
-            left = math.ceil((1000 - w ) / 2)
-            right = math.floor((1000 - w) / 2)
-            im_raw = cv2.copyMakeBorder(im_raw, 0, 0, left, right, cv2.BORDER_CONSTANT, value=(0,0,0))
-        else:
-            left, right = 0, 0
-            
-        offset = left - row._example_x, -row._example_y
-
-        roi_raw = im_raw[row._example_y: row._example_y + 1000, row._example_x : row._example_x + 1000, :]
-        roi_annot = annotations_to_tensor_predictions(row.annotations, offset, roi_raw, "").plot(confidence=False, contour_color=(34, 139, 34)) # Green contours
-        roi_pred = model.pyramid_predictions(torch.tensor(roi_raw).permute(2, 1, 0).to(device), im_raw).plot(confidence=False, contour_color=(178, 34, 34)) # Red contours
+        roi_raw, roi_raw_tensor, offset = roi_offsets[i] 
+        roi_annot : np.ndarray = annotations_to_tensor_predictions(row.annotations, offset, roi_raw_tensor, "").json_data
+        roi_pred : np.ndarray = model.pyramid_predictions(roi_raw_tensor.to(device), example_df.raw_file_path, scale_increment=1/2).json_data
 
         rois["raw"].append(roi_raw)
         rois["annotation"].append(roi_annot)
@@ -188,12 +209,33 @@ if __name__ == "__main__":
         roi_raw_path = os.path.join(OUR_RAW, f"{row.short_name}.jpg")
         roi_annot_path = os.path.join(OUR_ANNOT, f"{row.short_name}.jpg")
         roi_pred_path = os.path.join(OUR_PRED, f"{row.short_name}.jpg")
+        
 
-        cv2.imwrite(roi_raw_path, rois["raw"][i])
-        cv2.imwrite(roi_annot_path, rois["annotation"][i])
-        cv2.imwrite(roi_pred_path, rois["prediction"][i])
+        roi_raw = rois["raw"][i]
+        roi_raw_tensor = torch.tensor(roi_raw).permute(2, 1, 0)
+        
+        roi_annot = TensorPredictions().load(rois["annotation"][i])
+        roi_annot.image = roi_raw_tensor
+        roi_annot = roi_annot.plot(confidence=False, contour_color=(34, 139, 34)) # Green contours
+        roi_annot = np.transpose(roi_annot, (1, 0, 2))
 
-    process_map(save_rois, range(len(example_df)), tqdm_class=tqdm, desc="Saving ROIs", leave=False)
+        roi_pred = TensorPredictions().load(rois["prediction"][i])
+        roi_pred.image = roi_raw_tensor
+        roi_pred = roi_pred.plot(confidence=False, contour_color=(178, 34, 34)) # Red contours
+        roi_pred = np.transpose(roi_pred, (1, 0, 2))
+
+        roi_raw = roi_raw[ROI_PADDING:-ROI_PADDING, ROI_PADDING:-ROI_PADDING, :]
+        roi_annot = roi_annot[ROI_PADDING:-ROI_PADDING, ROI_PADDING:-ROI_PADDING, :]
+        roi_pred = roi_pred[ROI_PADDING:-ROI_PADDING, ROI_PADDING:-ROI_PADDING, :]
+
+        cv2.imwrite(roi_raw_path, roi_raw)
+        cv2.imwrite(roi_annot_path, roi_annot)
+        cv2.imwrite(roi_pred_path, roi_pred)
+
+        return roi_raw, roi_annot, roi_pred
+
+    rois_proc = process_map(save_rois, range(len(example_df)), tqdm_class=tqdm, desc="Saving ROIs", leave=False, total=len(example_df))
+    rois = {tp : ims for tp, ims in zip(["raw", "annotation", "prediction"], zip(*rois_proc))}
 
     for tp, ims in tqdm(rois.items(), desc="Creating mosaics", leave=False):
         mosaic = create_mosaic(ims, MOSAIC_SPACING, labels=example_df.short_name.tolist())
