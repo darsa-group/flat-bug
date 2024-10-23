@@ -20,9 +20,9 @@ from flat_bug.coco_utils import annotations_to_numpy, split_annotations
 ## STATICS
 
 ROI_SIZE = 1000
-ROI_PADDING = 100
+ROI_PADDING = 500
 MOSAIC_SPACING = 0
-MODEL = "model_snapshots/fb_tmp_large.pt"
+MODEL = "model_snapshots/fb_large_2024-10-18_best.pt"
 
 # ANNOTATED_IM_DIR = "dev/fb_yolo/insects"
 ANNOTATION_COCO = "dev/fb_yolo/insects/labels/val/instances_default.json"
@@ -198,7 +198,7 @@ if __name__ == "__main__":
     for i, row in tqdm(example_df.iterrows(), desc="Processing ROIs", leave=False, total=len(example_df)):
         roi_raw, roi_raw_tensor, offset = roi_offsets[i] 
         roi_annot : np.ndarray = annotations_to_tensor_predictions(row.annotations, offset, roi_raw_tensor, "").json_data
-        roi_pred : np.ndarray = model.pyramid_predictions(roi_raw_tensor.to(device), example_df.raw_file_path, scale_increment=1/2).json_data
+        roi_pred : np.ndarray = model.pyramid_predictions(roi_raw_tensor.to(device), example_df.raw_file_path).json_data
 
         rois["raw"].append(roi_raw)
         rois["annotation"].append(roi_annot)
@@ -239,7 +239,7 @@ if __name__ == "__main__":
 
     for tp, ims in tqdm(rois.items(), desc="Creating mosaics", leave=False):
         mosaic = create_mosaic(ims, MOSAIC_SPACING, labels=example_df.short_name.tolist())
-        cv2.imwrite(os.path.join(OUR_MOSAIC, f"{tp}.jpg"), mosaic)
+        cv2.imwrite(os.path.join(OUR_MOSAIC, f"{tp}.jpg"), mosaic, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
 
     """
     cd annotated_tiles && for i in *.jpg; do magick $i -fill '#0008' -draw 'rectangle  0,100,1000,0' -fill white   -font DejaVu-Sans-Mono-Book -pointsize 64  -annotate +40+70 "$(echo $i| cut -f 1 -d .)" $i; done && magick -size 1000x1000 canvas:white AAA.jpg && montage *.jpg -tile 4x6 -geometry 500x500+10+10 tiles.jpeg && cd ..
