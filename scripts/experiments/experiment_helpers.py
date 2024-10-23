@@ -593,19 +593,18 @@ class ExperimentRunner:
     @property
     def slurm_job_ids(self : Self) -> List[str]:
         if not self.slurm:
-            return [""]
+            return []
         else:
             return [job.job_id for job in self.slurm_jobs]
     
     @property
-    def slurm_job_id(self : Self) -> str:
-        if not self.slurm:
-            return self.slurm_job_ids[0]
-        else:
-            ids = list(set([re.search(r"^(\d+)", job.job_id).group(1) for job in self.slurm_jobs]))
-            if len(ids) != 1:
-                raise ValueError(f"Multiple job IDs found: {ids}")
-            return ids[0]
+    def slurm_job_id(self : Self) -> Optional[str]:
+        ids = list(set([re.search(r"^(\d+)", job.job_id).group(1) for job in self.slurm_jobs]))
+        if len(ids) == 0:
+            return None
+        elif len(ids) > 1:
+            raise ValueError(f"Multiple job IDs found: {ids}")
+        return ids[0]
 
     def run(self : Self) -> Self:
         # Check that the consumer threads and slurm jobs are empty
