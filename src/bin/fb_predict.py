@@ -54,7 +54,7 @@ def cli_args():
     args = args_parse.parse_args()
     return vars(args)
 
-def main(
+def predict(
         input_dir : str,
         output_dir : str,
         model_weights : str,
@@ -296,5 +296,8 @@ def main(
     if isERDA:
         io.stop()
 
+def main():
+    predict(**cli_args())
+
 if __name__ == "__main__":
-    main(**cli_args())
+    main()
