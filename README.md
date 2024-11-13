@@ -6,25 +6,25 @@ The goal of `flat-bug` is to provide a single unified model for detection and se
 
 **<center><ins>Insert Preprint/Paper Reference Here</ins></center>**
 
-## Installation
+### Installation
 The latest version of `flat-bug` can be installed with any of your favourite package managers such as:
-### `pip`
+#### `pip`
 ```py
 python -m pip install flat-bug
 ```
-### `anaconda`
+#### `anaconda`
 ```py
 conda install flat-bug -c conda-forge
 ```
-### `mamba`
+#### `mamba`
 ```py
 mamba install flat-bug -c conda-forge
 ```
-### `micromamba`
+#### `micromamba`
 ```py
 micromamba install flat-bug -c conda-forge
 ```
-### Source/development
+#### Source/development
 Or a development version can be installed from source by cloning this repository:
 ```sh
 git clone git@github.com:darsa-group/flat-bug.git
@@ -35,14 +35,14 @@ pip install -e .
 
 However, as with other packages built with `PyTorch` it is best to ensure that `torch` is installed separately. See [https://pytorch.org/](https://pytorch.org/) for details. We recommend using `torch>=2.3`.
 
-## Usage
-### CLI
+### Usage
+#### CLI
 We provide a number of [CLI scripts[INSERT LINK]](INSERT_LINK) with `flat-bug`. The main one of interest is `fb_predict`, which can be used to run inference on images or videos:
 ```sh
 fb_predict -i <DIR_WITH_IMGS> -o <OUTPUT_DIR> [-w <WEIGHT_PATH>] ...
 ```
 
-### Python
+#### Python
 `flat-bug` also has a very user-friendly Python API, which can be used with only a few lines:
 ```py
 from flat_bug.predictor import Predictor
@@ -95,15 +95,15 @@ output.save(
 )
 ```
 
-## Tutorials
+### Tutorials
 We provide a number of tutorials on general and advanced usage, training, deployment and hyperparameters of `flat-bug` in [examples/tutorials](examples/tutorials) or with Google Colab (see our [docs[INSERT LINK]](INSERT_LINK)).
 
-## Archive
-### Models
+### Archive
+#### Models
 
-### Data
+#### Data
 
-## Contributions
-### Code
+### Contributions
+#### Code
 
-### Data
+#### Data
