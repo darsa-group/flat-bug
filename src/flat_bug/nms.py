@@ -1,10 +1,12 @@
-from typing import Union, List, Tuple, Optional, Any, Callable
+from typing import Any, Callable, List, Optional, Tuple, Union
 
-import torch, torchvision
 import numpy as np
+import torch
+import torchvision
 from shapely.geometry import Polygon
 
 from flat_bug import logger
+
 
 def iou_boxes(
         rectangles : torch.Tensor,

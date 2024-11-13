@@ -1,15 +1,16 @@
+import os
+import re
+import shutil
+import tempfile
 import unittest
-
-import os, shutil, re, tempfile
 from glob import glob
 
-import torch
 import numpy as np
-from torchvision.io import read_image
 import torch
+from torchvision.io import read_image
 
 from flat_bug import logger
-from flat_bug.predictor import TensorPredictions, Predictor
+from flat_bug.predictor import Predictor, TensorPredictions
 from flat_bug.tests.remote_lfs_fallback import check_file_with_remote_fallback
 
 ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")

@@ -1,42 +1,35 @@
 #!/usr/bin/env python3
 
 import argparse
-import os
 import glob
+import os
 import re
+from typing import List, Optional
 
-from typing import Optional, List
-
+import torch
 from tqdm import tqdm
 
 from flat_bug import logger, set_log_level
 from flat_bug.coco_utils import fb_to_coco
+from flat_bug.config import DEFAULT_CFG, read_cfg
 from flat_bug.predictor import Predictor
-from flat_bug.config import read_cfg, DEFAULT_CFG
-
-import torch
 
 
 def cli_args():
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
-    args_parse.add_argument("-i", "--input-data", type=str, dest="input_dir", required=True,
-                            help="A directory that contains subdirectories for each COCO sub-datasets."
-                                 "Each sub-dataset contains a single json file named 'instances_default.json' "
-                                 "and the associated images"
-                            )
+    args_parse.add_argument("-i", "--input-data", type=str, dest="input", required=True,
+                            help="A image file or a directory of image files")
     args_parse.add_argument("-o", "--output-dir", type=str, dest="output_dir", required=True,
                         help="The result directory")
-    args_parse.add_argument("-w", "--model-weights", type=str, dest="model_weights", required=True,
+    args_parse.add_argument("-w", "--model-weights", type=str, dest="model_weights", default="flat_bug_L.pt",
                             help="The .pt file")
     args_parse.add_argument("-p", "--input-pattern", type=str, dest="input_pattern", default=r"[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$",
                             help=r"The pattern to match the images. Default is '[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$' i.e. jpg/jpeg/png case-insensitive.")
     args_parse.add_argument("-n", "--max-images", type=int, dest="max_images", default=None,
                             help="Maximum number of images to process. Default is None. Truncates in alphabetical order.")
     args_parse.add_argument("-s", "--scale-before", type=float, dest="scale_before", default=1.0,
-                            help="Downscale the image before detection, but crops from the original image."
-                                 "Note that the COCO dataset dimentions match the scaled image" # fixme, is that true?!
-                            )
+                            help="Downscale the image before detection, but crops from the original image.")
     args_parse.add_argument("-g", "--gpu", type=str, default="cuda:0", help="Which device to use for inference. Default is 'cuda:0', i.e. the first GPU.")
     args_parse.add_argument("-d", "--dtype", type=str, default="float16", help="Which dtype to use for inference. Default is 'float16'.")
     args_parse.add_argument("-f", "--fast", action="store_true", help="Use fast mode.")
@@ -55,7 +48,7 @@ def cli_args():
     return vars(args)
 
 def predict(
-        input_dir : str,
+        input : str,
         output_dir : str,
         model_weights : str,
         input_pattern : str=r"[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$",
@@ -77,17 +70,16 @@ def predict(
     ):
     logger.debug("OPTIONS:", locals())
 
-    isERDA = input_dir.startswith("erda://")
+    isERDA = input.startswith("erda://")
     if isERDA:
         from pyremotedata.implicit_mount import IOHandler, RemotePathIterator
         logger.debug("Assuming directory exists on ERDA")
     else:
-        _, ext = os.path.splitext(input_dir)
+        _, ext = os.path.splitext(input)
         isVideo = ext in [".mp4", ".avi"]
         if not isVideo:
-            if not os.path.isdir(input_dir):
-                raise FileNotFoundError(f"Directory '{input_dir}' not found.")
-    assert os.path.isfile(model_weights)
+            if not os.path.exists(input):
+                raise FileNotFoundError(f"Directory '{input}' not found.")
 
     device = gpu
     if not torch.cuda.is_available() and "cuda" in device:
@@ -153,12 +145,12 @@ def predict(
         "categories": [categories]  # Your category
     }
     if isERDA:
-        input_dir = input_dir.removeprefix("erda://")
+        input = input.removeprefix("erda://")
         io = IOHandler(verbose = False, clean = False)
         io.start()
-        io.cd(input_dir )
+        io.cd(input)
         # Check for local file index
-        local_file_index = os.path.join(os.getcwd(), output_dir, f"{input_dir.replace('/', '_')}_file_index.txt")
+        local_file_index = os.path.join(os.getcwd(), output_dir, f"{input.replace('/', '_')}_file_index.txt")
         if os.path.isfile(local_file_index):
             with open(local_file_index, "r") as file:
                 file_index = [line.strip() for line in file.readlines()]
@@ -178,11 +170,12 @@ def predict(
             pattern = input_pattern # r"^[^\/\.]+(\.jpg$|\.png$|\.jpeg$|\.JPG$|\.PNG$|\.JPEG)$", # TODO: Currently as a hack, we skip files in subdirectories i.e. files with a '/' in their name, this is not ideal, as they are still read from the remote server
         )
     elif isVideo:
-        import cv2
         import tempfile
+
+        import cv2
         tmp_frame_dir = tempfile.TemporaryDirectory()
-        video_output_path = os.path.join(output_dir, os.path.splitext(os.path.basename(input_dir))[0] + ".mp4")
-        cap = cv2.VideoCapture(input_dir)
+        video_output_path = os.path.join(output_dir, os.path.splitext(os.path.basename(input))[0] + ".mp4")
+        cap = cv2.VideoCapture(input)
         fps = cap.get(cv2.CAP_PROP_FPS) 
         frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = frame_count / fps
@@ -209,7 +202,10 @@ def predict(
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             video_writer = cv2.VideoWriter(video_output_path, fourcc, fps, video_shape)
     else:
-        file_iter = sorted([f for f in glob.glob(os.path.join(input_dir, "**"), recursive=True) if re.search(input_pattern, f)])
+        if os.path.isfile(input):
+            file_iter = [input]
+        else:
+            file_iter = sorted([f for f in glob.glob(os.path.join(input, "**"), recursive=True) if re.search(input_pattern, f)])
     if max_images is not None:
         if isERDA:
             file_iter.subset(list(range(min(max_images, len(file_iter)))))

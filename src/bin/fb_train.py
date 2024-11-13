@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 import argparse
 import os.path
+from pathlib import Path
+
+import ultralytics.data.utils as ultralytics_data_utils
+import ultralytics.utils as ultralytics_utils
 import yaml
 
-from flat_bug.trainers import FlatBugSegmentationTrainer
 from flat_bug import logger
+from flat_bug.trainers import FlatBugSegmentationTrainer
 
-import ultralytics.data.utils as ultralytics_data_utils 
-import ultralytics.utils as ultralytics_utils
-from pathlib import Path
 
 # fixme, resume should continue on the same "run folder"
 def main():

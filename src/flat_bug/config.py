@@ -1,6 +1,8 @@
-import os, yaml
+import os
 from collections import OrderedDict
-from typing import List, Iterable,Union, Any
+from typing import Any, Iterable, List, Union
+
+import yaml
 
 from flat_bug import logger
 

@@ -1,20 +1,18 @@
 import math
 import random
-
-from typing import Self, List, Tuple, Dict, Union, Optional
+from typing import Dict, List, Optional, Self, Tuple, Union
 
 import cv2
 import numpy as np
 import torch
-
 from shapely.geometry import Polygon, box
 from shapely.validation import make_valid
-
 from ultralytics.data.augment import RandomPerspective
 from ultralytics.utils.instance import Instances
 
 from flat_bug import logger
 from flat_bug.config import check_types
+
 
 ### From Ultralytics repository, remove clipping from `RandomPerspective` and add `apply_segments` function
 def segment2box(

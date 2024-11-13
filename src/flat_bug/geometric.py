@@ -1,11 +1,13 @@
-from typing import Union, List, Tuple
+from typing import List, Tuple, Union
 
-import torch, torchvision
-import torch.nn.functional as F
-import numpy as np
 import cv2
+import numpy as np
+import torch
+import torch.nn.functional as F
+import torchvision
 
 from flat_bug import logger
+
 
 def intersect(
         rect1s : torch.Tensor, 

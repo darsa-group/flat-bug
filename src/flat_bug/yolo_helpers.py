@@ -1,12 +1,12 @@
-from typing import Union, List, Tuple, Optional
+from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
-
-from ultralytics.engine.results import Results, Masks
+from ultralytics.engine.results import Masks, Results
 
 from flat_bug.geometric import find_contours, resize_mask
-from flat_bug.nms import nms_boxes, fancy_nms, nms_masks, iou_boxes
+from flat_bug.nms import fancy_nms, iou_boxes, nms_boxes, nms_masks
+
 
 class ResultsWithTiles(Results):
     def __init__(self, tiles : List[int]=None, polygons=None, *args, **kwargs):

@@ -1,34 +1,36 @@
 import base64
-import os.path
+import json
+import math
+import os
 import pathlib
 import shutil
 import tempfile
-import json
-import math
+from queue import Queue
+from typing import Any, List, Optional, Self, Tuple, Union
 
-from typing import Union, List, Tuple, Optional, Any, Self
-import torch.types
-from torch._prims_common import DeviceLikeType
-
-import numpy as np
 import cv2
-from PIL import Image
-
+import numpy as np
 import torch
+import torch.types
 import torchvision
-from torchvision.io import read_image, ImageReadMode
 import torchvision.transforms as transforms
-
+from PIL import Image
+from torch._prims_common import DeviceLikeType
+from torchvision.io import ImageReadMode, read_image
 from ultralytics import YOLO
 from ultralytics.engine.results import Results
 
 # from flat_bug.yolo_helpers import *
-from flat_bug import logger
-from flat_bug.yolo_helpers import ResultsWithTiles, stack_masks, offset_box, resize_mask, postprocess, merge_tile_results
-from flat_bug.geometric import find_contours, contours_to_masks, simplify_contour, create_contour_mask, scale_contour, chw2hwc_uint8
-from flat_bug.nms import nms_masks, nms_polygons, detect_duplicate_boxes
-from flat_bug.config import read_cfg, DEFAULT_CFG, CFG_PARAMS
+from flat_bug import download_from_repository, logger
 from flat_bug.augmentations import InpaintPad
+from flat_bug.config import CFG_PARAMS, DEFAULT_CFG, read_cfg
+from flat_bug.geometric import (chw2hwc_uint8, contours_to_masks,
+                                create_contour_mask, find_contours,
+                                scale_contour, simplify_contour)
+from flat_bug.nms import detect_duplicate_boxes, nms_masks, nms_polygons
+from flat_bug.yolo_helpers import (ResultsWithTiles, merge_tile_results,
+                                   offset_box, postprocess, resize_mask,
+                                   stack_masks)
 
 
 # Class for containing the results from a single _detect_instances call - This should probably not be its own class, but just a TensorPredictions object with a single element instead, but this would require altering the TensorPredictions._combine_predictions function to handle a single element differently or pass a flag or something
@@ -1013,6 +1015,7 @@ def _process_batch(
             device : Optional[DeviceLikeType] = None,
             model : torch.nn.Module = None,
             time : bool = False,
+            callback : str = "__call__",
             **kwargs : Any # Swallow any extra arguments
     ) -> Tuple[int, torch.Tensor, List]:
     if time:
@@ -1035,7 +1038,7 @@ def _process_batch(
         end_fetch_event.record(current_device_stream)
     # Forward pass the model on the batch tiles
     with torch.no_grad():
-        batch_outputs = model(batch)
+        batch_outputs = getattr(model, callback)(batch)
     if time:
         # Record end of forward
         end_forward_event.record(current_device_stream)
@@ -1155,6 +1158,11 @@ class Predictor(object):
         self._dtype = dtype
 
         if isinstance(model, str):
+            if not os.path.exists(model):
+                success = download_from_repository(os.path.join("models", model), model, False)
+                if not success:
+                    raise FileNotFoundError(f"No such model or file: '{model}'")
+            
             yolo = YOLO(model, "segment", verbose=True)
             pred = yolo._smart_load("predictor")
             class dict2attr:
@@ -1200,6 +1208,10 @@ class Predictor(object):
             else:
                 raise ValueError(f"Unknown hyperparameter: {k}")
         return self
+    
+    def _get_avail_model(self):
+        # TODO: Implement for multi-gpu
+        pass
     
     def _detect_instances(
             self,
@@ -1489,9 +1501,9 @@ class Predictor(object):
         scales = []
 
         if single_scale:
-            scales.append(min(1, 1024 / min_dim))
+            scales.append(min(1, self.TILE_SIZE / min_dim))
         else:
-            s = 1024 / max_dim
+            s = self.TILE_SIZE / max_dim
 
             if s >= 1:
                 scales.append(s)

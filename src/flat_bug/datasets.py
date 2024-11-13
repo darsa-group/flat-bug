@@ -1,26 +1,28 @@
-import os, stat, re, tempfile
-
+import os
+import re
+import stat
+import tempfile
 from pathlib import Path
+from typing import Dict, List, Optional, Self, Tuple, Union
 
 import cv2
 import numpy as np
-
 from PIL import Image
-
-from typing import Union, List, Tuple, Dict, Optional, Self
-
-from ultralytics.utils import IterableSimpleNamespace
 from ultralytics.data import YOLODataset
+from ultralytics.data.augment import Compose, Format, RandomFlip, RandomHSV
 from ultralytics.data.dataset import LOGGER
-from ultralytics.data.augment import RandomFlip, RandomHSV, Compose, Format
-from flat_bug.augmentations import CenterCrop, RandomCrop, FlatBugRandomPerspective, RandomColorInv, FixInstances
+from ultralytics.utils import IterableSimpleNamespace
+
+from flat_bug.augmentations import (CenterCrop, FixInstances,
+                                    FlatBugRandomPerspective, RandomColorInv,
+                                    RandomCrop)
 
 HELP_URL = 'See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
 IMG_FORMATS = 'bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 'pfm'  # include image suffixes
 
 def get_area(image_path):
-    image = Image.open(image_path)
-    return image.size[0] * image.size[1]
+    with Image.open(image_path) as image:
+        return image.size[0] * image.size[1]
 
 def calculate_image_weights(image_paths : List[str]) -> List[float]:
     """
