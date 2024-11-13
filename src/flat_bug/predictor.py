@@ -5,7 +5,6 @@ import os
 import pathlib
 import shutil
 import tempfile
-from queue import Queue
 from typing import Any, List, Optional, Self, Tuple, Union
 
 import cv2
@@ -933,7 +932,7 @@ class TensorPredictions:
             mask_crops (`bool`, optional): Whether to mask the crops. Defaults to False.
             identifier (`str | None`, optional): An identifier for the serialized data. Defaults to None.
             basename (`str | None`, optional): The base name of the image. Defaults to None. 
-                If None, the base name is extracted from the image path.
+                If None, the base name is extracted from the image path, which must be set in this case.
         
         Returns:
             `str`: The path to the directory containing the serialized data - the crops and overview image(s) are also saved here by default. \\
@@ -943,6 +942,8 @@ class TensorPredictions:
             raise ValueError(f"Output directory {output_directory} does not exist")
 
         if basename is None:
+            if self.image_path is None:
+                raise ValueError(f"Unable to save prediction with unknown source file, when `basename` is not supplied.")
             # Get the base name of the image
             basename = os.path.splitext(os.path.basename(self.image_path))[0]
         # Construct the prediction directory path
@@ -1135,7 +1136,7 @@ class Predictor(object):
 
     def __init__(
             self, 
-            model : Union[str, pathlib.Path], 
+            model : Union[str, pathlib.Path]="flat_bug_M.pt", 
             cfg : Optional[Union[dict, str, os.PathLike]]=None, 
             device : Union[str, torch.device, int, List[Union[str, torch.device, int]]]=torch.device("cpu"), 
             dtype : Union[torch.types._dtype, str]=torch.float32
@@ -1453,7 +1454,7 @@ class Predictor(object):
                 apply_exif_orientation=True
             ).to(self._device)
         elif isinstance(image, torch.Tensor):
-            assert path is not None, ValueError("Path must be provided if image is a tensor")
+            logger.info("Input image source file not specified for prediction, saving the prediction will require specifying the source file basename.")
         else:
             raise TypeError(f"Unknown type for image: {type(image)}, expected str or torch.Tensor")
 
@@ -1557,3 +1558,31 @@ class Predictor(object):
             )
 
         return all_preds
+
+    def __call__(
+            self, 
+            image : Union[torch.Tensor, str], 
+            path : Optional[str]=None, 
+            scale_increment : float=2/3, 
+            scale_before : Union[float, int]=1, 
+            single_scale : bool=False
+        ) -> TensorPredictions:
+        """
+        Performs inference on an image at multiple scales and returns the predictions.
+        
+        Args:
+            image (Union[torch.Tensor, str]): The image to run inference on. If a string is given, the image is read from the path.
+                If it is a `torch.Tensor`, the path must be provided. \\
+                We assume that floating point images are in the range [0, 1] and integer images are in the range [0, integer_type_max]. \\
+                (see https://github.com/pytorch/vision/blob/6d7851bd5e2bedc294e40e90532f0e375fcfee04/torchvision/transforms/_functional_tensor.py#L66)
+            path (Optional[str], optional): The path to the image. Defaults to None. Must be provided if `image` is a `torch.Tensor`.
+            scale_increment (float, optional): The scale increment to use when resizing the image. Defaults to 2/3.
+            scale_before (Union[float, int], optional): The scale to apply before running inference. Defaults to 1.
+            single_scale (bool, optional): Whether to run inference on a single scale. Defaults to False.
+
+        Returns:
+            TensorPredictions: The predictions for the image.
+        """
+        params = locals()
+        params.pop("self", None)
+        return self.pyramid_predictions(**params)
