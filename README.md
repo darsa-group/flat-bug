@@ -1,4 +1,6 @@
-<img src="prediction.jpg" style="width: 50%; margin: 0 auto; display: block;">
+<p align="center">
+    <img src="prediction.jpg" style="width: 50%;">
+</p>
 
 `flat-bug` is partly a high-performance pyramid tiling inference wrapper for [`YOLOv8`](https://github.com/ultralytics/ultralytics) and partly a hybrid instance segmentation dataset of terrestrial arthropods accompanied by an appropriate training schedule for `YOLOv8` segmentation models, built on top of the original [`YOLOv8` training schedule](https://docs.ultralytics.com/modes/train/#why-choose-ultralytics-yolo-for-training). 
 
