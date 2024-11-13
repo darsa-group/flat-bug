@@ -1,21 +1,18 @@
-import math
-import os
 import glob
 import json
+import math
+import os
+from typing import List, Optional, Tuple
 
-from typing import List, Tuple, Optional
-
+import cv2
+import numpy as np
+import pandas as pd
+import torch
 from tqdm import tqdm
 from tqdm.contrib.concurrent import process_map
 
-import pandas as pd
-import numpy as np
-import cv2
-
-import torch
-
-from flat_bug.predictor import Predictor, TensorPredictions
 from flat_bug.coco_utils import annotations_to_numpy, split_annotations
+from flat_bug.predictor import Predictor, TensorPredictions
 
 ## STATICS
 

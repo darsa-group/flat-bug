@@ -1,14 +1,22 @@
-import os, sys, subprocess, time, argparse
-import glob, tempfile, re
-import yaml, io, zipfile
-
+import argparse
+import glob
+import io
+import os
+import queue
+import re
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import zipfile
 from argparse import Namespace
-from typing import Self, Optional, Union, List, Tuple, Dict, Any, Callable, Iterable, IO
+from typing import (IO, Any, Callable, Dict, Iterable, List, Optional, Self,
+                    Tuple, Union)
 
-import queue, threading, submitit
-
+import submitit
 import torch
-
+import yaml
 from submitit.slurm.slurm import _get_default_parameters as _default_submitit_slurm_params
 
 DATA_DIR = "<UNSET>"
