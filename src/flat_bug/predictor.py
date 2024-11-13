@@ -1149,6 +1149,7 @@ class Predictor(object):
         self._multi_gpu = isinstance(device, (list, tuple))
         self._devices = [torch.device(device)] if not self._multi_gpu else [torch.device(d) for d in device]
         if len(self._devices) > 1:
+            # TODO: Implement  single-producer multi-consumer model for _detect_instances in the multi-gpu case
             raise NotImplementedError("Multi-GPU is not implemented yet")
         self._device = self._devices[0]
         if isinstance(dtype, str):
@@ -1208,10 +1209,6 @@ class Predictor(object):
             else:
                 raise ValueError(f"Unknown hyperparameter: {k}")
         return self
-    
-    def _get_avail_model(self):
-        # TODO: Implement for multi-gpu
-        pass
     
     def _detect_instances(
             self,
