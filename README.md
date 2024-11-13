@@ -41,7 +41,7 @@ However, as with other packages built with `PyTorch` it is best to ensure that `
 ### CLI
 We provide a number of [CLI scripts[INSERT LINK]](INSERT_LINK) with `flat-bug`. The main one of interest is `fb_predict`, which can be used to run inference on images or videos:
 ```sh
-fb_predict -i <DIR_WITH_IMGS> -w <WEIGHT_PATH> -o <OUTPUT_DIR> ...
+fb_predict -i <DIR_WITH_IMGS> -o <OUTPUT_DIR> [-w <WEIGHT_PATH>] ...
 ```
 
 ### Python
