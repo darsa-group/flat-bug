@@ -50,34 +50,50 @@ fb_predict -i <DIR_WITH_IMGS> -w <WEIGHT_PATH> -o <OUTPUT_DIR> ...
 from flat_bug.predictor import Predictor
 
 # Load the model
-model = Predictor(model="<PATH_TO_WEIGHTS>", device="cuda:0")
+model = Predictor(model = "flat_bug_L.pt", device="cuda:0", dtype="float16")
 
 # Run inference on an image
 output = model("test_image.jpg")
 
 # Save a visualization of the predictions
-output.plot("test_result.jpg")
-## or plot with matplotlib
+output.plot(outpath="test_result.jpg")
+
+# # or plot with matplotlib
 # from matplotlib import pyplot as plt
 # plt.imshow(output.plot())
+# plt.axis("off")
+# plt.show()
 
 # Fetch the localized instances and segmentation masks
 # as PyTorch tensors for further analysis
 crops = output.crops
 masks = output.crop_masks
-# classification = classification_model(crops)
+masked_crops = [c * m for c, m in zip(crops, masks)]
+
+## Classify the crops
+# classification = classification_model(<crops | masked_crops>)
+
+# # or plot with matplotlib
+# fig, axs = plt.subplots(2, 6, figsize = (15, 5))
+# for i, ax in enumerate(axs.flatten()):
+#     ax.imshow(masked_crops[i].cpu().permute(1, 2, 0))
+#     ax.axis("off")
+# plt.show()
 
 # Inspect the results as a native Python dictionary
 results = output.json_data
 
 # Save the results
+import os
+
+os.makedirs("test_output")
 output.save(
-    output_dir="test_output", # Mandatory
+    output_directory="test_output", # Mandatory
     overview=True, # optional
     crops=True, # optional
     metadata=True, # optional
     mask_crops=True, # optional
-    ... # optional
+    # ... # optional
 )
 ```
 
