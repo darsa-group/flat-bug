@@ -189,3 +189,5 @@ install_digital_research_alliance_canada.sh
 pyvenv.cfg
 *.whl
 *.gz
+
+!/prediction.jpg
