@@ -414,6 +414,8 @@ def postprocess(
             elif nms == 3:
                 masks = process_mask(protos[min(i, len(protos)-1)], pred[:, -32:], boxes, imgs[i].shape[-2:], False) # pred[:, -32:] - not sure this is correct for more than one class
                 nms_ind = nms_masks(masks, pred[:, 4], iou_threshold=iou_threshold, return_indices=True, boxes=boxes / 4, group_first=False)
+                # group_first is True, because nms_masks has vectorized IoU, 
+                # meaning that the overhead of doing connected-component clustering is larger than the time-loss from redundant IoU calculations
                 masks = masks[nms_ind]
             else:
                 raise ValueError(f"nms must be 0, 1, 2 or 3, not {nms}")
