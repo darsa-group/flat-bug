@@ -1,15 +1,16 @@
 #!/usr/bin/env python
 
+import argparse
 import glob
-import json
-import os
-from ultralytics.data.converter import convert_coco
 import hashlib
+import json
+import logging
+import os
 import shutil
 import tempfile
+
 import yaml
-import argparse
-import logging
+from ultralytics.data.converter import convert_coco
 
 
 def collapse_in_parent_dir(child):

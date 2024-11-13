@@ -297,7 +297,7 @@ if __name__ == "__main__":
     arg_parse.add_argument("--weight_pattern", dest="weight_pattern", help="The pattern to use for selecting the weight files. Defaults to 'best' when all_weights is not set, otherwise all files are selected.", type=str)
     arg_parse.add_argument("--config", dest="config", help="The path to the config file.", type=str, required=False)
     arg_parse.add_argument("--all_weights", dest="all_weights", help="If set, all weights in the directory will be evaluated.", action="store_true")
-    arg_parse.add_argument("--device", dest="device", help="The device to use for inference. If not set, the default device is used.", type=str, nargs="+", default="0")
+    arg_parse.add_argument("--device", "--devices", dest="device", help="The device to use for inference. If not set, the default device is used.", type=str, nargs="+", default="0")
     arg_parse.add_argument("--dry_run", dest="dry_run", help="If set, the evaluation will not be run.", action="store_true")
     arg_parse.add_argument("--save_all", dest="save_all", help="If set, all results will be saved.", action="store_true")
     arg_parse.add_argument("--ignore_existing", dest="ignore_existing", help="If set, existing result directories will be ignored.", action="store_true")

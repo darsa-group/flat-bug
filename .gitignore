@@ -70,6 +70,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/source/README_sphinx.md
 
 # PyBuilder
 .pybuilder/
@@ -189,3 +190,5 @@ install_digital_research_alliance_canada.sh
 pyvenv.cfg
 *.whl
 *.gz
+
+!/prediction.jpg

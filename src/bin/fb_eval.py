@@ -1,16 +1,16 @@
 
-import os
-import json
 import argparse
-
+import json
+import os
 from glob import glob
 
 from tqdm import tqdm
 
 from flat_bug import logger
-from flat_bug.coco_utils import fb_to_coco, split_annotations, filter_coco
+from flat_bug.coco_utils import fb_to_coco, filter_coco, split_annotations
+from flat_bug.config import DEFAULT_CFG, read_cfg
 from flat_bug.eval_utils import compare_groups
-from flat_bug.config import read_cfg, DEFAULT_CFG
+
 
 def load_json(file : str):
     with open(file, "r") as f:
@@ -131,6 +131,7 @@ def main():
 
     if args.combine:
         import pandas as pd
+
         # Add the basepath (without .csv) as a new column before concatenating
         def read_and_add_new_column(f):
             df = pd.read_csv(f, sep=";")

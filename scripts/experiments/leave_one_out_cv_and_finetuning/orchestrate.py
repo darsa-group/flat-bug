@@ -49,6 +49,8 @@ if __name__ == "__main__":
     main_experiment_runner.run().complete()
 
     # Then run the fine-tuning training 
-    extra.update({"dependency" : f'afterok:{main_experiment_runner.slurm_job_id}'})
+    main_experiment_jobid = main_experiment_runner.slurm_job_id
+    if main_experiment_jobid:
+        extra.update({"dependency" : f'afterok:{main_experiment_jobid}'})
     finetune_experiment_runner = ExperimentRunner(inputs=fine_tuning_configs.values(), devices=args.devices, attempt_resume=args.try_resume, slurm=args.slurm, slurm_params=read_slurm_params(**extra), dry_run=args.dry_run)
     finetune_experiment_runner.run().complete()

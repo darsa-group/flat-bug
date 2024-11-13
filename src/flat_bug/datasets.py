@@ -1,34 +1,41 @@
-import os, stat, re, tempfile
-
+import os
+import re
+import stat
+import tempfile
 from pathlib import Path
+from typing import Dict, List, Optional, Self, Tuple, Union
 
 import cv2
 import numpy as np
-
-
-from typing import Union, List, Tuple, Dict, Optional, Self
-
-from ultralytics.utils import IterableSimpleNamespace
+from PIL import Image
 from ultralytics.data import YOLODataset
+from ultralytics.data.augment import Compose, Format, RandomFlip, RandomHSV
 from ultralytics.data.dataset import LOGGER
-from ultralytics.data.augment import RandomFlip, RandomHSV, Compose, Format
-from flat_bug.augmentations import CenterCrop, RandomCrop, MyRandomPerspective, RandomColorInv, FixInstances
+from ultralytics.utils import IterableSimpleNamespace
+
+from flat_bug.augmentations import (CenterCrop, FixInstances,
+                                    FlatBugRandomPerspective, RandomColorInv,
+                                    RandomCrop)
 
 HELP_URL = 'See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
 IMG_FORMATS = 'bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 'pfm'  # include image suffixes
 
+def get_area(image_path):
+    with Image.open(image_path) as image:
+        return image.size[0] * image.size[1]
+
 def calculate_image_weights(image_paths : List[str]) -> List[float]:
     """
-    Calculate normalized weights for each image based on the sqrt of the file sizes,
+    Calculate normalized weights for each image based on the file sizes,
     normalized by the minimum file size, so that the values are between 1 and infinity.
     
     Args:
         image_paths (list of str): List of image file paths.
     
     Returns:
-        list of float: Sqrt-normalized weights for each image.
+        list of float: normalized weights for each image.
     """
-    file_sizes = [os.path.getsize(path) + 1 for path in image_paths]
+    file_sizes = [get_area(path) + 1 for path in image_paths]
     min_size = min(file_sizes)
     return [(size / min_size) for size in file_sizes]
 
@@ -88,7 +95,7 @@ def get_datasets(files : List[str]) -> Dict[str, List[str]]:
 
 
 def subset(
-        self : "MyYOLODataset", 
+        self : "FlatBugYOLODataset", 
         n : Optional[int]=None, 
         pattern : Optional[str]=None
     ):
@@ -114,18 +121,27 @@ def subset(
     self.im_files = [f for i, f in enumerate(self.im_files) if i in indices]
 
 def hook_get_labels_with_subset(
-        obj : "MyYOLODataset", 
+        obj : "FlatBugYOLODataset", 
         args : Dict
     ):
     if not isinstance(args, dict):
         raise ValueError("args must be a dictionary")
-    if not isinstance(obj, MyYOLODataset):
-        raise ValueError("obj must be an instance of MyYOLODataset")
+    if not isinstance(obj, FlatBugYOLODataset):
+        raise ValueError("obj must be an instance of FlatBugYOLODataset")
     def subset_then_get():
         subset(obj, **args)
         obj.get_labels = getattr(super(type(obj), obj), "get_labels")
         return obj.get_labels()
     obj.get_labels = subset_then_get
+
+class PrintNumInstances:
+    def __init__(self, title : str):
+        self.fmt = f'({"{num:>5}"}) ({"{imsize:^10}"}) | {title}'
+
+    def __call__(self, labels : Dict):
+        n = len(labels["instances"]) if "instances" in labels else labels["masks"].max().item()
+        print(self.fmt.format(num=n, imsize="x".join([str(d) for d in labels["img"].shape])))
+        return labels
 
 def train_augmentation_pipeline(
         hyperparameters : IterableSimpleNamespace, 
@@ -136,17 +152,15 @@ def train_augmentation_pipeline(
         use_keypoints : bool
     ) -> Compose:
     return Compose([
-        RandomCrop(imsize=int(image_size * 1.5)),
+        RandomCrop(imsize=int(image_size * 1.5)), # Crop to slightly larger than needed for training
+        FlatBugRandomPerspective(imgsz=int(image_size * 1.5), degrees=180, translate=0, scale=0), # Affine transformation at same size as above
+        CenterCrop(image_size), # Crop to needed size
         RandomHSV(hgain=hyperparameters.hsv_h, sgain=hyperparameters.hsv_s, vgain=hyperparameters.hsv_v),
         RandomColorInv(p=0.25),
         RandomFlip(direction="vertical", p=hyperparameters.flipud),
         RandomFlip(direction="horizontal", p=hyperparameters.fliplr),
-        MyRandomPerspective(imgsz=int(image_size * 1.5), degrees=180, translate=0, scale=0),
-        CenterCrop(image_size),
-        # MyAlbumentations(self.imgsz),
-        # LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False),
-        FixInstances(area_thr=0.99, max_targets=max_instances, min_size=min_size),
-        Format(
+        FixInstances(area_thr=0.975, max_targets=max_instances, min_size=min_size), # Remove instances outside crop
+        Format( # YOLO-native preprocessing
             bbox_format="xywh",
             normalize=True,
             return_mask=use_segments,
@@ -154,7 +168,7 @@ def train_augmentation_pipeline(
             batch_idx=True,
             mask_ratio=hyperparameters.mask_ratio,
             mask_overlap=hyperparameters.overlap_mask
-        )
+        ),
     ])
 
 def validation_augmentation_pipeline(
@@ -164,8 +178,9 @@ def validation_augmentation_pipeline(
         use_keypoints : bool
     ) -> Compose:
     return Compose([
-        RandomCrop(imsize=image_size),
-        FixInstances(area_thr=0.99, max_targets=None, min_size=min_size),
+        RandomCrop(imsize=int(image_size * 1.5)),
+        CenterCrop(image_size),
+        FixInstances(area_thr=0.975, max_targets=None, min_size=min_size),
         Format(
             bbox_format="xywh",
             normalize=True,
@@ -178,8 +193,8 @@ def validation_augmentation_pipeline(
     ])
 
 
-class MyYOLODataset(YOLODataset):
-    _min_size : int=4 # What is the minimum size of an instance to be considered (width or height in pixels after augmentations)
+class FlatBugYOLODataset(YOLODataset):
+    _min_size : int=32 # What is the minimum size of an instance to be considered (width or height in pixels after augmentations)
     _oversample_factor : int=2 # How much do we allow the dataset to grow when oversampling - this is done to ensure larger images are not underrepresented
 
     def __init__(
@@ -285,7 +300,7 @@ class MyYOLODataset(YOLODataset):
         return self.transforms(self.get_image_and_label(self.__indices[index]))
 
 
-class MyYOLOValidationDataset(MyYOLODataset):
+class FlatBugYOLOValidationDataset(FlatBugYOLODataset):
     _resample_n : int= 5
 
     def build_transforms(

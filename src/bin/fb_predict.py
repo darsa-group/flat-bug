@@ -1,39 +1,35 @@
 #!/usr/bin/env python3
 
 import argparse
-import os
 import glob
+import os
 import re
+from typing import List, Optional
 
+import torch
 from tqdm import tqdm
 
 from flat_bug import logger, set_log_level
 from flat_bug.coco_utils import fb_to_coco
+from flat_bug.config import DEFAULT_CFG, read_cfg
 from flat_bug.predictor import Predictor
-from flat_bug.config import read_cfg, DEFAULT_CFG
-
-import torch
 
 
-def main():
+def cli_args():
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
-    args_parse.add_argument("-i", "--input-data", dest="input_dir",
-                            help="A directory that contains subdirectories for each COCO sub-datasets."
-                                 "Each sub-dataset contains a single json file named 'instances_default.json' "
-                                 "and the associated images"
-                            )
-    args_parse.add_argument("-p", "--input-pattern", dest="input_pattern", default=r"[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$",
-                            help=r"The pattern to match the images. Default is '[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$' i.e. jpg/jpeg/png case-insensitive.")
-    args_parse.add_argument("-n", "--max-images", type=int, default=None, help="Maximum number of images to process. Default is None. Truncates in alphabetical order.")
-    args_parse.add_argument("-o", "--output-dir", dest="results_dir",
-                            help="The result directory")
-    args_parse.add_argument("-w", "--model-weights", dest="model_weights",
+    args_parse.add_argument("-i", "--input-data", type=str, dest="input", required=True,
+                            help="A image file or a directory of image files")
+    args_parse.add_argument("-o", "--output-dir", type=str, dest="output_dir", required=True,
+                        help="The result directory")
+    args_parse.add_argument("-w", "--model-weights", type=str, dest="model_weights", default="flat_bug_L.pt",
                             help="The .pt file")
-    args_parse.add_argument("-s", "--scale-before", dest="scale_before", default=1.0, type=float,
-                            help="Downscale the image before detection, but crops from the original image."
-                                 "Note that the COCO dataset dimentions match the scaled image" # fixme, is that true?!
-                            )
+    args_parse.add_argument("-p", "--input-pattern", type=str, dest="input_pattern", default=r"[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$",
+                            help=r"The pattern to match the images. Default is '[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$' i.e. jpg/jpeg/png case-insensitive.")
+    args_parse.add_argument("-n", "--max-images", type=int, dest="max_images", default=None,
+                            help="Maximum number of images to process. Default is None. Truncates in alphabetical order.")
+    args_parse.add_argument("-s", "--scale-before", type=float, dest="scale_before", default=1.0,
+                            help="Downscale the image before detection, but crops from the original image.")
     args_parse.add_argument("-g", "--gpu", type=str, default="cuda:0", help="Which device to use for inference. Default is 'cuda:0', i.e. the first GPU.")
     args_parse.add_argument("-d", "--dtype", type=str, default="float16", help="Which dtype to use for inference. Default is 'float16'.")
     args_parse.add_argument("-f", "--fast", action="store_true", help="Use fast mode.")
@@ -49,23 +45,43 @@ def main():
     args_parse.add_argument("--verbose", action="store_true", help="Verbose mode.")
     
     args = args_parse.parse_args()
-    option_dict = vars(args)
+    return vars(args)
 
-    logger.debug("OPTIONS:", option_dict)
+def predict(
+        input : str,
+        output_dir : str,
+        model_weights : str,
+        input_pattern : str=r"[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$",
+        max_images : Optional[int]=None,
+        scale_before : float=1.0,
+        gpu : str="cuda:0",
+        dtype : str="float16",
+        fast : bool=False,
+        config : Optional[str]=None,
+        no_crops : bool=False,
+        no_overviews : bool=False,
+        no_metadata : bool=False,
+        only_overviews : bool=False,
+        long_format : bool=False,
+        no_save : bool=False,
+        no_compiled_coco : bool=False,
+        single_scale : bool=False,
+        verbose : bool=False
+    ):
+    logger.debug("OPTIONS:", locals())
 
-    isERDA = option_dict["input_dir"].startswith("erda://")
+    isERDA = input.startswith("erda://")
     if isERDA:
         from pyremotedata.implicit_mount import IOHandler, RemotePathIterator
         logger.debug("Assuming directory exists on ERDA")
     else:
-        _, ext = os.path.splitext(option_dict["input_dir"])
+        _, ext = os.path.splitext(input)
         isVideo = ext in [".mp4", ".avi"]
         if not isVideo:
-            if not os.path.isdir(option_dict["input_dir"]):
-                raise FileNotFoundError(f"Directory '{option_dict['input_dir']}' not found.")
-    assert os.path.isfile(option_dict["model_weights"])
+            if not os.path.exists(input):
+                raise FileNotFoundError(f"Directory '{input}' not found.")
 
-    device = option_dict["gpu"]
+    device = gpu
     if not torch.cuda.is_available() and "cuda" in device:
         raise ValueError(f"Device(s) '{device}' is/are not available.")
     # Detect if multi-gpu, either by comma or semicolon
@@ -79,46 +95,44 @@ def main():
     else:
         device = f"cuda:{device}" if device.isdigit() else device
         device = torch.ones(1).to(torch.device(device)).device
-
-    dtype = getattr(torch, option_dict["dtype"])
-    if dtype not in [torch.float16, torch.float32, torch.bfloat16]:
-        raise ValueError(f"Dtype '{option_dict['dtype']}' is not supported.")
     
-    config = option_dict["config"]
+    dtype = dtype
+    
+    config = config
     if config:
         config = read_cfg(config)
     else:
         config = DEFAULT_CFG
     
-    crops = not option_dict["no_crops"]
-    metadata = not option_dict["no_metadata"]
-    if option_dict["no_overviews"]:
-        if option_dict["only_overviews"]:
+    crops = not no_crops
+    metadata = not no_metadata
+    if no_overviews:
+        if only_overviews:
             raise ValueError("Cannot set both --no-overviews and --only-overviews.")
         overviews = False
-    elif option_dict["only_overviews"]:
-        if option_dict["long_format"]:
+    elif only_overviews:
+        if long_format:
             raise ValueError("Cannot set both --only-overviews and --long-format. --only-overviews already saves in long format (although not the same file structure as --long-format).")
-        overviews = option_dict["results_dir"]
+        overviews = output_dir
         crops = False
         metadata = False
     else:
         overviews = True
 
-    if option_dict["long_format"]:
+    if long_format:
         if overviews:
-            overviews = os.path.join(option_dict["results_dir"], "overviews")
+            overviews = os.path.join(output_dir, "overviews")
         if crops:
-            crops = os.path.join(option_dict["results_dir"], "crops")
+            crops = os.path.join(output_dir, "crops")
         if metadata:
-            metadata = os.path.join(option_dict["results_dir"], "metadata")
+            metadata = os.path.join(output_dir, "metadata")
 
-    verbose = option_dict["verbose"]
+    verbose = verbose
     if verbose:
         config["TIME"] = True
         set_log_level("DEBUG")
 
-    pred = Predictor(option_dict["model_weights"], device=device, dtype=dtype, cfg=config)
+    pred = Predictor(model_weights, device=device, dtype=dtype, cfg=config)
 
     # fixme, build from pred._model!
     categories = {"id": 1, "name": "insect"}
@@ -131,12 +145,12 @@ def main():
         "categories": [categories]  # Your category
     }
     if isERDA:
-        option_dict["input_dir"] = option_dict["input_dir"].removeprefix("erda://")
+        input = input.removeprefix("erda://")
         io = IOHandler(verbose = False, clean = False)
         io.start()
-        io.cd(option_dict["input_dir"] )
+        io.cd(input)
         # Check for local file index
-        local_file_index = os.path.join(os.getcwd(), option_dict["results_dir"], f"{option_dict['input_dir'].replace('/', '_')}_file_index.txt")
+        local_file_index = os.path.join(os.getcwd(), output_dir, f"{input.replace('/', '_')}_file_index.txt")
         if os.path.isfile(local_file_index):
             with open(local_file_index, "r") as file:
                 file_index = [line.strip() for line in file.readlines()]
@@ -153,14 +167,15 @@ def main():
             # These parameters are all related to file-indexing and filtering on the remote server
             override = False, # Should the file-index be re-generated? (has to be False if store is False - otherwise an error will be thrown)
             store = False, # This is important if we do not want to add files to the remote server (i.e. we only want to read them), if this is True, then the function will "cache" the file list in the directory in a file in the remote directory called "file_index.txt"
-            pattern = option_dict["input_pattern"] # r"^[^\/\.]+(\.jpg$|\.png$|\.jpeg$|\.JPG$|\.PNG$|\.JPEG)$", # TODO: Currently as a hack, we skip files in subdirectories i.e. files with a '/' in their name, this is not ideal, as they are still read from the remote server
+            pattern = input_pattern # r"^[^\/\.]+(\.jpg$|\.png$|\.jpeg$|\.JPG$|\.PNG$|\.JPEG)$", # TODO: Currently as a hack, we skip files in subdirectories i.e. files with a '/' in their name, this is not ideal, as they are still read from the remote server
         )
     elif isVideo:
-        import cv2
         import tempfile
+
+        import cv2
         tmp_frame_dir = tempfile.TemporaryDirectory()
-        video_output_path = os.path.join(option_dict["results_dir"], os.path.splitext(os.path.basename(option_dict["input_dir"]))[0] + ".mp4")
-        cap = cv2.VideoCapture(option_dict["input_dir"])
+        video_output_path = os.path.join(output_dir, os.path.splitext(os.path.basename(input))[0] + ".mp4")
+        cap = cv2.VideoCapture(input)
         fps = cap.get(cv2.CAP_PROP_FPS) 
         frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = frame_count / fps
@@ -180,20 +195,23 @@ def main():
         cap.release()
         pbar.close()
         frames = []
-        if not option_dict["no_save"] and overviews:
+        if not no_save and overviews:
             # Create a video writer
-            if option_dict["fast"]:
+            if fast:
                 video_shape = (video_shape[0]//2, video_shape[1]//2)
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(video_output_path, fourcc, fps, video_shape)
+            video_writer = cv2.VideoWriter(video_output_path, fourcc, fps, video_shape)
     else:
-        file_iter = sorted([f for f in glob.glob(os.path.join(option_dict["input_dir"], "**"), recursive=True) if re.search(option_dict["input_pattern"], f)])
-    if option_dict["max_images"] is not None:
-        if isERDA:
-            file_iter.subset(list(range(min(option_dict["max_images"], len(file_iter)))))
+        if os.path.isfile(input):
+            file_iter = [input]
         else:
-            file_iter = file_iter[:option_dict["max_images"]]
-    j = 1
+            file_iter = sorted([f for f in glob.glob(os.path.join(input, "**"), recursive=True) if re.search(input_pattern, f)])
+    if max_images is not None:
+        if isERDA:
+            file_iter.subset(list(range(min(max_images, len(file_iter)))))
+        else:
+            file_iter = file_iter[:max_images]
+
     all_json_results = []
 
     UUID = "ChangeThisTEMPORARY" # fixme, this is a temporary solution, but we should use a UUID for each run
@@ -203,19 +221,19 @@ def main():
         if isERDA:
             tmp_file, file_name = f
             f = tmp_file
-            # f = os.path.join(option_dict["results_dir"], file_name)
+            # f = os.path.join(output_dir, file_name)
             # os.rename(tmp_file, f)
-        if option_dict["verbose"]:
+        if verbose:
             logger.info(f"Processing {os.path.basename(f)}")
         pbar.set_postfix_str(f"Processing {os.path.basename(f)}")
         try:
             # Run the model
-            prediction = pred.pyramid_predictions(f, scale_increment=1/2, scale_before=option_dict["scale_before"], single_scale=option_dict["single_scale"])
+            prediction = pred.pyramid_predictions(f, scale_increment=1/2, scale_before=scale_before, single_scale=single_scale)
             # Save the results
-            if not option_dict["no_save"]:
+            if not no_save:
                 result_directory = prediction.save(
-                    output_directory = option_dict["results_dir"],
-                    fast = option_dict["fast"],
+                    output_directory = output_dir,
+                    fast = fast,
                     overview = overviews,
                     metadata = metadata,
                     crops = crops,
@@ -247,13 +265,13 @@ def main():
             #fixme, what is going on with /home/quentin/todo/toup/20221008_16-01-04-226084_raw_jpg.rf.0b8d397da3c47408694eeaab2cde06e5.jpg?
             logger.error(e)
             raise e
-    if not option_dict["no_compiled_coco"]:
+    if not no_compiled_coco:
         if len(all_json_results) == 0:
             logger.info("No results found, unable to compile COCO file.")
         else:
             import json
 
-            compiled_coco = os.path.join(option_dict["results_dir"], "coco_instances.json")
+            compiled_coco = os.path.join(output_dir, "coco_instances.json")
             pred_coco = {}
             
             flat_bug_predictions = [json.load(open(p)) for p in all_json_results]
@@ -261,18 +279,21 @@ def main():
                 fb_to_coco(d, pred_coco)
             with open(compiled_coco,"w") as f:
                 json.dump(pred_coco, f)
-    if isVideo and frames:
+    if isVideo and frames and not no_save and overviews:
         for frame in tqdm(frames, desc=f"Writing video ({video_output_path})", unit="frame"):
             img = cv2.imread(frame)
-            if option_dict["fast"]:
+            if fast:
                 img = cv2.resize(img, (video_shape[0], video_shape[1]))
-            out.write(img)
-        out.release()
+            video_writer.write(img)
+        video_writer.release()
         tmp_frame_dir.cleanup()
     if pred._multi_gpu:
         raise NotImplementedError("Multi-GPU support is not supported. Worker termination is not implemented.")
     if isERDA:
         io.stop()
+
+def main():
+    predict(**cli_args())
 
 if __name__ == "__main__":
     main()

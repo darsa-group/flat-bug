@@ -1,25 +1,28 @@
-import os, glob, random, json
-
+import glob
+import json
+import os
+import random
 from copy import copy
 from tempfile import NamedTemporaryFile
-
-from typing import Self, Union, List, Tuple, Dict, Any, Optional
+from typing import Any, Dict, List, Optional, Self, Tuple, Union
 
 import numpy as np
 import torch
-
+from ultralytics.data import build_dataloader
+from ultralytics.data.build import InfiniteDataLoader, seed_worker
+from ultralytics.data.utils import PIN_MEMORY
 from ultralytics.models import yolo
 from ultralytics.models.yolo.segment import SegmentationTrainer
 from ultralytics.nn.tasks import attempt_load_one_weight
-from ultralytics.utils import DEFAULT_CFG, LOGGER, RANK, __version__, yaml_load, IterableSimpleNamespace
-from ultralytics.utils.torch_utils import smart_inference_mode, torch_distributed_zero_first
-from ultralytics.data import build_dataloader
-from ultralytics.data.utils import PIN_MEMORY
-from ultralytics.data.build import InfiniteDataLoader, seed_worker
+from ultralytics.utils import (DEFAULT_CFG, LOGGER, RANK,
+                               IterableSimpleNamespace, __version__, yaml_load)
 from ultralytics.utils.files import increment_path
+from ultralytics.utils.torch_utils import (smart_inference_mode,
+                                           torch_distributed_zero_first)
 
 from flat_bug import logger
-from flat_bug.datasets import MyYOLODataset, MyYOLOValidationDataset
+from flat_bug.datasets import FlatBugYOLODataset, FlatBugYOLOValidationDataset
+
 
 def remove_custom_fb_args(args : Union[Dict, IterableSimpleNamespace, Any]) -> Union[Dict, IterableSimpleNamespace, Any]:
     if isinstance(args, dict):
@@ -57,7 +60,7 @@ def get_latest_weight(weight_dir : str) -> Union[str, None]:
         return None
     return max(weights, key=os.path.getctime)
 
-def _custom_end_to_end_validation(self : "MySegmentationTrainer"):
+def _custom_end_to_end_validation(self : "FlatBugSegmentationTrainer"):
         if not self._do_custom_eval:
             return
         self._do_custom_eval = False
@@ -160,7 +163,7 @@ def apply_overrides_to_checkpoint(overrides):
     with NamedTemporaryFile(
         delete=False, 
         suffix=ckpt_ext, 
-        prefix="resume--" + "_".join(os.path.splitext(resume_model)[0].replace("_", r"\_").split(os.sep)) + "--", 
+        prefix="resume--" + "__".join(os.path.splitext(resume_model)[0].split(os.sep)) + "--", 
         dir=tmp_resume_weight_dir
     ) as tmp_model:
         torch.save(resume_ckpt, tmp_model)
@@ -174,7 +177,7 @@ def apply_overrides_to_checkpoint(overrides):
     # Return overrides for convenience, in fact this function mutates the original overrides object
     return overrides
 
-class MySegmentationTrainer(SegmentationTrainer):
+class FlatBugSegmentationTrainer(SegmentationTrainer):
     def __init__(
             self, 
             cfg : IterableSimpleNamespace=DEFAULT_CFG, 
@@ -204,9 +207,9 @@ class MySegmentationTrainer(SegmentationTrainer):
             self.args.__dict__.update(overrides)
         
         self.args.__dict__.update(custom_fb_args) # But we need to add them back, otherwise they will be missing in DDP mode
-        if overrides["resume"]:
+        if overrides.get("resume", False):
             self.args.resume = True
-        self.add_callback("on_train_epoch_start", MySegmentationTrainer.log_lr)
+        self.add_callback("on_train_epoch_start", FlatBugSegmentationTrainer.log_lr)
         # self.use_ewa_sampler()
 
         if self.custom_eval:
@@ -252,10 +255,10 @@ class MySegmentationTrainer(SegmentationTrainer):
             img_path : str, 
             mode : str='train', 
             batch : Optional[int]=None
-        ) -> Union[MyYOLODataset, MyYOLOValidationDataset]:
+        ) -> Union[FlatBugYOLODataset, FlatBugYOLOValidationDataset]:
         LOGGER.info(f"Building dataset with max instances ({self._max_instances}), max images ({self._max_images}) and exclude pattern ({self.exclude_pattern}).")
         if mode == "train":
-            dataset = MyYOLODataset(
+            dataset = FlatBugYOLODataset(
                 data=yaml_load(self.args.data),
                 img_path=img_path,
                 imgsz=self.args.imgsz,
@@ -272,7 +275,7 @@ class MySegmentationTrainer(SegmentationTrainer):
                 subset_args={"n" : self._max_images, "pattern" : self.exclude_pattern}
             )
         else:
-            dataset = MyYOLOValidationDataset(
+            dataset = FlatBugYOLOValidationDataset(
                 data=yaml_load(self.args.data),
                 img_path=img_path,
                 imgsz=self.args.imgsz,

@@ -3,7 +3,8 @@ Evaluation functions for FlatBug datasets.
 """
 
 import os
-from typing import Union, List, Tuple, Dict, Optional
+from typing import Dict, List, Optional, Tuple, Union
+
 import cv2
 import numpy as np
 

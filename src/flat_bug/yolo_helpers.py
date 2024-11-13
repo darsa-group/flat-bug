@@ -1,12 +1,12 @@
-from typing import Union, List, Tuple, Optional
+from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
-
-from ultralytics.engine.results import Results, Masks
+from ultralytics.engine.results import Masks, Results
 
 from flat_bug.geometric import find_contours, resize_mask
-from flat_bug.nms import nms_boxes, fancy_nms, nms_masks, iou_boxes
+from flat_bug.nms import fancy_nms, iou_boxes, nms_boxes, nms_masks
+
 
 class ResultsWithTiles(Results):
     def __init__(self, tiles : List[int]=None, polygons=None, *args, **kwargs):
@@ -414,6 +414,8 @@ def postprocess(
             elif nms == 3:
                 masks = process_mask(protos[min(i, len(protos)-1)], pred[:, -32:], boxes, imgs[i].shape[-2:], False) # pred[:, -32:] - not sure this is correct for more than one class
                 nms_ind = nms_masks(masks, pred[:, 4], iou_threshold=iou_threshold, return_indices=True, boxes=boxes / 4, group_first=False)
+                # group_first is True, because nms_masks has vectorized IoU, 
+                # meaning that the overhead of doing connected-component clustering is larger than the time-loss from redundant IoU calculations
                 masks = masks[nms_ind]
             else:
                 raise ValueError(f"nms must be 0, 1, 2 or 3, not {nms}")

@@ -1,14 +1,22 @@
-import os, sys, subprocess, time, argparse
-import glob, tempfile, re
-import yaml, io, zipfile
-
+import argparse
+import glob
+import io
+import os
+import queue
+import re
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import zipfile
 from argparse import Namespace
-from typing import Self, Optional, Union, List, Tuple, Dict, Any, Callable, Iterable, IO
+from typing import (IO, Any, Callable, Dict, Iterable, List, Optional, Self,
+                    Tuple, Union)
 
-import queue, threading, submitit
-
+import submitit
 import torch
-
+import yaml
 from submitit.slurm.slurm import _get_default_parameters as _default_submitit_slurm_params
 
 DATA_DIR = "<UNSET>"
@@ -593,19 +601,18 @@ class ExperimentRunner:
     @property
     def slurm_job_ids(self : Self) -> List[str]:
         if not self.slurm:
-            return [""]
+            return []
         else:
             return [job.job_id for job in self.slurm_jobs]
     
     @property
-    def slurm_job_id(self : Self) -> str:
-        if not self.slurm:
-            return self.slurm_job_ids[0]
-        else:
-            ids = list(set([re.search(r"^(\d+)", job.job_id).group(1) for job in self.slurm_jobs]))
-            if len(ids) != 1:
-                raise ValueError(f"Multiple job IDs found: {ids}")
-            return ids[0]
+    def slurm_job_id(self : Self) -> Optional[str]:
+        ids = list(set([re.search(r"^(\d+)", job.job_id).group(1) for job in self.slurm_jobs]))
+        if len(ids) == 0:
+            return None
+        elif len(ids) > 1:
+            raise ValueError(f"Multiple job IDs found: {ids}")
+        return ids[0]
 
     def run(self : Self) -> Self:
         # Check that the consumer threads and slurm jobs are empty
