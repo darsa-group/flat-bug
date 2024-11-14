@@ -1,3 +1,4 @@
+from itertools import accumulate
 from typing import List, Tuple, Union
 
 import cv2
@@ -8,6 +9,37 @@ import torchvision
 
 from flat_bug import logger
 
+
+def equal_allocate_overlaps(total: int, segments: int, size: int) -> List[int]:
+    """
+    Generates cumulative positions for placing segments of a given size within a total length, with controlled overlaps.
+
+    This function divides the specified `total` length into `segments` positions, ensuring each segment (of given `size`) fits
+    evenly by introducing a small overlap between adjacent segments. The overlap is distributed uniformly, with the first few gaps 
+    adjusted slightly to ensure the segments collectively sum to `total`.
+
+    Args:
+        total (int): The total length to be covered by the segments. This is the target cumulative length the segments should fit into.
+        segments (int): The number of segments to place within the total length.
+            Must be greater than or equal to 2.
+        size (int): The desired size of each segment, used to determine the ideal spacing between segments.
+        
+    Returns:
+        List[int]: A list of cumulative positions (starting from 0) where each segment should be placed.
+            These positions are spaced with controlled overlaps to ensure they collectively cover the `total` length.
+            
+    Example:
+        >>> equal_allocate_overlaps(1000, 5, 250)
+        [0, 187, 374, 562, 750]
+    """
+    if segments < 2:
+        return [0]
+    
+    overlap = segments * size - total
+    partial_overlap, remainder = divmod(overlap, segments - 1)
+    distance = size - partial_overlap
+
+    return list(accumulate([distance - (1 if i < remainder else 0) for i in range(segments - 1)], initial=0))
 
 def intersect(
         rect1s : torch.Tensor, 

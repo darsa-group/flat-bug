@@ -24,8 +24,8 @@ from flat_bug import download_from_repository, logger
 from flat_bug.augmentations import InpaintPad
 from flat_bug.config import CFG_PARAMS, DEFAULT_CFG, read_cfg
 from flat_bug.geometric import (chw2hwc_uint8, contours_to_masks,
-                                create_contour_mask, find_contours,
-                                scale_contour, simplify_contour)
+                                create_contour_mask, equal_allocate_overlaps,
+                                find_contours, scale_contour, simplify_contour)
 from flat_bug.nms import detect_duplicate_boxes, nms_masks, nms_polygons
 from flat_bug.yolo_helpers import (ResultsWithTiles, merge_tile_results,
                                    offset_box, postprocess, resize_mask,
@@ -1263,14 +1263,9 @@ class Predictor(object):
         # Tile calculation
         x_n_tiles = math.ceil(w / (TILE_SIZE - self.MINIMUM_TILE_OVERLAP)) if w != TILE_SIZE else 1
         y_n_tiles = math.ceil(h / (TILE_SIZE - self.MINIMUM_TILE_OVERLAP)) if h != TILE_SIZE else 1
-
-        x_stride = TILE_SIZE - math.floor((TILE_SIZE * (x_n_tiles + 0) - w) / x_n_tiles) if x_n_tiles > 1 else TILE_SIZE
-        y_stride = TILE_SIZE - math.floor((TILE_SIZE * (y_n_tiles + 0) - h) / y_n_tiles) if y_n_tiles > 1 else TILE_SIZE
-        x_stride -= x_stride % 4
-        y_stride -= y_stride % 4
-
-        x_range = [i if (i + TILE_SIZE) < w else (w - TILE_SIZE - w % 4) for i in range(0, x_stride * x_n_tiles, x_stride)]
-        y_range = [i if (i + TILE_SIZE) < h else (h - TILE_SIZE - h % 4) for i in range(0, y_stride * y_n_tiles, y_stride)]
+        
+        x_range = equal_allocate_overlaps(w, x_n_tiles, TILE_SIZE)
+        y_range = equal_allocate_overlaps(h, y_n_tiles, TILE_SIZE)
 
         offsets = [((m, n), (j, i)) for n, j in enumerate(y_range) for m, i in enumerate(x_range)]
 
