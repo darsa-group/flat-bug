@@ -1449,7 +1449,7 @@ class Predictor(object):
                 apply_exif_orientation=True
             ).to(self._device)
         elif isinstance(image, torch.Tensor):
-            logger.info("Input image source file not specified for prediction, saving the prediction will require specifying the source file basename.")
+            logger.debug("Input image source file not specified for prediction, saving the prediction will require specifying the source file basename.")
         else:
             raise TypeError(f"Unknown type for image: {type(image)}, expected str or torch.Tensor")
 
@@ -1468,12 +1468,12 @@ class Predictor(object):
         edge_case_margin_padding_multiplier = 2
         padding_offset = torch.tensor((self.EDGE_CASE_MARGIN, self.EDGE_CASE_MARGIN), dtype=self._dtype, device=self._device) * edge_case_margin_padding_multiplier
         if padding_offset.sum() > 0:
-            # padding_for_edge_cases = transforms.Pad(
-            #     padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier, 
-            #     fill=0.5,
-            #     padding_mode='constant'
-            # )
-            padding_for_edge_cases = InpaintPad(padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier)
+            padding_for_edge_cases = transforms.Pad(
+                padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier, 
+                fill=0,
+                padding_mode='constant'
+            )
+            # padding_for_edge_cases = InpaintPad(padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier)
             transform_list.append(padding_for_edge_cases)
         else:
             padding_offset[:] = 0
@@ -1490,7 +1490,6 @@ class Predictor(object):
         max_dim = max(transformed_image.shape[1:])
         min_dim = min(transformed_image.shape[1:])
 
-        # fixme, what to do if the image is too small? - RE: Fixed by adding padding in _detect_instances
         scales = []
 
         if single_scale:

@@ -43,17 +43,21 @@ ODIR=""
 IPAT=""
 
 # Parse the command line arguments
-while getopts "w:d:c:l:o:g:p:" flag
-do
+while getopts "w:d:c:l:o:g:p:" flag; do
     case "${flag}" in
-        w) WEIGHTS=${OPTARG};;
-        d) DIR=${OPTARG};;
-        c) CONFIG=${OPTARG};;
-        l) LDIR=${OPTARG};;
-        o) ODIR=${OPTARG};;
-        g) GPU=${OPTARG};;
-        p) IPAT=${OPTARG};;
-        *) usage; return 1 2>/dev/null; exit 1;;
+        w) WEIGHTS=${OPTARG} ;;
+        d) DIR=${OPTARG} ;;
+        c) CONFIG=${OPTARG} ;;
+        l) LDIR=${OPTARG} ;;
+        o) ODIR=${OPTARG} ;;
+        g) GPU=${OPTARG} ;;
+        p) IPAT=${OPTARG} ;;
+        *) # Handle missing arguments for known flags
+            echo "Invalid argument(s) specified."
+            usage
+            return 1 2>/dev/null
+            exit 1
+            ;;
     esac
 done
 
@@ -64,6 +68,10 @@ fi
 
 # Check for mandatory options
 if [[ -z "$WEIGHTS" || -z "$DIR" ]]; then
+    missing_args=()
+    [[ -z "$WEIGHTS" ]] && missing_args+=("WEIGHTS")
+    [[ -z "$DIR" ]] && missing_args+=("DIR")
+    echo "Missing MANDATORY argument(s): ${missing_args[*]}"
     usage
     return 1 2>/dev/null
     exit 1
