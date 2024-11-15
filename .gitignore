@@ -167,6 +167,7 @@ runs/
 !src/flat_bug/tests/assets/**.pt
 *.pth
 *.jpg
+*.png
 *.yaml
 !scripts/**/*.yaml
 *.out
