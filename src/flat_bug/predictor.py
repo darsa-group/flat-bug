@@ -1,6 +1,5 @@
 import base64
 import json
-import math
 import os
 import pathlib
 import shutil
@@ -23,8 +22,8 @@ from ultralytics.engine.results import Results
 from flat_bug import download_from_repository, logger
 from flat_bug.augmentations import InpaintPad
 from flat_bug.config import CFG_PARAMS, DEFAULT_CFG, read_cfg
-from flat_bug.geometric import (chw2hwc_uint8, contours_to_masks,
-                                create_contour_mask, equal_allocate_overlaps,
+from flat_bug.geometric import (calculate_tile_offsets, chw2hwc_uint8,
+                                contours_to_masks, create_contour_mask,
                                 find_contours, scale_contour, simplify_contour)
 from flat_bug.nms import detect_duplicate_boxes, nms_masks, nms_polygons
 from flat_bug.yolo_helpers import (ResultsWithTiles, merge_tile_results,
@@ -207,15 +206,6 @@ class TensorPredictions:
         self.classes = torch.cat([p.classes[nd] for p, nd in zip(predictions, valid_chunked)])  # N
         self.scales = [predictions[i].scale for i, p in enumerate(valid_chunked) for _ in range(len(p))]  # N
         
-        # Sort the polygons, masks, boxes, classes, scales and confidences by confidence
-        sorted_indices = self.confs.argsort(descending=True)
-        self.masks = self.masks[sorted_indices]
-        self.polygons = [self.polygons[i] for i in sorted_indices]
-        self.boxes = self.boxes[sorted_indices]
-        self.classes = self.classes[sorted_indices]
-        self.scales = [self.scales[i] for i in sorted_indices]
-        self.confs = self.confs[sorted_indices]
-
         # Sort the polygons, masks, boxes, classes, scales and confidences by confidence
         sorted_indices = self.confs.argsort(descending=True)
         self.masks = self.masks[sorted_indices]
@@ -1260,14 +1250,11 @@ class Predictor(object):
             image = torch.nn.functional.pad(image, pad_lrtb, mode="constant", value=0) # Pad with black
             h, w = image.shape[1:]
 
-        # Tile calculation
-        x_n_tiles = math.ceil(w / (TILE_SIZE - self.MINIMUM_TILE_OVERLAP)) if w != TILE_SIZE else 1
-        y_n_tiles = math.ceil(h / (TILE_SIZE - self.MINIMUM_TILE_OVERLAP)) if h != TILE_SIZE else 1
-        
-        x_range = equal_allocate_overlaps(w, x_n_tiles, TILE_SIZE)
-        y_range = equal_allocate_overlaps(h, y_n_tiles, TILE_SIZE)
-
-        offsets = [((m, n), (j, i)) for n, j in enumerate(y_range) for m, i in enumerate(x_range)]
+        offsets = calculate_tile_offsets(
+            image_size=(w, h),
+            tile_size=TILE_SIZE,
+            minimum_overlap=self.MINIMUM_TILE_OVERLAP
+        )
 
         hyperparams = {
             "image" : image,
@@ -1395,11 +1382,12 @@ class Predictor(object):
             total_detect_time = start_detect.elapsed_time(end_detect) / 1000  # Convert to seconds
             pred_prop = total_elapsed / total_detect_time
             logger.info(
-                f'Prediction time: {total_elapsed:.3f}s/{pred_prop * 100:.3g}%'
-                f' (overhead: {overhead_prop * 100:.1f}) |'
-                f' Fetch {fetch_prop * 100:.1f}% |'
-                f' Forward {forward_prop * 100:.1f}% |'
-                f' Postprocess {postprocess_prop * 100:.1f}%)'
+                f'Prediction time: {total_elapsed:.3f}s/{pred_prop:>4.1%}'
+                f' (overhead: {overhead_prop:>4.1%}) |'
+                f' Fetch {fetch_prop:>4.1%} |'
+                f' Forward {forward_prop:>4.1%} |'
+                f' Postprocess {postprocess_prop:>4.1%} |'
+                f' Tiles {len(offsets)}'
             )
             if hasattr(self, "total_detection_time"):
                 self.total_detection_time += total_detect_time

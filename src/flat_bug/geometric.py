@@ -1,3 +1,4 @@
+import math
 from itertools import accumulate
 from typing import List, Tuple, Union
 
@@ -8,7 +9,6 @@ import torch.nn.functional as F
 import torchvision
 
 from flat_bug import logger
-
 
 def equal_allocate_overlaps(total: int, segments: int, size: int) -> List[int]:
     """
@@ -40,6 +40,20 @@ def equal_allocate_overlaps(total: int, segments: int, size: int) -> List[int]:
     distance = size - partial_overlap
 
     return list(accumulate([distance - (1 if i < remainder else 0) for i in range(segments - 1)], initial=0))
+
+def calculate_tile_offsets(
+        image_size=(int, int),
+        tile_size=int,
+        minimum_overlap=int
+    ) -> List[Tuple[Tuple[int, int], Tuple[int, int]]]:
+    w, h = image_size
+    x_n_tiles = math.ceil((w - minimum_overlap) / (tile_size - minimum_overlap)) if w != tile_size else 1
+    y_n_tiles = math.ceil((h - minimum_overlap) / (tile_size - minimum_overlap)) if h != tile_size else 1
+    
+    x_range = equal_allocate_overlaps(w, x_n_tiles, tile_size)
+    y_range = equal_allocate_overlaps(h, y_n_tiles, tile_size)
+
+    return [((m, n), (j, i)) for n, j in enumerate(y_range) for m, i in enumerate(x_range)]
 
 def intersect(
         rect1s : torch.Tensor, 
