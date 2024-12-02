@@ -1,11 +1,5 @@
 source("flatbug_init.R")
 
-f1_from_rp <- function(recall, precision) {
-  f1 <- 2 * recall * precision / (recall + precision)
-  f1[recall == 0 | precision == 0] <- 0
-  return(f1)
-}
-
 model_erda_dir <- c(
   "L" = "L_ucloud_done_V2",
   "M" = "M_ucloud_done_V2",

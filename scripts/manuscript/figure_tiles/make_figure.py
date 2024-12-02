@@ -19,12 +19,10 @@ from flat_bug.predictor import Predictor, TensorPredictions
 ROI_SIZE = 1000
 ROI_PADDING = 500
 MOSAIC_SPACING = 0
-MODEL = "model_snapshots/fb_large_2024-10-18_best.pt"
 
 # ANNOTATED_IM_DIR = "dev/fb_yolo/insects"
-ANNOTATION_COCO = "dev/fb_yolo/insects/labels/val/instances_default.json"
-RAW_IM_DIR = "dev/fb_yolo/insects"
-
+ANNOTATION_COCO = os.path.expanduser("~/data/flat-bug/fb_yolo/insects/labels/val/instances_default.json")
+RAW_IM_DIR = os.path.expanduser("~/data/flat-bug//fb_yolo/insects")
 
 THIS_DIR = os.path.dirname(__file__)
 
@@ -140,7 +138,7 @@ def create_mosaic(ims : List[np.ndarray], spacing : int = 100, labels : Optional
 
 if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = Predictor(MODEL, cfg="dev/test/tmp.yaml", device=device, dtype=torch.float16)
+    model = Predictor(device=device, dtype=torch.float16)
 
     example_df = pd.read_csv(os.path.join(THIS_DIR, "clean_flatbug_datasets.csv"))
     with open(ANNOTATION_COCO, "r") as f:

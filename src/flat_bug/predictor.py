@@ -1481,7 +1481,7 @@ class Predictor(object):
         scales = []
 
         if single_scale:
-            scales.append(min(1, self.TILE_SIZE / min_dim))
+            scales = [1]
         else:
             s = self.TILE_SIZE / max_dim
 

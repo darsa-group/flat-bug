@@ -20,3 +20,9 @@ short_name <- Vectorize(memoise::memoise(function(x) {
   }
   return(short_index$short_name[which_match])
 }))
+
+f1_from_rp <- function(recall, precision) {
+  f1 <- 2 * recall * precision / (recall + precision)
+  f1[recall == 0 | precision == 0] <- 0
+  return(f1)
+}
