@@ -24,7 +24,8 @@ from flat_bug.augmentations import InpaintPad
 from flat_bug.config import CFG_PARAMS, DEFAULT_CFG, read_cfg
 from flat_bug.geometric import (calculate_tile_offsets, chw2hwc_uint8,
                                 contours_to_masks, create_contour_mask,
-                                find_contours, scale_contour, simplify_contour)
+                                find_contours, poly_area, scale_contour,
+                                simplify_contour)
 from flat_bug.nms import detect_duplicate_boxes, nms_masks, nms_polygons
 from flat_bug.yolo_helpers import (ResultsWithTiles, merge_tile_results,
                                    offset_box, postprocess, resize_mask,
@@ -38,7 +39,6 @@ class Prepared_Results:
         self._predictions = predictions
         self._predictions.boxes.data[:, :4] /= self.wh_scale.repeat(1, 2)
         self._predictions.polygons = [(poly + torch.roll(poly, 1, dims=0)) / (2 * self.wh_scale) for poly in self._predictions.polygons]
-        # self._predictions.polygons = [torch.tensor(shapely.affinity.scale(Polygon(poly.cpu().numpy()), self.wh_scale[0][0].item(), self.wh_scale[0][1].item(), origin="centroid").exterior.coords, device=device, dtype=dtype) for poly in self._predictions.polygons]
         self.scale = sum(scale) / 2
         self.device = device
         self.dtype = dtype
@@ -83,7 +83,7 @@ class TensorPredictions:
     `TensorPredictions` also allows for easy conversion from mask to contours and back, plotting of the results, and (de-)serialization to save and load the results to/from disk.
     """
     BOX_IS_EQUAL_MARGIN = 0  # How many pixels the boxes can differ by and still be considered equal? Used for removing duplicates before merging overlapping masks.
-    PREFER_POLYGONS = False  # If True, will use shapely Polygons instead of masks for NMS and drawing
+    PREFER_POLYGONS = True  # If True, will use shapely Polygons instead of masks for NMS and drawing
     # These are simply initialized here to decrease clutter in the __init__ function and arguments
     mask_width = None
     mask_height = None
@@ -426,6 +426,13 @@ class TensorPredictions:
         else:
             self.masks = contours_to_masks(value, self.mask_height, self.mask_width).to(self.device)
 
+    @property
+    def areas(self):
+        if self.PREFER_POLYGONS:
+            return [poly_area(poly) for poly in self.polygons]
+        else:
+            return self.masks.sum(1).sum(1).tolist()
+
     def contour_to_image_coordinates(
             self, 
             contour: torch.Tensor, 
@@ -762,12 +769,15 @@ class TensorPredictions:
         classes = self.classes.cpu().long().tolist()
         # 5. Get the scales (already floats in a list)
         scales = self.scales
+        # 6. Get the areas (already floats in a list)
+        areas = self.areas
         return {
             "boxes": boxes,
             "contours": contours,
             "confs": confs,
             "classes": classes,
             "scales": scales,
+            "areas": areas,
             "image_path": self.image_path,
             "image_width": self.image.shape[2],
             "image_height": self.image.shape[1],
@@ -873,6 +883,9 @@ class TensorPredictions:
         for k, v in data.items():
             # Skip constants in second round
             if k in self.CONSTANTS:
+                continue
+            # Skip dynamically computed class property attributes
+            if k in ["areas"]:
                 continue
             # Skip the identifier 
             if k in ["identifier", "image_height", "image_width"]:

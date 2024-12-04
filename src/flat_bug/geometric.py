@@ -230,7 +230,23 @@ def contours_to_masks(
 
     # Convert to tensors
     return torch.tensor(masks, dtype=torch.bool, device=device)
+
+def poly_area(poly : torch.Tensor) -> float:
+    """
+    Calculates the area of a 2D simple polygon represented by a positively oriented (counter clock wise) sequence of points.
+
+    See https://en.wikipedia.org/wiki/Shoelace_formula#Shoelace_formula for details.
+
+    Args:
+        poly (torch.Tensor): A tensor of shape (n, 2), where n is the number of vertices and the 2 columns are the x and y coordinates of the vertices.
     
+    Returns:
+        float: The area of the polygon
+    """
+    def shoelace(x : torch.Tensor, y : torch.Tensor) -> float:
+        return (x * y.roll(1, 0) - x.roll(1, 0) * y).sum().float().item() / 2
+    return shoelace(*poly.T)
+
 def poly_normals(polygon : torch.Tensor) -> torch.Tensor:
     """
     Calculates the normals of a polygon.
