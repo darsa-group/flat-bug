@@ -167,6 +167,8 @@ runs/
 !src/flat_bug/tests/assets/**.pt
 *.pth
 *.jpg
+*.png
+*.pdf
 *.yaml
 !scripts/**/*.yaml
 *.out
@@ -178,6 +180,8 @@ test/
 prototypes/
 slurm_logs/
 scripts/experiments/results/
+scripts/manuscript/statistics/data
+scripts/manuscript/statistics/combined_results.csv
 
 utils/eval_slurm.sh
 utils/tune_slurm.sh

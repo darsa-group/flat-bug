@@ -18,9 +18,9 @@ from flat_bug.predictor import Predictor
 def cli_args():
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
-    args_parse.add_argument("-i", "--input-data", type=str, dest="input", required=True,
+    args_parse.add_argument("-i", "--input", type=str, dest="input", required=True,
                             help="A image file or a directory of image files")
-    args_parse.add_argument("-o", "--output-dir", type=str, dest="output_dir", required=True,
+    args_parse.add_argument("-o", "--output", type=str, dest="output_dir", required=True,
                         help="The result directory")
     args_parse.add_argument("-w", "--model-weights", type=str, dest="model_weights", default="flat_bug_L.pt",
                             help="The .pt file")
@@ -28,8 +28,11 @@ def cli_args():
                             help=r"The pattern to match the images. Default is '[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$' i.e. jpg/jpeg/png case-insensitive.")
     args_parse.add_argument("-n", "--max-images", type=int, dest="max_images", default=None,
                             help="Maximum number of images to process. Default is None. Truncates in alphabetical order.")
+    args_parse.add_argument("-R", "--recursive", action="store_true", 
+                            help="Process images nested within subdirectories of the input.")
     args_parse.add_argument("-s", "--scale-before", type=float, dest="scale_before", default=1.0,
                             help="Downscale the image before detection, but crops from the original image.")
+    args_parse.add_argument("--single-scale", action="store_true", help="Use single scale.")
     args_parse.add_argument("-g", "--gpu", type=str, default="cuda:0", help="Which device to use for inference. Default is 'cuda:0', i.e. the first GPU.")
     args_parse.add_argument("-d", "--dtype", type=str, default="float16", help="Which dtype to use for inference. Default is 'float16'.")
     args_parse.add_argument("-f", "--fast", action="store_true", help="Use fast mode.")
@@ -41,8 +44,7 @@ def cli_args():
     args_parse.add_argument("--long-format", action="store_true", help="Use long format for storing results.")
     args_parse.add_argument("-S", "--no-save", action="store_true", help="Do not save the results.")
     args_parse.add_argument("-C", "--no-compiled-coco", action="store_true", help="Skip the production of a compiled COCO file (for all images).")
-    args_parse.add_argument("--single-scale", action="store_true", help="Use single scale.")
-    args_parse.add_argument("--verbose", action="store_true", help="Verbose mode.")
+    args_parse.add_argument("-v", "--verbose", action="store_true", help="Verbose mode.")
     
     args = args_parse.parse_args()
     return vars(args)
@@ -53,7 +55,9 @@ def predict(
         model_weights : str,
         input_pattern : str=r"[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$",
         max_images : Optional[int]=None,
+        recursive : bool=False,
         scale_before : float=1.0,
+        single_scale : bool=False,
         gpu : str="cuda:0",
         dtype : str="float16",
         fast : bool=False,
@@ -65,7 +69,6 @@ def predict(
         long_format : bool=False,
         no_save : bool=False,
         no_compiled_coco : bool=False,
-        single_scale : bool=False,
         verbose : bool=False
     ):
     logger.debug("OPTIONS:", locals())
@@ -205,7 +208,7 @@ def predict(
         if os.path.isfile(input):
             file_iter = [input]
         else:
-            file_iter = sorted([f for f in glob.glob(os.path.join(input, "**"), recursive=True) if re.search(input_pattern, f)])
+            file_iter = sorted([f for f in glob.glob(os.path.join(input, "**"), recursive=recursive) if re.search(input_pattern, f)])
     if max_images is not None:
         if isERDA:
             file_iter.subset(list(range(min(max_images, len(file_iter)))))
@@ -228,7 +231,7 @@ def predict(
         pbar.set_postfix_str(f"Processing {os.path.basename(f)}")
         try:
             # Run the model
-            prediction = pred.pyramid_predictions(f, scale_increment=1/2, scale_before=scale_before, single_scale=single_scale)
+            prediction = pred.pyramid_predictions(f, scale_increment=2/3, scale_before=scale_before, single_scale=single_scale)
             # Save the results
             if not no_save:
                 result_directory = prediction.save(

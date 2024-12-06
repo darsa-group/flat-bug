@@ -1,6 +1,5 @@
 import base64
 import json
-import math
 import os
 import pathlib
 import shutil
@@ -23,9 +22,10 @@ from ultralytics.engine.results import Results
 from flat_bug import download_from_repository, logger
 from flat_bug.augmentations import InpaintPad
 from flat_bug.config import CFG_PARAMS, DEFAULT_CFG, read_cfg
-from flat_bug.geometric import (chw2hwc_uint8, contours_to_masks,
-                                create_contour_mask, find_contours,
-                                scale_contour, simplify_contour)
+from flat_bug.geometric import (calculate_tile_offsets, chw2hwc_uint8,
+                                contours_to_masks, create_contour_mask,
+                                find_contours, poly_area, scale_contour,
+                                simplify_contour)
 from flat_bug.nms import detect_duplicate_boxes, nms_masks, nms_polygons
 from flat_bug.yolo_helpers import (ResultsWithTiles, merge_tile_results,
                                    offset_box, postprocess, resize_mask,
@@ -39,7 +39,6 @@ class Prepared_Results:
         self._predictions = predictions
         self._predictions.boxes.data[:, :4] /= self.wh_scale.repeat(1, 2)
         self._predictions.polygons = [(poly + torch.roll(poly, 1, dims=0)) / (2 * self.wh_scale) for poly in self._predictions.polygons]
-        # self._predictions.polygons = [torch.tensor(shapely.affinity.scale(Polygon(poly.cpu().numpy()), self.wh_scale[0][0].item(), self.wh_scale[0][1].item(), origin="centroid").exterior.coords, device=device, dtype=dtype) for poly in self._predictions.polygons]
         self.scale = sum(scale) / 2
         self.device = device
         self.dtype = dtype
@@ -84,7 +83,7 @@ class TensorPredictions:
     `TensorPredictions` also allows for easy conversion from mask to contours and back, plotting of the results, and (de-)serialization to save and load the results to/from disk.
     """
     BOX_IS_EQUAL_MARGIN = 0  # How many pixels the boxes can differ by and still be considered equal? Used for removing duplicates before merging overlapping masks.
-    PREFER_POLYGONS = False  # If True, will use shapely Polygons instead of masks for NMS and drawing
+    PREFER_POLYGONS = True  # If True, will use shapely Polygons instead of masks for NMS and drawing
     # These are simply initialized here to decrease clutter in the __init__ function and arguments
     mask_width = None
     mask_height = None
@@ -207,15 +206,6 @@ class TensorPredictions:
         self.classes = torch.cat([p.classes[nd] for p, nd in zip(predictions, valid_chunked)])  # N
         self.scales = [predictions[i].scale for i, p in enumerate(valid_chunked) for _ in range(len(p))]  # N
         
-        # Sort the polygons, masks, boxes, classes, scales and confidences by confidence
-        sorted_indices = self.confs.argsort(descending=True)
-        self.masks = self.masks[sorted_indices]
-        self.polygons = [self.polygons[i] for i in sorted_indices]
-        self.boxes = self.boxes[sorted_indices]
-        self.classes = self.classes[sorted_indices]
-        self.scales = [self.scales[i] for i in sorted_indices]
-        self.confs = self.confs[sorted_indices]
-
         # Sort the polygons, masks, boxes, classes, scales and confidences by confidence
         sorted_indices = self.confs.argsort(descending=True)
         self.masks = self.masks[sorted_indices]
@@ -435,6 +425,13 @@ class TensorPredictions:
             self.masks = [torch.empty((0, 0), device=self.device, dtype=self.dtype) for _ in range(len(value))]  # Initialize empty masks
         else:
             self.masks = contours_to_masks(value, self.mask_height, self.mask_width).to(self.device)
+
+    @property
+    def areas(self):
+        if self.PREFER_POLYGONS:
+            return [poly_area(poly) for poly in self.polygons]
+        else:
+            return self.masks.sum(1).sum(1).tolist()
 
     def contour_to_image_coordinates(
             self, 
@@ -772,12 +769,15 @@ class TensorPredictions:
         classes = self.classes.cpu().long().tolist()
         # 5. Get the scales (already floats in a list)
         scales = self.scales
+        # 6. Get the areas (already floats in a list)
+        areas = self.areas
         return {
             "boxes": boxes,
             "contours": contours,
             "confs": confs,
             "classes": classes,
             "scales": scales,
+            "areas": areas,
             "image_path": self.image_path,
             "image_width": self.image.shape[2],
             "image_height": self.image.shape[1],
@@ -883,6 +883,9 @@ class TensorPredictions:
         for k, v in data.items():
             # Skip constants in second round
             if k in self.CONSTANTS:
+                continue
+            # Skip dynamically computed class property attributes
+            if k in ["areas"]:
                 continue
             # Skip the identifier 
             if k in ["identifier", "image_height", "image_width"]:
@@ -1260,19 +1263,11 @@ class Predictor(object):
             image = torch.nn.functional.pad(image, pad_lrtb, mode="constant", value=0) # Pad with black
             h, w = image.shape[1:]
 
-        # Tile calculation
-        x_n_tiles = math.ceil(w / (TILE_SIZE - self.MINIMUM_TILE_OVERLAP)) if w != TILE_SIZE else 1
-        y_n_tiles = math.ceil(h / (TILE_SIZE - self.MINIMUM_TILE_OVERLAP)) if h != TILE_SIZE else 1
-
-        x_stride = TILE_SIZE - math.floor((TILE_SIZE * (x_n_tiles + 0) - w) / x_n_tiles) if x_n_tiles > 1 else TILE_SIZE
-        y_stride = TILE_SIZE - math.floor((TILE_SIZE * (y_n_tiles + 0) - h) / y_n_tiles) if y_n_tiles > 1 else TILE_SIZE
-        x_stride -= x_stride % 4
-        y_stride -= y_stride % 4
-
-        x_range = [i if (i + TILE_SIZE) < w else (w - TILE_SIZE - w % 4) for i in range(0, x_stride * x_n_tiles, x_stride)]
-        y_range = [i if (i + TILE_SIZE) < h else (h - TILE_SIZE - h % 4) for i in range(0, y_stride * y_n_tiles, y_stride)]
-
-        offsets = [((m, n), (j, i)) for n, j in enumerate(y_range) for m, i in enumerate(x_range)]
+        offsets = calculate_tile_offsets(
+            image_size=(w, h),
+            tile_size=TILE_SIZE,
+            minimum_overlap=self.MINIMUM_TILE_OVERLAP
+        )
 
         hyperparams = {
             "image" : image,
@@ -1400,11 +1395,12 @@ class Predictor(object):
             total_detect_time = start_detect.elapsed_time(end_detect) / 1000  # Convert to seconds
             pred_prop = total_elapsed / total_detect_time
             logger.info(
-                f'Prediction time: {total_elapsed:.3f}s/{pred_prop * 100:.3g}%'
-                f' (overhead: {overhead_prop * 100:.1f}) |'
-                f' Fetch {fetch_prop * 100:.1f}% |'
-                f' Forward {forward_prop * 100:.1f}% |'
-                f' Postprocess {postprocess_prop * 100:.1f}%)'
+                f'Prediction time: {total_elapsed:.3f}s/{pred_prop:>4.1%}'
+                f' (overhead: {overhead_prop:>4.1%}) |'
+                f' Fetch {fetch_prop:>4.1%} |'
+                f' Forward {forward_prop:>4.1%} |'
+                f' Postprocess {postprocess_prop:>4.1%} |'
+                f' Tiles {len(offsets)}'
             )
             if hasattr(self, "total_detection_time"):
                 self.total_detection_time += total_detect_time
@@ -1454,7 +1450,7 @@ class Predictor(object):
                 apply_exif_orientation=True
             ).to(self._device)
         elif isinstance(image, torch.Tensor):
-            logger.info("Input image source file not specified for prediction, saving the prediction will require specifying the source file basename.")
+            logger.debug("Input image source file not specified for prediction, saving the prediction will require specifying the source file basename.")
         else:
             raise TypeError(f"Unknown type for image: {type(image)}, expected str or torch.Tensor")
 
@@ -1473,12 +1469,12 @@ class Predictor(object):
         edge_case_margin_padding_multiplier = 2
         padding_offset = torch.tensor((self.EDGE_CASE_MARGIN, self.EDGE_CASE_MARGIN), dtype=self._dtype, device=self._device) * edge_case_margin_padding_multiplier
         if padding_offset.sum() > 0:
-            # padding_for_edge_cases = transforms.Pad(
-            #     padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier, 
-            #     fill=0.5,
-            #     padding_mode='constant'
-            # )
-            padding_for_edge_cases = InpaintPad(padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier)
+            padding_for_edge_cases = transforms.Pad(
+                padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier, 
+                fill=0,
+                padding_mode='constant'
+            )
+            # padding_for_edge_cases = InpaintPad(padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier)
             transform_list.append(padding_for_edge_cases)
         else:
             padding_offset[:] = 0
@@ -1495,11 +1491,10 @@ class Predictor(object):
         max_dim = max(transformed_image.shape[1:])
         min_dim = min(transformed_image.shape[1:])
 
-        # fixme, what to do if the image is too small? - RE: Fixed by adding padding in _detect_instances
         scales = []
 
         if single_scale:
-            scales.append(min(1, self.TILE_SIZE / min_dim))
+            scales = [1]
         else:
             s = self.TILE_SIZE / max_dim
 
