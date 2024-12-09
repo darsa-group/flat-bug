@@ -22,7 +22,7 @@ def cli_args():
                             help="A image file or a directory of image files")
     args_parse.add_argument("-o", "--output", type=str, dest="output_dir", required=True,
                         help="The result directory")
-    args_parse.add_argument("-w", "--model-weights", type=str, dest="model_weights", default="flat_bug_L.pt",
+    args_parse.add_argument("-w", "--model-weights", type=str, dest="model_weights", default="flat_bug_M.pt",
                             help="The .pt file")
     args_parse.add_argument("-p", "--input-pattern", type=str, dest="input_pattern", default=r"[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$",
                             help=r"The pattern to match the images. Default is '[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$' i.e. jpg/jpeg/png case-insensitive.")

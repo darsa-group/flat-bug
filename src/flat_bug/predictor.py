@@ -1164,7 +1164,7 @@ class Predictor(object):
 
         if isinstance(model, str):
             if not os.path.exists(model):
-                success = download_from_repository(os.path.join("models", model), model, False)
+                success = download_from_repository("models/" + model, model, False)
                 if not success:
                     raise FileNotFoundError(f"No such model or file: '{model}'")
             
