@@ -517,7 +517,7 @@ if torch.cuda.is_available():
         _INT_MM_SUPPORTED = True
     except:
         _INT_MM_SUPPORTED = False
-        logger.warning("_int_mm is not supported on this device, falling back to CPU implementation")
+        logger.warning("_int_mm is not supported on this device, transitive closure subroutine falling back to CPU implementation")
 else:
     _INT_MM_SUPPORTED = False
 
