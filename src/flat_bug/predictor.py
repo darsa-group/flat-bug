@@ -696,6 +696,7 @@ class TensorPredictions:
         # Save or show the image
         if outpath:
             cv2.imwrite(outpath, image)
+            return None
         else:
             return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     
@@ -788,7 +789,7 @@ class TensorPredictions:
 
     def serialize(
             self, 
-            outpath: str = None, 
+            outpath: str, 
             save_json: bool = True, 
             save_pt: bool = False, 
             identifier: str = None
@@ -804,7 +805,6 @@ class TensorPredictions:
             save_pt (bool, optional): Whether to save the .pt file. Defaults to False. Rather disk space wasteful.
             identifier (str, optional): An identifier for the serialized data. Defaults to None.
         """
-        assert outpath is not None, RuntimeError("Cannot serialize without outpath")
         assert len(outpath) > 0, RuntimeError("Cannot serialize with empty outpath")
         assert os.path.exists(os.path.dirname(outpath)), RuntimeError(f"Invalide outpath {outpath}, directory does not exist")
 
@@ -958,7 +958,7 @@ class TensorPredictions:
                 os.makedirs(prediction_directory)
         else:
             # If the prediction directory is not used set it to None
-            prediction_directory = None
+            return None
 
         # Save overview
         if overview:
@@ -1021,7 +1021,7 @@ def _process_batch(
             time : bool = False,
             callback : str = "__call__",
             **kwargs : Any # Swallow any extra arguments
-    ) -> Tuple[int, torch.Tensor, List]:
+    ) -> Tuple[int, torch.Tensor, Tuple]:
     if time:
         # Initialize batch timing calculations
         start_batch_event = torch.cuda.Event(enable_timing=True)
@@ -1122,12 +1122,12 @@ class Predictor(object):
     Enabling this will print a verbose output of the timing of the different \\
     parts of the prediction process.
     """
-    TILE_SIZE                       = None
+    TILE_SIZE : int = None
     """
     The size of the tiles to split the image into. \\
     This is defined by the model and should probably not be changed.
     """
-    BATCH_SIZE                      = None
+    BATCH_SIZE : int = None
     """
     The batch size to use for the prediction. \\
     This determines how many tiles are processed in parallel. \\

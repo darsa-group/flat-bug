@@ -73,6 +73,13 @@ def predict(
     ):
     logger.debug("OPTIONS:", locals())
 
+    # Sanitize paths
+    input = os.path.normpath(input)
+    output_dir = os.path.normpath(output_dir)
+    model_weights = os.path.normpath(model_weights)
+    if not config is None:
+        config = os.path.normpath(config)
+
     isERDA = input.startswith("erda://")
     if isERDA:
         from pyremotedata.implicit_mount import IOHandler, RemotePathIterator
@@ -101,8 +108,7 @@ def predict(
     
     dtype = dtype
     
-    config = config
-    if config:
+    if not config is None:
         config = read_cfg(config)
     else:
         config = DEFAULT_CFG
@@ -153,7 +159,7 @@ def predict(
         io.start()
         io.cd(input)
         # Check for local file index
-        local_file_index = os.path.join(os.getcwd(), output_dir, f"{input.replace('/', '_')}_file_index.txt")
+        local_file_index = os.path.join(os.getcwd(), output_dir, f"{input.replace(os.sep, '_')}_file_index.txt")
         if os.path.isfile(local_file_index):
             with open(local_file_index, "r") as file:
                 file_index = [line.strip() for line in file.readlines()]
@@ -244,7 +250,7 @@ def predict(
                     identifier = UUID, #str(uuid.uuid4()),
                 )
                 if not result_directory is None:
-                    json_files = [f for f in  glob.glob(os.path.join(result_directory, "*.json"))]
+                    json_files = [f for f in glob.glob(os.path.join(glob.escape(result_directory), "*.json"))]
                     assert len(json_files) == 1
                     all_json_results.append(json_files[0])
                 if isVideo and overviews:
