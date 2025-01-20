@@ -33,7 +33,7 @@ def equal_allocate_overlaps(total: int, segments: int, size: int) -> List[int]:
         [0, 187, 374, 562, 750]
     """
     if segments < 2:
-        return [0]
+        return [0] * len(segments)
     
     overlap = segments * size - total
     partial_overlap, remainder = divmod(overlap, segments - 1)

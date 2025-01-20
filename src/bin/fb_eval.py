@@ -105,7 +105,18 @@ def main():
     
     if args.workers <= 1:
         for image in tqdm(shared_keys, desc="Evaluating images", dynamic_ncols=True):
-            result_files += [process_image(image)]
+            result_files += [process_image(
+                group1             = gt_annotations[image], 
+                group2             = pred_annotations[image], 
+                group_labels       = ["Ground Truth", "Predictions"],
+                image_path         = f'{args.image_directory}{os.sep}{image}', 
+                output_identifier  = os.path.splitext(image)[0], 
+                plot               = args.plot,
+                plot_scale         = args.scale,
+                plot_boxes         = args.no_boxes,
+                output_directory   = args.output_directory,
+                threshold          = iou_match_threshold
+            )]
     else:
         from multiprocessing import Pool
         pool = Pool(args.workers)
