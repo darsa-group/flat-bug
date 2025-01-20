@@ -1,3 +1,5 @@
+## **<center><ins>Insert Preprint/Paper Reference Here</ins></center>**
+
 <p align="center">
     <img src="prediction.jpg" style="width: 75%;">
 </p>
@@ -6,10 +8,9 @@
 
 The goal of `flat-bug` is to provide a single unified model for detection and segmentation of all terrestrial arthropods on arbitrarily large images, especially fine-tuned for the case of top-down images/scans - thus the name `"flat"-bug`.
 
-**<center><ins>Insert Preprint/Paper Reference Here</ins></center>**
-
 ### Installation
-The latest version of `flat-bug` can be installed with any of your favourite package managers such as:
+Installation via package managers coming later.
+<!-- The latest version of `flat-bug` can be installed with any of your favourite package managers such as:
 #### `pip`
 ```py
 python -m pip install flat-bug
@@ -25,7 +26,7 @@ mamba install flat-bug -c conda-forge
 #### `micromamba`
 ```py
 micromamba install flat-bug -c conda-forge
-```
+``` -->
 #### Source/development
 Or a development version can be installed from source by cloning this repository:
 ```sh
@@ -100,7 +101,8 @@ output.save(
 ### Tutorials
 We provide a number of tutorials on general and advanced usage, training, deployment and hyperparameters of `flat-bug` in [examples/tutorials](examples/tutorials) or with Google Colab (see our [docs[INSERT LINK]](INSERT_LINK)).
 
-### Archive
+<!-- fixme: Remember to add this later! -->
+<!-- ### Archive
 #### Models
 
 #### Data
@@ -108,4 +110,4 @@ We provide a number of tutorials on general and advanced usage, training, deploy
 ### Contributions
 #### Code
 
-#### Data
+#### Data -->
