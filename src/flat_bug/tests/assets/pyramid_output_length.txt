@@ -1,3 +1,1 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:3fdba35f04dc8c462986c992bcf875546257113072a909c162f7e470e581e278
-size 2
+ERDA Pointer

@@ -3,15 +3,15 @@ import re
 from urllib.request import urlretrieve
 
 
-def file_is_lfs_pointer(file):
+def file_is_lfs_or_erda_pointer(file):
     with open(file, "r") as f:
         try:
-            return bool(re.search(r"git-lfs\.github\.com", f.read()))
+            return bool(re.search(r"git-lfs\.github\.com|ERDA Pointer", f.read()))
         except UnicodeDecodeError:
             return False
     
 def check_file_with_remote_fallback(file, file_storage : str="https://anon.erda.au.dk/share_redirect/ecgKtuRWe5"):
-    if not os.path.exists(file) or file_is_lfs_pointer(file):
+    if not os.path.exists(file) or file_is_lfs_or_erda_pointer(file):
         remote_uri = f"{file_storage}/{os.path.basename(file)}"
         try:
             urlretrieve(remote_uri, file)
