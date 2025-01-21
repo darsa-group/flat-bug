@@ -1,0 +1,17 @@
+batch: 32
+model: "~/flat-bug/yolov8m-seg.pt"
+epochs: 50
+device: 0
+save_period: 10
+patience: 9999
+lr0: 0.001
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 48
+fb_max_instances: 9999
+fb_max_images: -1
+fb_custom_eval: false
+fb_custom_eval_num_images: 100
+fb_exclude_datasets: ["00-prospective-ALUS-mixed", "00-prospective-crall2023", "00-prospective-chavez2024", "00-prospective-InsectCV"] # "01-partial-NHM-beetles-crops", "01-partial-Diopsis", "01-partial-abram2023", "01-partial-AMI-traps", "01-partial-gernat2018"
+plots: false
+cache: false
