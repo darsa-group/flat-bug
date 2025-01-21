@@ -1,6 +1,10 @@
-import os, yaml
+import os
 from collections import OrderedDict
-from typing import List, Iterable,Union, Any
+from typing import Any, Iterable, List, Union
+
+import yaml
+
+from flat_bug import logger
 
 # Add support for OrderedDict in PyYAML
 yaml.add_representer(OrderedDict, lambda dumper, data: dumper.represent_dict(data.items()), Dumper=yaml.SafeDumper)
@@ -37,7 +41,7 @@ DEFAULT_CFG = {
     "SCORE_THRESHOLD": 0.2,
     "IOU_THRESHOLD": 0.2,
     "MINIMUM_TILE_OVERLAP": 384,
-    "EDGE_CASE_MARGIN": 32,
+    "EDGE_CASE_MARGIN": 16,
     "MIN_MAX_OBJ_SIZE": (32, 10**8),
     "MAX_MASK_SIZE": 1024,
     "PREFER_POLYGONS": True,
@@ -296,14 +300,19 @@ def write_cfg(
 
 if __name__ == "__main__":
     # Print a helpful message:
-    print("####################################################################")
-    print("###################### Flat-Bug Configuration ######################")
-    print("####################################################################")
-    print("\nConfigurable parameters:")
-    for key in CFG_PARAMS:
-        print(f"\t- {key} ({CFG_TYPES[key]}): {CFG_DESCRIPTION[key]}")
-    print("\nParameters can either be specified with a YAML file or manually:")
-    print("\t* `fb_predict --config <YML_PATH>`")
-    print("\t* `flat_bug.predictor.Predictor.__init__(..., cfg=<YML_PATH>, ...)`")
-    print("\t* `flat_bug.predictor.Predictor.set_hyperparameters(<PARAM_i>=<VALUE_i>, <PARAM_j>=<VALUE_j>, ...)`")
-    print("\nAny parameters not specified will be set to default values.")
+    logger.info(
+        "####################################################################"
+        "###################### Flat-Bug Configuration ######################"
+        "####################################################################"
+        "\nConfigurable parameters:"
+    )
+    logger.info(
+        "\n".join([f"\t- {key} ({CFG_TYPES[key]}): {CFG_DESCRIPTION[key]}" for key in CFG_PARAMS])
+    )
+    logger.info(
+        "\nParameters can either be specified with a YAML file or manually:"
+        "\t* `fb_predict --config <YML_PATH>`"
+        "\t* `flat_bug.predictor.Predictor.__init__(..., cfg=<YML_PATH>, ...)`"
+        "\t* `flat_bug.predictor.Predictor.set_hyperparameters(<PARAM_i>=<VALUE_i>, <PARAM_j>=<VALUE_j>, ...)`"
+        "\nAny parameters not specified will be set to default values."
+    )

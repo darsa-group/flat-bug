@@ -1,29 +1,28 @@
 #!/usr/bin/env python3
 
 import argparse
+import glob
+import json
 import logging
 import os
-import glob
-import re
-import json
 import random
+import re
+from typing import Dict, List, Optional, Tuple, Union
 
-from typing import Union, Optional, Tuple, Dict, List
-
-from tqdm import tqdm
-
-import torch
 import numpy as np
-
-from flat_bug.predictor import Predictor
-from flat_bug.datasets import get_datasets
-from flat_bug.coco_utils import fb_to_coco, split_annotations, filter_coco
-from flat_bug.eval_utils import compare_groups, best_confidence_threshold, f1_score
-from flat_bug.config import write_cfg, read_cfg, DEFAULT_CFG
-
+import torch
 from scipy.optimize import differential_evolution
 from skopt import gp_minimize
 from skopt.plots import plot_convergence, plot_objective
+from tqdm import tqdm
+
+from flat_bug import logger
+from flat_bug.coco_utils import fb_to_coco, filter_coco, split_annotations
+from flat_bug.config import DEFAULT_CFG, read_cfg, write_cfg
+from flat_bug.datasets import get_datasets
+from flat_bug.eval_utils import (best_confidence_threshold, compare_groups,
+                                 f1_score)
+from flat_bug.predictor import Predictor
 
 # Fixed ranges for the parameters during tuning - should probably be configurable
 PARAMETER_RANGES = {
@@ -436,10 +435,10 @@ def main():
         pbar.update(1)
         cfg = create_cfg(scaler.unscale(params))
         if verbose:
-            print(f"Trying configuration: {cfg}")
+            logger.info(f"Trying configuration: {cfg}")
         cost = tuner.cost(cfg)
         if verbose:
-            print(f"Cost={cost} for {cfg}")
+            logger.info(f"Cost={cost} for {cfg}")
         return cost
     
     # Define the arguments for the optimization algorithm - 
@@ -450,7 +449,7 @@ def main():
         if any([i < 0 or i > 1 for i in initial]):
             raise ValueError("Initial configuration not within the defined parameter ranges:\n" + str(PARAMETER_RANGES))
     if verbose: 
-        print(f"Initial configuration: {scaler.unscale(initial)}")
+        logger.info(f"Initial configuration: {scaler.unscale(initial)}")
     lower_bound = scaler.scale([r[0] for r in PARAMETER_RANGES.values()])
     upper_bound = scaler.scale([r[1] for r in PARAMETER_RANGES.values()])
     bounds = [(l, u) for l, u in zip(lower_bound, upper_bound)]
@@ -475,7 +474,7 @@ def main():
     tuner.set_hyperparameters(**result_values)
 
     # Print and save the results
-    print(tuner)
+    logger.info(tuner)
     write_cfg(result_values, os.path.join(results_dir, "best_cfg.yaml"), overwrite=True)
         
 if __name__ == "__main__":

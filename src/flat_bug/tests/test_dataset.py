@@ -14,7 +14,7 @@ from ultralytics.utils.instance import Instances
 from ultralytics.utils.ops import resample_segments
 from ultralytics.utils.plotting import plot_images
 
-from flat_bug.datasets import MyYOLODataset, MyYOLOValidationDataset
+from flat_bug.datasets import FlatBugYOLODataset, FlatBugYOLOValidationDataset
 
 from flat_bug.tests.remote_lfs_fallback import check_file_with_remote_fallback
 
@@ -58,12 +58,12 @@ def mock_verify_image_label(image_path : str, label_path : str) -> dict:
     label["instances"] = Instances(np.array(label["bboxes"]), np.array(resample_segments(label["segments"])), label["keypoints"], bbox_format=label["bbox_format"], normalized=label["normalized"])
     return label
 
-def create_train_dataset(args : IterableSimpleNamespace) -> MyYOLODataset:
-    return MyYOLODataset(
+def create_train_dataset(args : IterableSimpleNamespace) -> FlatBugYOLODataset:
+    return FlatBugYOLODataset(
         data=ASSET_DATA,
         img_path=ASSET_DIR,
         imgsz=1024,
-        cache=False,
+        cache=args.cache,
         augment=True,
         hyp=args,
         rect=args.rect,
@@ -75,19 +75,19 @@ def create_train_dataset(args : IterableSimpleNamespace) -> MyYOLODataset:
         subset_args={"n" : 1, "pattern" : ASSET_NAME}
     )
 
-def create_validation_dataset(args : IterableSimpleNamespace) -> MyYOLOValidationDataset:
-    return MyYOLOValidationDataset(
+def create_validation_dataset(args : IterableSimpleNamespace) -> FlatBugYOLOValidationDataset:
+    return FlatBugYOLOValidationDataset(
         data=ASSET_DATA,
         img_path=ASSET_DIR,
         imgsz=1024,
-        cache=False,
+        cache=args.cache,
         augment=False,
         hyp=args,
         rect=True,
         batch_size=BATCH_SIZE,
         pad=0.5,
         single_cls=args.single_cls or False,
-        max_instances=np.Inf,
+        max_instances=np.inf,
         task="segment",
         subset_args={"n" : 1, "pattern" : ASSET_NAME}
     )

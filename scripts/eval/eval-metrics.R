@@ -1,13 +1,13 @@
-library("data.table")
-library("ggplot2")
-# library("dplyr")
+library("data.table", warn.conflicts=FALSE)
+library("ggplot2", warn.conflicts=FALSE)
+library("dplyr", warn.conflicts=FALSE)
 # library("tibble")
 # library(dplyr)
-library("scales")
-library("optparse")
-library("magrittr")
+library("scales", warn.conflicts=FALSE)
+library("optparse", warn.conflicts=FALSE)
+library("magrittr", warn.conflicts=FALSE)
 
- # Parse command line arguments - I am using this style so it is basically looks like argparse in Python
+ # Parse command line arguments - I am using this style so it looks like argparse in Python
 option_list <- list(
   make_option(c("-i", "--input_directory"), type = "character", default = NULL,
               help = "input directory [default= %default]",
@@ -34,18 +34,13 @@ for (i in c("input_directory", "output_directory")) {
 OUR_THEME <- theme_bw()
 
 scientific_10 <- function(x) {
-  # parse(text = gsub("10\\^\\+0*", "10^", gsub("1 %\\*% ", "", gsub("e", " %*% 10^", scales::scientific_format()(x)))))
   x %>%
     scales::scientific_format()() %>%
-    {
-      gsub("10\\^\\+0*", "10^", .)
-    } %>%
-    {
-      gsub("1 %\\*% ", "", .)
-    } %>%
-    {
-      gsub("e", " %*% 10^", .)
-    }
+    stringr::str_replace("(?<=e)\\+?0?", "") %>%
+    stringr::str_replace("1(?=e)", "") %>%
+    stringr::str_replace("(?<=^\\d)", " %*% ") %>%
+    stringr::str_replace("e", "10^") %>%
+    str2expression
 }
 
 
@@ -54,34 +49,35 @@ files <- list.files(RES_DIR, pattern = "*.csv", full.names = TRUE)
 files <- files[!grepl("combined_results", files)]
 
 all_data <- lapply(files, function(f) {
-  dt <- fread(f, sep = ";")
-  dt[, filename := basename(f)]
-  dt[, contour_1 := NULL]
-  dt[, contour_2 := NULL]
-  dt
+  f %>%
+    fread(sep = ";") %>%
+    as_tibble %>%
+    mutate(
+      filename = basename(f),
+      countour_1 = NULL,
+      countour_2 = NULL
+    )
 })
 
-dt <- rbindlist(all_data)
-dt[, in_gt := idx_1 != -1]
-dt[, in_im := idx_2 != -1]
-dt[, dataset := sapply(strsplit(dt[, filename], "_"), function(e) e[[1]][1])]
-dt[, area := ifelse(contourArea_1 > 0, contourArea_1, contourArea_2)]
+dt <- do.call(bind_rows, all_data) %>%
+  mutate(
+    in_gt = idx_1 != -1,
+    in_im = idx_2 != -1,
+    dataset = purrr::map_chr(filename, ~ stringr::str_extract(.x, "^[^_]+")),
+    area = ifelse(contourArea_1 > 0, contourArea_1, contourArea_2)
+  )
 
-results <- dt[
-  ,
-  .(
+results <- dt %>%
+  group_by(dataset) %>%
+  summarize(
     precision = sum(in_gt & in_im) / sum(in_im),
     recall = sum(in_gt & in_im) / sum(in_gt),
-    n_instances = .N
-  ),
-  by = "dataset"
-]
+    n_instances = n()
+  )
 
 n_datasets <- length(unique(dt$dataset))
 
 fwrite(results, paste0(opts$output_directory, "/results.csv"))
-
-# print(as_tibble(dt))
 
 binomial_mean_qci <- function(x, na.rm = TRUE, conf.int = 0.95, ...) {
   if (na.rm) x <- x[!is.na(x)]
@@ -148,17 +144,15 @@ hist_layers <- function() {
 }
 pdf(paste0(opts$output_directory, "/eval-plots.pdf"), w = 10, h = 10)
 
-recall_plot <- ggplot(
-  dt[in_gt == TRUE],
-  aes(area, as.numeric(in_gt & in_im))
-) +
+recall_plot <- dt %>%
+  filter(in_gt) %>%
+  ggplot(aes(area, as.numeric(in_gt & in_im))) +
   layers(y_name = "Recall") +
   coord_cartesian(expand = FALSE)
 
-precision_plot <- ggplot(
-  dt[in_im == TRUE],
-  aes(area, as.numeric(in_gt & in_im))
-) +
+precision_plot <- dt %>%
+  filter(in_im) %>%
+  ggplot(aes(area, as.numeric(in_gt & in_im))) +
   layers(y_name = "Precision") +
   coord_cartesian(expand = FALSE)
 
@@ -170,4 +164,4 @@ if (n_datasets > 1) {
 print(recall_plot)
 print(precision_plot)
 
-dev.off()
+dummy = dev.off()

@@ -1,17 +1,21 @@
+import os
+import re
+import shutil
+import tempfile
 import unittest
-
-import os, shutil, re, tempfile
 from glob import glob
+from collections import defaultdict
 
-import torch
 import numpy as np
-from torchvision.io import read_image
 import torch
+from torchvision.io import read_image
 
-from flat_bug.predictor import TensorPredictions, Predictor
-
+from flat_bug import logger
+from flat_bug.predictor import Predictor, TensorPredictions
 from flat_bug.tests.remote_lfs_fallback import check_file_with_remote_fallback
 
+TEST_MODEL_NAME = "flat_bug_M.pt"
+PYRAMID_SCALE_BEFORE = 0.6
 ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")
 ASSET_NAME = "ALUS_Non-miteArachnids_Unknown_2020_11_03_4545"
 ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")
@@ -36,7 +40,7 @@ TEST_CFG = {
     "EXPERIMENTAL_NMS_OPTIMIZATION": True,
     "TIME": False,
     "TILE_SIZE": 1024,
-    "BATCH_SIZE": 16
+    "BATCH_SIZE": 1
 }
 
 class TestTensorPredictions(unittest.TestCase):
@@ -84,6 +88,8 @@ class DummyModel(torch.nn.Module):
         self.asset_dir = asset_dir
         self.index = 1
 
+        self.save_counter = defaultdict(lambda : 0)
+
     def to(self, *args, **kwargs):
         return self
 
@@ -102,24 +108,43 @@ class DummyModel(torch.nn.Module):
     def __call__(self, image):
         try:
             this_asset = os.path.join(self.asset_dir, f'{self.type}_tps_{self.index}.pt')
+            print(f'Processing asset {this_asset}')
             check_file_with_remote_fallback(this_asset)
             out = cast_nested(torch.load(this_asset, map_location=image.device), image.dtype)
         except Exception as e:
-            print(f'Failed to load test file "{self.type}_tps_{self.index}.pt" - consider generating the test files with `python3 src/flat_bug/tests/generate_model_outputs.py --model model_snapshots/fb_2024-03-18_large_best.pt --image src/flat_bug/tests/assets/ALUS_Non-miteArachnids_Unknown_2020_11_03_4545.jpg --type both`')
+            logger.error(
+                f'Failed to load test file "{self.type}_tps_{self.index}.pt" - '
+                'consider generating the test files with '
+                '`python3 src/flat_bug/tests/generate_model_outputs.py '
+                '--model model_snapshots/fb_2024-03-18_large_best.pt '
+                '--image src/flat_bug/tests/assets/ALUS_Non-miteArachnids_Unknown_2020_11_03_4545.jpg '
+                '--type both`'
+            )
             raise e
         self.index += 1
         return out
+    
+    def hook_save_raw_output(self, model, label : str):
+        ocall = model.__call__
+
+        def call_wrapped(*args, **kwargs):
+            output = ocall(*args, **kwargs)
+            self.save_counter[label] += 1
+            torch.save(cast_nested(output, torch.device("cpu")), os.path.join(self.asset_dir, f'tps_{self.save_counter[label]}.pt'))
+            return output
+        
+        model.__call__ = call_wrapped
 
     def generate_single_scale_files(self, weights, image):
         dtype, device = image.dtype, image.device
         model = Predictor(model=weights, device=device, dtype=dtype, cfg=TEST_CFG)
-        model.DEBUG = True
+        self.hook_save_raw_output(model._model, "single_scale")
         model.TIME = True
         model.total_detection_time = 0
         model.total_forward_time = 0
-        output = model._detect_instances(image, scale=1, max_scale=False)
+        output = model._detect_instances(image, scale=(model.TILE_SIZE / torch.tensor(image.shape[1:])).min().item(), max_scale=False)
         # Rename the files with the pattern "assets/tps_<NUMBER>.pt" to "assets/single_scale_tps_<NUMBER>.pt"
-        [shutil.move(f, os.path.join(self.asset_dir, re.sub(r'tps_', "single_scale_tps_", f))) for f in glob("tps_*.pt")]
+        [shutil.move(f, os.path.join(self.asset_dir, re.sub(r'tps_', "single_scale_tps_", f))) for f in glob(os.path.join(self.asset_dir, "tps_*.pt"))]
         # Create a file with the length of the output object as a reference - this is the number of detections in the final object
         with open(os.path.join(self.asset_dir, "single_scale_output_length.txt"), "w") as f:
             f.write(str(len(output)))
@@ -127,11 +152,11 @@ class DummyModel(torch.nn.Module):
     def generate_pyramid_files(self, weights, image, image_path):
         dtype, device = image.dtype, image.device
         model = Predictor(model=weights, device=device, dtype=dtype, cfg=TEST_CFG)
-        model.DEBUG = True
+        self.hook_save_raw_output(model._model, "pyramid")
         model.TIME = True
-        output = model.pyramid_predictions(image, image_path, scale_increment=1/2, scale_before=1, single_scale=False)
+        output = model.pyramid_predictions(image, image_path, scale_increment=1/2, scale_before=PYRAMID_SCALE_BEFORE, single_scale=False)
         # Rename the files with the pattern "assets/tps_<NUMBER>.pt" to "assets/pyramid_tps_<NUMBER>.pt"
-        [shutil.move(f, os.path.join(self.asset_dir, re.sub(r'tps_', "pyramid_tps_", f))) for f in glob("tps_*.pt")]
+        [shutil.move(f, os.path.join(self.asset_dir, re.sub(r'tps_', "pyramid_tps_", f))) for f in glob(os.path.join(self.asset_dir, "tps_*.pt"))]
         # Create a file with the length of the output object as a reference - this is the number of detections in the final object
         with open(os.path.join(self.asset_dir, "pyramid_output_length.txt"), "w") as f:
             f.write(str(len(output)))
@@ -140,12 +165,12 @@ class TestPredictor(unittest.TestCase):
     TOLERANCE = 0.1
 
     def test_single_scale(self):
-        dtype = torch.float32
+        dtype = torch.float16
         predictor = Predictor(model=DummyModel("single_scale", ASSET_DIR), dtype=dtype, cfg=TEST_CFG)
         image_path = os.path.join(ASSET_DIR, ASSET_NAME + ".jpg")
         check_file_with_remote_fallback(image_path)
-        image = read_image(image_path).to(torch.device("cpu"), dtype=dtype)
-        output = predictor._detect_instances(image, scale=1, max_scale=False)
+        image = read_image(image_path).to(torch.device("cpu"), dtype=dtype) / 255.
+        output = predictor._detect_instances(image, scale=(predictor.TILE_SIZE / torch.tensor(image.shape[1:])).min().item(), max_scale=False)
         output_length = len(output)
         with open(check_file_with_remote_fallback(os.path.join(ASSET_DIR, "single_scale_output_length.txt"))) as f:
             reference_length = int(f.read())
@@ -153,12 +178,12 @@ class TestPredictor(unittest.TestCase):
         self.assertTrue(abs(1 - output_length/reference_length) < self.TOLERANCE, msg=f"Output length ({output_length}) does not match the reference length ({reference_length})")
     
     def test_pyramid(self):
-        dtype = torch.float32
+        dtype = torch.float16
         predictor = Predictor(model=DummyModel("pyramid", ASSET_DIR), dtype=dtype, cfg=TEST_CFG)
         image_path = os.path.join(ASSET_DIR, ASSET_NAME + ".jpg")
         check_file_with_remote_fallback(image_path)
-        image = read_image(image_path).to(torch.device("cpu"), dtype=dtype)
-        output = predictor.pyramid_predictions(image, image_path, scale_increment=1/2, scale_before=1, single_scale=False)
+        image = read_image(image_path).to(torch.device("cpu"), dtype=dtype) / 255.
+        output = predictor.pyramid_predictions(image, image_path, scale_increment=1/2, scale_before=PYRAMID_SCALE_BEFORE, single_scale=False)
         output_length = len(output)
         with open(check_file_with_remote_fallback(os.path.join(ASSET_DIR, "pyramid_output_length.txt"))) as f:
             reference_length = int(f.read())

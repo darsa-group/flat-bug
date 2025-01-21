@@ -1,15 +1,20 @@
 
-import os
-import json
 import argparse
-
+import json
+import os
 from glob import glob
 
 from tqdm import tqdm
 
-from flat_bug.coco_utils import fb_to_coco, split_annotations, filter_coco
+from flat_bug import logger
+from flat_bug.coco_utils import fb_to_coco, filter_coco, split_annotations
+from flat_bug.config import DEFAULT_CFG, read_cfg
 from flat_bug.eval_utils import compare_groups
-from flat_bug.config import read_cfg, DEFAULT_CFG
+
+
+def load_json(file : str):
+    with open(file, "r") as f:
+        return json.load(f)
 
 # Wrapper function to call compare_groups with a single parameter dictionary for multiprocessing
 def process_image(params):
@@ -48,10 +53,10 @@ def main():
     iou_match_threshold = config["IOU_THRESHOLD"]
 
     if args.coco_predictions:
-        pred_coco = json.load(open(args.predictions, "r"))
+        pred_coco = load_json(args.predictions)
     else:
         files = sorted(glob(args.predictions, recursive=True))
-        flat_bug_predictions = [json.load(open(p)) for p in files]
+        flat_bug_predictions = [load_json(p) for p in files]
         pred_coco = {}
         for d in flat_bug_predictions:
             fb_to_coco(d, pred_coco)
@@ -59,7 +64,7 @@ def main():
 
     if not os.path.exists(args.ground_truth):
         raise ValueError(f'Ground truth file not found: {args.ground_truth}')
-    gt_coco = json.load(open(args.ground_truth, "r"))
+    gt_coco = load_json(args.ground_truth)
     gt_coco = filter_coco(gt_coco, area=min_size)
     gt_annotations, pred_annotations = split_annotations(gt_coco), split_annotations(pred_coco)
 
@@ -72,29 +77,46 @@ def main():
     if len(gt_diff_keys) > 0:
         show = min(2, len(gt_diff_keys))
         missing_gt_diff_formatted = ', '.join(['"' + str(i) + '"' for i in gt_diff_keys[:show]])
-        print(f'Ground truth has {len(gt_diff_keys)} images that are not in the predictions: [{missing_gt_diff_formatted}{", ..." if len(gt_diff_keys) > show else ""}] and {len(gt_diff_keys) - show} more')
+        logger.info(
+            f'Ground truth has {len(gt_diff_keys)} images that are not in the predictions:'
+            f'[{missing_gt_diff_formatted}{", ..." if len(gt_diff_keys) > show else ""}] and {len(gt_diff_keys) - show} more'
+        )
     if len(pred_diff_keys) > 0:
         show = min(2, len(pred_diff_keys))
         missing_pred_diff_formatted = ', '.join(['"' + str(i) + '"' for i in pred_diff_keys[:show]])
-        print(f'Predictions has {len(pred_diff_keys)} images that are not in the ground truth: [{missing_pred_diff_formatted} {", ..." if len(pred_diff_keys) > show else ""}] and {len(pred_diff_keys) - show} more')
+        logger.info(
+            f'Predictions has {len(pred_diff_keys)} images that are not in the ground truth:'
+            f'[{missing_pred_diff_formatted} {", ..." if len(pred_diff_keys) > show else ""}] and {len(pred_diff_keys) - show} more'
+        )
     if len(shared_keys) == 0:
         raise ValueError(f'No images in common between the ground truth and the predictions')
 
     shared_keys = sorted(shared_keys)
     if args.n != -1:
-        print(f'Skipping the evaluation of {len(shared_keys) - args.n} images')
+        logger.info(f'Skipping the evaluation of {len(shared_keys) - args.n} images')
         shared_keys = shared_keys[:args.n]
     if len(shared_keys) == 0:
         raise ValueError(f'No images to evaluate')
     if len(shared_keys) < args.workers:
         args.workers = min(args.workers, len(shared_keys))
-        print(f"Warning: More workers than images, reducing the number of workers to {args.workers}")
+        logger.info(f"Warning: More workers than images, reducing the number of workers to {args.workers}")
     
     result_files = []
     
     if args.workers <= 1:
         for image in tqdm(shared_keys, desc="Evaluating images", dynamic_ncols=True):
-            result_files += [process_image(image)]
+            result_files += [process_image(
+                group1             = gt_annotations[image], 
+                group2             = pred_annotations[image], 
+                group_labels       = ["Ground Truth", "Predictions"],
+                image_path         = f'{args.image_directory}{os.sep}{image}', 
+                output_identifier  = os.path.splitext(image)[0], 
+                plot               = args.plot,
+                plot_scale         = args.scale,
+                plot_boxes         = args.no_boxes,
+                output_directory   = args.output_directory,
+                threshold          = iou_match_threshold
+            )]
     else:
         from multiprocessing import Pool
         pool = Pool(args.workers)
@@ -120,6 +142,7 @@ def main():
 
     if args.combine:
         import pandas as pd
+
         # Add the basepath (without .csv) as a new column before concatenating
         def read_and_add_new_column(f):
             df = pd.read_csv(f, sep=";")

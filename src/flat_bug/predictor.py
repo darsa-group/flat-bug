@@ -1,40 +1,35 @@
 import base64
-import os.path
+import json
+import os
 import pathlib
 import shutil
 import tempfile
-import json
-import math
-import logging
+from typing import Any, List, Optional, Self, Tuple, Union
 
-from typing import Union, List, Tuple, Optional, Any, Self
-import torch.types
-from torch._prims_common import DeviceLikeType
-
-try:
-    import exiftool
-    EXIFTOOL_AVAILABLE = True
-except ImportError:
-    EXIFTOOL_AVAILABLE = False
-
-import numpy as np
 import cv2
-from matplotlib import pyplot as plt
-
+import numpy as np
 import torch
+import torch.types
 import torchvision
-from torchvision.io import read_image, ImageReadMode
 import torchvision.transforms as transforms
-
+from PIL import Image
+from torch._prims_common import DeviceLikeType
+from torchvision.io import ImageReadMode, read_image
 from ultralytics import YOLO
 from ultralytics.engine.results import Results
 
 # from flat_bug.yolo_helpers import *
-from flat_bug.yolo_helpers import ResultsWithTiles, stack_masks, offset_box, resize_mask, postprocess, merge_tile_results
-from flat_bug.geometric import find_contours, contours_to_masks, simplify_contour, create_contour_mask, scale_contour
-from flat_bug.nms import nms_masks, nms_polygons, detect_duplicate_boxes
-from flat_bug.config import read_cfg, DEFAULT_CFG, CFG_PARAMS
+from flat_bug import download_from_repository, logger
 from flat_bug.augmentations import InpaintPad
+from flat_bug.config import CFG_PARAMS, DEFAULT_CFG, read_cfg
+from flat_bug.geometric import (calculate_tile_offsets, chw2hwc_uint8,
+                                contours_to_masks, create_contour_mask,
+                                find_contours, poly_area, scale_contour,
+                                simplify_contour)
+from flat_bug.nms import detect_duplicate_boxes, nms_masks, nms_polygons
+from flat_bug.yolo_helpers import (ResultsWithTiles, merge_tile_results,
+                                   offset_box, postprocess, resize_mask,
+                                   stack_masks)
 
 
 # Class for containing the results from a single _detect_instances call - This should probably not be its own class, but just a TensorPredictions object with a single element instead, but this would require altering the TensorPredictions._combine_predictions function to handle a single element differently or pass a flag or something
@@ -44,7 +39,6 @@ class Prepared_Results:
         self._predictions = predictions
         self._predictions.boxes.data[:, :4] /= self.wh_scale.repeat(1, 2)
         self._predictions.polygons = [(poly + torch.roll(poly, 1, dims=0)) / (2 * self.wh_scale) for poly in self._predictions.polygons]
-        # self._predictions.polygons = [torch.tensor(shapely.affinity.scale(Polygon(poly.cpu().numpy()), self.wh_scale[0][0].item(), self.wh_scale[0][1].item(), origin="centroid").exterior.coords, device=device, dtype=dtype) for poly in self._predictions.polygons]
         self.scale = sum(scale) / 2
         self.device = device
         self.dtype = dtype
@@ -89,7 +83,7 @@ class TensorPredictions:
     `TensorPredictions` also allows for easy conversion from mask to contours and back, plotting of the results, and (de-)serialization to save and load the results to/from disk.
     """
     BOX_IS_EQUAL_MARGIN = 0  # How many pixels the boxes can differ by and still be considered equal? Used for removing duplicates before merging overlapping masks.
-    PREFER_POLYGONS = False  # If True, will use shapely Polygons instead of masks for NMS and drawing
+    PREFER_POLYGONS = True  # If True, will use shapely Polygons instead of masks for NMS and drawing
     # These are simply initialized here to decrease clutter in the __init__ function and arguments
     mask_width = None
     mask_height = None
@@ -122,7 +116,7 @@ class TensorPredictions:
             if k in self.CONSTANTS:
                 setattr(self, k, v)
             else:
-                print(f"WARNING: Unknown keyword argument {k}={v} for TensorPredictions is ignored!")
+                logger.warning(f"WARNING: Unknown keyword argument {k}={v} for TensorPredictions is ignored!")
 
         # Device and dtype are None by default, but they may be set by the user or passwed by **kwargs, so we check if they are None and if so set them to the default values
         # Then we check that they are the same for all predictions and the image (if they are not None)
@@ -153,7 +147,7 @@ class TensorPredictions:
         if self.time and len(predictions) > 0:
             end.record()
             torch.cuda.synchronize()
-            print(f'Initializing TensorPredictions took {start.elapsed_time(end) / 1000:.3f} s')
+            logger.info(f'Initializing TensorPredictions took {start.elapsed_time(end) / 1000:.3f} s')
 
     def _combine_predictions(
             self, 
@@ -211,6 +205,15 @@ class TensorPredictions:
         self.polygons = [p._predictions.polygons[nd_i] for p, nd in zip(predictions, valid_chunked) for nd_i in nd]
         self.classes = torch.cat([p.classes[nd] for p, nd in zip(predictions, valid_chunked)])  # N
         self.scales = [predictions[i].scale for i, p in enumerate(valid_chunked) for _ in range(len(p))]  # N
+        
+        # Sort the polygons, masks, boxes, classes, scales and confidences by confidence
+        sorted_indices = self.confs.argsort(descending=True)
+        self.masks = self.masks[sorted_indices]
+        self.polygons = [self.polygons[i] for i in sorted_indices]
+        self.boxes = self.boxes[sorted_indices]
+        self.classes = self.classes[sorted_indices]
+        self.scales = [self.scales[i] for i in sorted_indices]
+        self.confs = self.confs[sorted_indices]
 
         # # Check that everything is the correct size
         assert len(self) == len(self.boxes), RuntimeError(f"len(self) {len(self)} != len(self.boxes) {len(self.boxes)}")
@@ -223,7 +226,10 @@ class TensorPredictions:
             total = start.elapsed_time(end) / 1000
             duplication_removal = start.elapsed_time(end_duplication_removal) / 1000
             mask_combination = end_duplication_removal.elapsed_time(end_mask_combination) / 1000
-            print(f'Combining {len(predictions)} predictions into a single TensorPredictions object took {total:.3f} s | Duplication removal: {duplication_removal:.3f} s | Mask combination: {mask_combination:.3f} s')
+            logger.info(
+                f'Combining {len(predictions)} predictions into a single TensorPredictions object took {total:.3f} s |'
+                f' Duplication removal: {duplication_removal:.3f} s | Mask combination: {mask_combination:.3f} s'
+            )
 
     def offset_scale_pad(
             self, 
@@ -232,12 +238,14 @@ class TensorPredictions:
             pad: int = 0
         ) -> Self:
         """
-        Since the image may be padded, the masks and boxes should be offset by the padding-width and scaled by the scale_before factor to match the original image size. Also pads the boxes by pad pixels to be safe.
+        Since the image may be padded, the masks and boxes should be offset by the padding-width and scaled by 
+        the `scale_before` factor to match the original image size. Also pads the boxes by pad pixels to be safe.
 
         Args:
-            offset (torch.Tensor): A vector of length 2 containing the x and y offset of the image. Useful for removing image-padding effects.
-            scale (float): The scale factor of the image.
-            pad (int, optional): The number of pixels to pad the boxes by. Defaults to 0. (Not to be confused with image-padding, this is about expanding the boxes a bit to ensure they cover the entire mask)
+            offset (`torch.Tensor`): A vector of length 2 containing the x and y offset of the image. Useful for removing image-padding effects.
+            scale (`float`): The scale factor of the image.
+            pad (`int`, optional): The number of pixels to pad the boxes by. Defaults to 0. (Not to be confused with image-padding, 
+                this is about expanding the boxes a bit to ensure they cover the entire mask)
         """
         if self.time:
             # Initialize timing calculations
@@ -251,8 +259,7 @@ class TensorPredictions:
         if len(self) > 0:
             # Boxes is easy
             self.boxes = offset_box(self.boxes, offset)  # Add the offsets to the box-coordinates
-            self.boxes[:, :4] = (self.boxes[:,
-                                :4] * scale).round()  # Multiply the box-coordinates by the scale factor (round so it doesn't implicitly gets floored when cast to an integer later)
+            self.boxes[:, :4] = (self.boxes[:, :4] * scale).round()  # Multiply the box-coordinates by the scale factor
             # Pad the boxes a bit to be safe
             self.boxes[:, :2] -= pad
             self.boxes[:, 2:] += pad
@@ -264,21 +271,31 @@ class TensorPredictions:
             self.polygons = [(poly + offset.unsqueeze(0)) * scale for poly in self.polygons]
 
             # However masks are more complicated since they don't have the same size as the image
-            image_shape = torch.tensor([self.image.shape[1], self.image.shape[2]], device=self.device,
-                                    dtype=self.dtype)  # Get the shape of the original image
-            # Calculate the normalized offset (i.e. the offset as a fraction of the scaled and padded image size, here the scaled and padded image size is calculated from the original image shape, but it would probably be easier just to pass it...)
+            image_shape = torch.tensor( # Get the shape of the original image
+                [self.image.shape[1], self.image.shape[2]], 
+                device=self.device,
+                dtype=self.dtype
+            ) 
+            # Calculate the normalized offset 
+            # i.e. the offset as a fraction of the scaled and padded image size, 
+            # here the scaled and padded image size is calculated from the original image shape
+            # (but it would probably be easier just to pass it...)
             offset_norm = -offset / (image_shape / scale - 2 * offset)
-            orig_mask_shape = torch.tensor([self.masks.shape[1], self.masks.shape[2]], device=self.device, dtype=self.dtype) - 1  # Get the shape of the masks
+            orig_mask_shape = torch.tensor([self.masks.shape[1], self.masks.shape[2]], device=self.device, dtype=self.dtype) - 1
             # Convert the normalized offset to the coordinates of the masks
             offset_mask_coords = offset_norm * orig_mask_shape
             # Round the coordinates to the nearest integer and convert to long (needed for indexing)
             offset_mask_coords = torch.round(offset_mask_coords).long()
-            self.masks.data = self.masks.data[:, offset_mask_coords[0]:(-(offset_mask_coords[0] + 1) if offset_mask_coords[0] != 0 else None), offset_mask_coords[1]:(-(offset_mask_coords[1] + 1) if offset_mask_coords[1] != 0 else None)]  # Slice out the padded parts of the masks
+            self.masks.data = self.masks.data[
+                :, 
+                offset_mask_coords[0]:(-(offset_mask_coords[0] + 1) if offset_mask_coords[0] != 0 else None), 
+                offset_mask_coords[1]:(-(offset_mask_coords[1] + 1) if offset_mask_coords[1] != 0 else None)
+            ]  # Slice out the padded parts of the masks
 
         if self.time:
             end.record()
             torch.cuda.synchronize()
-            print(f'Offsetting, scaling and padding took {start.elapsed_time(end) / 1000:.3f} s')
+            logger.info(f'Offsetting, scaling and padding took {start.elapsed_time(end) / 1000:.3f} s')
 
         return self
 
@@ -288,7 +305,11 @@ class TensorPredictions:
 
         It is not strictly needed, but can be used as a sanity check to see if the boxes match the masks.
         The discrepancy between the boxes and the masks comes about by all the scaling and smoothing of the masks.
+
+        TODO: Should probably be removed.
         """
+        if self.PREFER_POLYGONS:
+            raise NotImplementedError("`fix_boxes` is not implemented for polygons")
         nonzero_indices = self.masks.data.nonzero()
         mask_size = torch.tensor([self.masks.data.shape[1], self.masks.data.shape[2]], device=self.device, dtype=self.dtype)
         image_size = torch.tensor([self.image.shape[1], self.image.shape[2]], device=self.device, dtype=self.dtype)
@@ -313,7 +334,7 @@ class TensorPredictions:
             **kwargs
         ) -> Self:
         """
-        Simply wraps the nms_masks function from yolo_helpers.py, and removes the elements that were not selected.
+        Simply wraps the `nms_masks` function from yolo_helpers.py, and removes the duplicates from the `TensorPredictions` object.
         """
         if self.time:
             # Initialize timing calculations
@@ -322,36 +343,48 @@ class TensorPredictions:
             start.record()
             len_before = len(self)
 
-        # Skip if there are no elements to merge
+        # Skip if there are no instances to remove
         if len(self) > 1:
-            # Perform non-maximum suppression on the masks, using the scales as weights, that is the highest resolution masks are given the highest priority
+            # Perform non-maximum suppression on the polygons or masks
             if self.PREFER_POLYGONS:
-                nms_ind = nms_polygons(self.polygons,
-                                    self.confs,# * torch.tensor(self.scales, dtype=self.dtype, device=self.device),
-                                    iou_threshold=iou_threshold, return_indices=True, dtype=self.dtype,
-                                    boxes=self.boxes, **kwargs)
+                nms_ind = nms_polygons(
+                    polygons=self.polygons,
+                    scores=self.confs,# * torch.tensor(self.scales, dtype=self.dtype, device=self.device),
+                    iou_threshold=iou_threshold, 
+                    return_indices=True, 
+                    dtype=self.dtype,
+                    boxes=self.boxes, 
+                    **kwargs
+                )
             else:
                 image_to_mask_scale = torch.tensor(
                     [self.image.shape[1] / self.masks.data.shape[1], self.image.shape[2] / self.masks.data.shape[2]],
                     device=self.device, dtype=self.dtype
                 )
-                nms_ind = nms_masks(self.masks.data,
-                                    self.confs,# * torch.tensor(self.scales, dtype=self.dtype, device=self.device),
-                                    iou_threshold=iou_threshold, return_indices=True,
-                                    boxes=self.boxes / image_to_mask_scale.repeat(2).unsqueeze(0), **kwargs)
-            # Remove the elements that were not selected
-            self = self[nms_ind]
+                nms_ind : torch.Tensor = nms_masks(
+                    masks=self.masks.data,
+                    scores=self.confs,# * torch.tensor(self.scales, dtype=self.dtype, device=self.device),
+                    iou_threshold=iou_threshold, 
+                    return_indices=True,
+                    boxes=self.boxes / image_to_mask_scale.repeat(2).unsqueeze(0), 
+                    **kwargs
+                )
+            # Remove the instances that were not selected
+            self = self[nms_ind.sort().values]
         else:
             nms_ind = []
         
         if self.time:
             end.record()
             torch.cuda.synchronize()
-            print(f'Non-maximum suppression took {start.elapsed_time(end) / 1000:.3f} s for removing {len_before - len(nms_ind)} elements of {len_before} elements')
+            logger.info(
+                f'Non-maximum suppression took {start.elapsed_time(end) / 1000:.3f}s '
+                f'for removing {len_before - len(nms_ind)} elements of {len_before} elements'
+            )
         return self
 
     @property
-    def contours(self) -> List["torch.Tensor"]:
+    def contours(self) -> List[torch.Tensor]:
         """
         This function wraps the openCV.findContours function, and uses openCV.contourArea to select the largest contour for each mask.
         """
@@ -366,12 +399,13 @@ class TensorPredictions:
     @contours.setter
     def contours(
             self, 
-            value : List["torch.Tensor"]
+            value : List[torch.Tensor]
         ):
         if self.PREFER_POLYGONS:
             if not isinstance(value, list):
                 raise RuntimeError(f"Unknown type `{type(value)}` for `contours` - should be a list of polygons")
             image_h, image_w = self.image.shape[1:]
+            contour_scaling = [(image_h - 1) / (self.mask_height - 1), (image_w - 1) / (self.mask_width - 1)]
             for i in range(len(value)):
                 if not isinstance(value[i], np.ndarray):
                     value[i] = np.array(value[i])
@@ -380,30 +414,43 @@ class TensorPredictions:
                         value[i] = np.transpose(value[i], (1, 0))
                     else:
                         raise RuntimeError(f"Unknown shape `{value[i].shape}` for `contours[{i}]` - should be (N, 2)")
-                value[i] = scale_contour(value[i], np.array([(image_h - 1) / (self.mask_height - 1), (image_w - 1) / (self.mask_width - 1)]), True)
-                value[i] = torch.tensor(value[i], device=self.device, dtype=torch.long)
+                value[i] = torch.from_numpy(
+                    scale_contour(
+                        contour=value[i], 
+                        scale=contour_scaling,
+                        expand_by_one=True
+                    )
+                ).long().to(self.device)
             self.polygons = value
             self.masks = [torch.empty((0, 0), device=self.device, dtype=self.dtype) for _ in range(len(value))]  # Initialize empty masks
         else:
             self.masks = contours_to_masks(value, self.mask_height, self.mask_width).to(self.device)
 
+    @property
+    def areas(self):
+        if self.PREFER_POLYGONS:
+            return [poly_area(poly) for poly in self.polygons]
+        else:
+            return self.masks.sum(1).sum(1).tolist()
+
     def contour_to_image_coordinates(
             self, 
-            contour: "torch.Tensor", 
+            contour: torch.Tensor, 
             scale: float = 1
-        ) -> "torch.Tensor":
+        ) -> torch.Tensor:
         """
         Converts a contour from mask coordinates to image coordinates. 
 
         Args:
-            contour (torch.Tensor): The contour to convert.
-            scale (float, optional): The scale factor to apply to the contour. Defaults to 1.
+            contour (`torch.Tensor`): The contour to convert.
+            scale (`float`, optional): The scale factor to apply to the contour. Defaults to 1.
 
         Returns:
-            torch.Tensor: The contour in image coordinates.
+            `torch.Tensor`: The contour in image coordinates.
         """
         image_h, image_w = self.image.shape[1:]
-        mask_to_image_scale = torch.tensor([(image_h - 1) / (self.mask_height - 1), (image_w - 1) / (self.mask_width - 1)], device=self.device, dtype=torch.float32) * scale
+        mask_to_image_scale = [(image_h - 1) / (self.mask_height - 1), (image_w - 1) / (self.mask_width - 1)]
+        mask_to_image_scale = torch.tensor(mask_to_image_scale, device=self.device, dtype=torch.float32) * scale
         scaled_contour = scale_contour(contour.cpu().numpy(), mask_to_image_scale.cpu().numpy(), True)
         scaled_contour = simplify_contour(scaled_contour, (mask_to_image_scale / 2).mean().item())
         scaled_contour = torch.tensor(scaled_contour, device=self.device, dtype=torch.long).squeeze(1)
@@ -418,10 +465,11 @@ class TensorPredictions:
         Flips the masks, polygons and boxes along the specified axis.
 
         Args:
-            direction (str, optional): The axis to flip the masks, polygons and boxes along. Defaults to "vertical". Should be one of "vertical", "y", "horizontal" or "x".
+            direction (`str`, optional): The axis to flip the masks, polygons and boxes along.
+                Defaults to "vertical". Should be one of "vertical", "y", "horizontal" or "x".
 
         Returns:
-            Self: The TensorPredictions object with the masks, polygons and boxes flipped.
+            Self: The `TensorPredictions` object with the masks, polygons and boxes flipped.
         """
         if self.time:
             # Initialize timing calculations
@@ -449,7 +497,7 @@ class TensorPredictions:
         if self.time:
             end.record()
             torch.cuda.synchronize()
-            print(f'Flipping masks, polygons and boxes {direction} took {start.elapsed_time(end) / 1000:.3f} s')
+            logger.info(f'Flipping masks, polygons and boxes {direction} took {start.elapsed_time(end) / 1000:.3f} s')
 
         return self
 
@@ -510,7 +558,7 @@ class TensorPredictions:
     def plot(self, *args, **kwargs):
         return self._plot_jpeg(*args, **kwargs)
 
-    def _plot_svg(self, linewidth=2, masks=True, boxes=True, conf=True, outpath=None, scale=1):
+    def _plot_svg(self, linewidth=2, masks=True, boxes=True, confidence=True, outpath=None, scale=1):
         image = self.image.round().to(torch.uint8).permute(1, 2, 0).cpu().numpy()
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         embed_jpeg = True
@@ -573,12 +621,15 @@ class TensorPredictions:
             linewidth : int=2, 
             masks : bool=True, 
             boxes : bool=True, 
-            conf : bool=True, 
+            confidence : bool=True, 
             outpath : Optional[str]=None, 
-            scale : float=1
+            scale : float=1,
+            contour_color : Tuple[int, int, int] = (0, 0, 255),
+            box_color : Tuple[int, int, int] = (0, 0, 0),
+            alpha : float = 0.3
         ) -> Optional[cv2.UMat]:
         # Convert torch tensor to numpy array
-        image = self.image.round().to(torch.uint8).permute(1, 2, 0).cpu().numpy()
+        image = torchvision.transforms.ConvertImageDtype(torch.uint8)(self.image).permute(1, 2, 0).cpu().numpy()
         image : cv2.UMat = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         if scale != 1:
             image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
@@ -588,8 +639,7 @@ class TensorPredictions:
             if masks:
                 contours = [simplify_contour((c * scale).round().to(torch.int32).cpu().numpy(), scale / 2) for c in self.contours]
                 ih, iw = image.shape[:2]
-                ALPHA = 0.3
-                _alpha = int(255 * ALPHA)
+                _alpha = int(255 * alpha)
 
                 poly_alpha = np.zeros((ih, iw, 1), dtype=np.int32)
                 for i, c in enumerate(contours):
@@ -600,13 +650,13 @@ class TensorPredictions:
                 
                 # Create a red fill for the polygons
                 poly_fill = np.zeros_like(image)
-                poly_fill[:, :, 2] = 255
+                for i, channel_color in enumerate(contour_color):
+                    poly_fill[:, :, i] = channel_color
                 # Add the polygons to the image by blending the fill and the image using the alpha mask
                 image = (image.astype(np.float32) * (1 - poly_alpha) + poly_fill * poly_alpha).round().astype(np.uint8)
                 # Draw the contours
                 for i, c in enumerate(contours):
-                    cv2.drawContours(image, [c], -1, (0, 0, 255), linewidth)
-                    # image[create_contour_mask(resize_mask(self.masks.data[i], (ih, iw)), width=linewidth).cpu().numpy().astype(bool)] = (0, 0, 255)
+                    cv2.drawContours(image, [c], -1, contour_color, linewidth)
 
             # Draw boxes and confidences
             if boxes:
@@ -617,8 +667,8 @@ class TensorPredictions:
                     box = box.long()
                     start_point = (int(box[0]), int(box[1]))
                     end_point = (int(box[2]), int(box[3]))
-                    cv2.rectangle(image, start_point, end_point, (0, 0, 0), linewidth)  # Red box
-                    if conf:
+                    cv2.rectangle(image, start_point, end_point, box_color, linewidth)  # black box
+                    if confidence:
                         # Get the width and height of the text
                         (text_width, text_height), _ = cv2.getTextSize(
                             f"{conf * 100:.3g}%",
@@ -646,61 +696,67 @@ class TensorPredictions:
         # Save or show the image
         if outpath:
             cv2.imwrite(outpath, image)
+            return None
         else:
             return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    
+    @property
+    def crops(self) -> List[torch.Tensor]:
+        return [self.image[:, y1:y2, x1:x2] for x1, y1, x2, y2 in self.boxes.long().tolist()]
+
+    @property
+    def crop_masks(self) -> List[torch.Tensor]:
+        if self.PREFER_POLYGONS:
+            return [
+                contours_to_masks([contour.round().long() - box[:2]], box[3] - box[1], box[2] - box[0])
+                for contour, box in zip(self.contours, self.boxes.long())
+            ]
+        else:
+            return [
+                resize_mask(mask, self.image.shape[1:])[box[1]:box[3], box[0]:box[2]]
+                for mask, box in zip(self.masks, self.boxes.long())
+            ]
+        
+    def _save_1_crop(
+            self,
+            crop : torch.Tensor,
+            mask : Union[torch.Tensor, None],
+            path : str,
+        ) -> str:
+        Image.fromarray(
+            obj=chw2hwc_uint8(crop, mask).detach().cpu().numpy(),
+            mode="RGB" if mask is None else "RGBA"
+        ).save(path)
+        return path
 
     def save_crops(
-            self, 
-            outdir : Optional[str]=None, 
+            self : Self, 
+            outdir : str, 
             basename : Optional[str]=None, 
             mask : bool=False, 
             identifier : str=None
         ) -> List[Union[str, torch.Tensor]]:
-        do_save = outdir is not None
-        if do_save:
-            if basename is None:
-                assert self.image_path is not None, RuntimeError("Cannot save crops without image_path")
-                basename, _ = os.path.splitext(os.path.basename(self.image_path))
-            assert outdir is not None, RuntimeError("Cannot save crops without outpath")
-            assert os.path.isdir(outdir), RuntimeError(f"outpath {outdir} is not a directory")
-            _, image_ext = os.path.splitext(os.path.basename(self.image_path))
-            if mask:
-                image_ext = ".png"
-
-        crops = []
-
-        contours = self.contours
-        # For each bounding box, save the corresponding crop
-        for i, (_box, _mask) in enumerate(zip(self.boxes, self.masks)):
-            # Define name of the crop 
-            x1, y1, x2, y2 = _box.long().cpu().tolist()
-            # Extract the crop from the image tensor
-            crop = self.image[:, y1:y2, x1:x2] / 255.0
-            # Optionally add the mask as an alpha channel
-            if mask:
-                if self.PREFER_POLYGONS:
-                    contour_offset = torch.tensor([x1, y1], device=self.device, dtype=torch.long)
-                    scaled_mask = contours_to_masks(
-                        [contours[i].round().long() - contour_offset], 
-                        height = y2 - y1, 
-                        width = x2 - x1
-                    )
-                else:
-                    scaled_mask = resize_mask(_mask.data, self.image.shape[1:])[:, y1:y2, x1:x2]
-                crop = torch.cat((crop, scaled_mask.to(self.dtype)), dim=0)
-
-            if do_save:
-                # Save the crop
-                crop_name = f"crop_{basename}_CROPNUMBER_{i}_UUID_{identifier}{image_ext}"
-                this_crop_path = os.path.join(outdir, crop_name)
-                torchvision.utils.save_image(crop, this_crop_path)
-                crops.append(this_crop_path)
-            else:
-                # Add the crop to the list
-                crops.append(crop)
+        if outdir is None or not os.path.exists(outdir) or not os.path.isdir(outdir):
+            raise RuntimeError(f"Invalid outdir {outdir}, does not exist or is not a directory")
+        if basename is None:
+            assert self.image_path is not None, RuntimeError("Cannot save crops without image_path")
+            basename, _ = os.path.splitext(os.path.basename(self.image_path))
+        _, image_ext = os.path.splitext(os.path.basename(self.image_path))
+        if mask:
+            image_ext = ".png"
+        if identifier is None:
+            identifier = "NONE"
         
-        return crops
+        crops = self.crops
+        if mask:
+            crop_masks = self.crop_masks
+        else:
+            crop_masks = [None] * len(crops)
+        crop_paths = [os.path.join(outdir, f"crop_{basename}_CROPNUMBER_{i}_UUID_{identifier}{image_ext}") for i in range(len(crops))]
 
+        return [self._save_1_crop(crop, mask, path) for crop, mask, path in zip(crops, crop_masks, crop_paths)]
+        
+    
     @property
     def json_data(self):
         ## Clean up the data
@@ -714,12 +770,15 @@ class TensorPredictions:
         classes = self.classes.cpu().long().tolist()
         # 5. Get the scales (already floats in a list)
         scales = self.scales
+        # 6. Get the areas (already floats in a list)
+        areas = self.areas
         return {
             "boxes": boxes,
             "contours": contours,
             "confs": confs,
             "classes": classes,
             "scales": scales,
+            "areas": areas,
             "image_path": self.image_path,
             "image_width": self.image.shape[2],
             "image_height": self.image.shape[1],
@@ -730,13 +789,15 @@ class TensorPredictions:
 
     def serialize(
             self, 
-            outpath: str = None, 
+            outpath: str, 
             save_json: bool = True, 
             save_pt: bool = False, 
             identifier: str = None
         ) -> None:
         """
-        This function serializes the `TensorPredictions` object to a .pt file and/or a .json file. The .pt file contains an exact copy of the `TensorPredictions` object, while the .json file contains the data in a more human-readable format, which can be deserialized into a `TensorPredictions` object using the 'load' function.
+        This function serializes the `TensorPredictions` object to a .pt file and/or a .json file. 
+        The .pt file contains an exact copy of the `TensorPredictions` object, while the .json file contains the data in a more human-readable format, 
+        which can be deserialized into a `TensorPredictions` object using the 'load' function.
         
         Args:
             outpath (str, optional): The path to save the serialized data to. Defaults to None.
@@ -744,14 +805,13 @@ class TensorPredictions:
             save_pt (bool, optional): Whether to save the .pt file. Defaults to False. Rather disk space wasteful.
             identifier (str, optional): An identifier for the serialized data. Defaults to None.
         """
-        assert outpath is not None, RuntimeError("Cannot serialize without outpath")
         assert len(outpath) > 0, RuntimeError("Cannot serialize with empty outpath")
         assert os.path.exists(os.path.dirname(outpath)), RuntimeError(f"Invalide outpath {outpath}, directory does not exist")
 
         # Check for file-extension on the outpath, it should have none - not really necessary anymore due to the check for directory above
         outpath, ext = os.path.splitext(outpath)
         if ext != "" and len(ext) < 5:
-            print(f"WARNING: serializer outpath ({outpath}) should not have a file-extension for 'TensorPredictions.serialize'!")
+            logger.warning(f"serializer outpath ({outpath}) should not have a file-extension for 'TensorPredictions.serialize'!")
         else:
             outpath = f"{outpath}{ext}"
 
@@ -761,13 +821,13 @@ class TensorPredictions:
 
         if save_pt:
             if os.path.exists(pt_path):
-                print(f"WARNING: Pickle ({pt_path}) already exists, overwriting!")
+                logger.warning(f"Pickle ({pt_path}) already exists, overwriting!")
             ### First serialize as .pt file
             torch.save(self, pt_path)
 
         if save_json:
             if os.path.exists(json_path):
-                print(f"WARNING: JSON ({json_path}) already exists, overwriting!")
+                logger.warning(f"JSON ({json_path}) already exists, overwriting!")
             json_data = self.json_data
             json_data["identifier"] = identifier if identifier else self.image_path,
             with open(json_path, 'w') as f:
@@ -775,71 +835,76 @@ class TensorPredictions:
 
     def load(
             self, 
-            path: str, 
+            data: Union[str, dict], 
             device : Optional[DeviceLikeType]=None, 
             dtype : Optional[torch.types._dtype]=None
         ) -> Self:
         """
-        Deserializes a TensorPredictions object from a .pt or .json file. OBS: Mutates and returns the current object.
+        Deserializes a TensorPredictions object from a .pt or .json file, or a dictionary. OBS: Mutates and returns the current object.
 
         Args:
-            path (str): The path to the file to load.
+            data (Union[str, dict]): The path to the file to load or a dictionary with the deserialized json data.
             device (Optional[DeviceLikeType], optional): The device to load the data to. Defaults to None. If None, the device is set to "cpu".
             dtype (Optional[torch.types._dtype], optional): The data type to load the data as. Defaults to None. If None, the data type is set to torch.float32.
 
         Returns:
             Self: This object with the deserialized data.
         """
-        assert isinstance(path, str) and os.path.isfile(path), RuntimeError(f"Invalid path: {path}")
-        # Check whether the path is a .pt file or a .json file
-        _, ext = os.path.splitext(path)
-        if ext == ".pt":
-            # When loading from .pt we get an exact copy of the saved TensorPredictions object
-            self = torch.load(path)
-            return self
-        elif ext == ".json":
-            with open(path, 'r') as f:
-                json_data = json.load(f)
+        if isinstance(data, str):
+            path = data
+            assert os.path.isfile(path), RuntimeError(f"Invalid path: {path}")
+            # Check whether the path is a .pt file or a .json file
+            _, ext = os.path.splitext(path)
+            if ext == ".pt":
+                # When loading from .pt we get an exact copy of the saved TensorPredictions object
+                self = torch.load(path)
+                return self
+            elif ext == ".json":
+                with open(path, 'r') as f:
+                    data = json.load(f)
+            else:
+                raise RuntimeError(f"Unknown file-extension: {ext} for path: {path}")
 
-            if device is None:
-                device = torch.device("cpu")
-            if dtype is None:
-                dtype = torch.float32
+        if device is None:
+            device = torch.device("cpu")
+        if dtype is None:
+            dtype = torch.float32
 
-            empty_image = torch.zeros((3, json_data["image_height"], json_data["image_width"]), device=device, dtype=dtype) + 255
-            self.__init__(image=empty_image, device=device, dtype=dtype)
-            setattr(self, "PREFER_POLYGONS", True) # Since we only store contours in the .json file, we prefer polygons on loading
+        empty_image = torch.zeros((3, data["image_height"], data["image_width"]), device=device, dtype=dtype) + 255
+        self.__init__(image=empty_image, device=device, dtype=dtype)
+        setattr(self, "PREFER_POLYGONS", True) # Since we only store contours in the .json file, we prefer polygons on loading
 
-            # Load constants
-            for k, v in json_data.items():
-                if k in self.CONSTANTS:
-                    setattr(self, k, v)
-
-            # Load the data
-            for k, v in json_data.items():
-                # Skip constants in second round
-                if k in self.CONSTANTS:
-                    continue
-                # Skip the identifier 
-                if k in ["identifier", "image_height", "image_width"]:
-                    continue                
-                # Catch attributes that don't need special treatment
-                elif k in ["scales", "contours"]:
-                    pass
-                # Bounding boxes are easy (as usual)
-                elif k == "boxes":
-                    v = torch.tensor(v, device=self.device, dtype=self.dtype)
-                # While masks are a bit more complicated
-                # Confidences and classes are 1-d tensors (arrays)
-                elif k in ["confs", "classes"]:
-                    v = torch.tensor(v, device=self.device, dtype=self.dtype)
-                else:
-                    raise RuntimeError(f"Unknown key in json file: {k}")
+        # Load constants
+        for k, v in data.items():
+            if k in self.CONSTANTS:
                 setattr(self, k, v)
 
-            return self
-        else:
-            raise RuntimeError(f"Unknown file-extension: {ext} for path: {path}")
+        # Load the data
+        for k, v in data.items():
+            # Skip constants in second round
+            if k in self.CONSTANTS:
+                continue
+            # Skip dynamically computed class property attributes
+            if k in ["areas"]:
+                continue
+            # Skip the identifier 
+            if k in ["identifier", "image_height", "image_width"]:
+                continue                
+            # Catch attributes that don't need special treatment
+            elif k in ["scales", "contours"]:
+                pass
+            # Bounding boxes are easy (as usual)
+            elif k == "boxes":
+                v = torch.tensor(v, device=self.device, dtype=self.dtype)
+            # While masks are a bit more complicated
+            # Confidences and classes are 1-d tensors (arrays)
+            elif k in ["confs", "classes"]:
+                v = torch.tensor(v, device=self.device, dtype=self.dtype)
+            else:
+                raise RuntimeError(f"Unknown key in json file: {k}")
+            setattr(self, k, v)
+
+        return self
 
     def save(
             self, 
@@ -858,22 +923,30 @@ class TensorPredictions:
         TODO: Add the identifier to the names of the files, so that we can save multiple predictions for the same image or images with the same name.
 
         Args:
-            output_directory (str): The directory to save the prediction results to.
-            overview (Union[bool, str], optional): Whether to save the overview image. Defaults to True. If a string is given, it is interpreted as a path to a directory to save the overview image to.
-            crops (Union[bool, str], optional): Whether to save the crops. Defaults to True. If a string is given, it is interpreted as a path to a directory to save the crops to.
-            metadata (Union[bool, str], optional): Whether to save the metadata. Defaults to True. If a string is given, it is interpreted as a path to a directory to save the metadata to.
-            fast (bool, optional): Whether to use the fast version of the overview image. Defaults to False. Saves the overview image at half the resolution.
-            mask_crops (bool, optional): Whether to mask the crops. Defaults to False.
-            identifier (Union[str, None], optional): An identifier for the serialized data. Defaults to None.
-            basename (Union[str, None], optional): The base name of the image. Defaults to None. If None, the base name is extracted from the image path.
+            output_directory (`str`): The directory to save the prediction results to.
+            overview (`bool | str`, optional): Whether to save the overview image. Defaults to True. 
+                If a string is given, it is interpreted as a path to a directory to save the overview image to.
+            crops (`bool | str`, optional): Whether to save the crops. Defaults to True. 
+                If a string is given, it is interpreted as a path to a directory to save the crops to.
+            metadata (`bool | str`, optional): Whether to save the metadata. Defaults to True. 
+                If a string is given, it is interpreted as a path to a directory to save the metadata to.
+            fast (`bool`, optional): Whether to use the fast version of the overview image. Defaults to False. 
+                Saves the overview image at half the resolution.
+            mask_crops (`bool`, optional): Whether to mask the crops. Defaults to False.
+            identifier (`str | None`, optional): An identifier for the serialized data. Defaults to None.
+            basename (`str | None`, optional): The base name of the image. Defaults to None. 
+                If None, the base name is extracted from the image path, which must be set in this case.
         
         Returns:
-            str: The path to the directory containing the serialized data - the crops and overview image(s) are also saved here by default. If the standard location is not used at all, the directory is not created and None is returned instead.
+            `str`: The path to the directory containing the serialized data - the crops and overview image(s) are also saved here by default. \\
+                If the standard location is not used at all, the directory is not created and None is returned instead.
         """
         if not os.path.exists(output_directory):
             raise ValueError(f"Output directory {output_directory} does not exist")
 
         if basename is None:
+            if self.image_path is None:
+                raise ValueError(f"Unable to save prediction with unknown source file, when `basename` is not supplied.")
             # Get the base name of the image
             basename = os.path.splitext(os.path.basename(self.image_path))[0]
         # Construct the prediction directory path
@@ -885,7 +958,7 @@ class TensorPredictions:
                 os.makedirs(prediction_directory)
         else:
             # If the prediction directory is not used set it to None
-            prediction_directory = None
+            return None
 
         # Save overview
         if overview:
@@ -946,8 +1019,9 @@ def _process_batch(
             device : Optional[DeviceLikeType] = None,
             model : torch.nn.Module = None,
             time : bool = False,
+            callback : str = "__call__",
             **kwargs : Any # Swallow any extra arguments
-    ) -> Tuple[int, torch.Tensor, List]:
+    ) -> Tuple[int, torch.Tensor, Tuple]:
     if time:
         # Initialize batch timing calculations
         start_batch_event = torch.cuda.Event(enable_timing=True)
@@ -968,7 +1042,7 @@ def _process_batch(
         end_fetch_event.record(current_device_stream)
     # Forward pass the model on the batch tiles
     with torch.no_grad():
-        batch_outputs = model(batch)
+        batch_outputs = getattr(model, callback)(batch)
     if time:
         # Record end of forward
         end_forward_event.record(current_device_stream)
@@ -980,7 +1054,11 @@ def _process_batch(
         batch_time = start_batch_event.elapsed_time(end_batch_event) / 1000  # Convert to seconds
         fetch_time = start_batch_event.elapsed_time(end_fetch_event) / 1000  # Convert to seconds
         forward_time = end_fetch_event.elapsed_time(end_forward_event) / 1000  # Convert to seconds
-        # print(f'Batch time: {batch_time:.3f}s, fetch time: {fetch_time:.3f}s, forward time: {forward_time:.3f}s, postprocess time: {postprocess_time:.3f}s')
+        # loggger.info(
+        #   f'Batch time: {batch_time:.3f}s,'
+        #   f' fetch time: {fetch_time:.3f}s,'
+        #   f' forward time: {forward_time:.3f}s'
+        # )
     # Return the postprocessed batch outputs and optionally the timing
     if time:
         return batch, batch_outputs, (batch_time, fetch_time, forward_time)
@@ -988,29 +1066,83 @@ def _process_batch(
         return batch, batch_outputs, None
 
 class Predictor(object):
-    HYPERPARAMETERS = CFG_PARAMS
+    HYPERPARAMETERS : List[str] = CFG_PARAMS
+    """
+    The available hyperparameters for the predictor. \\
+    These can be set using the `set_hyperparameters` class method.
+    """
+
     # Hyperparameters, set to None so they are visible in the class
-    MIN_MAX_OBJ_SIZE                = None
-    MAX_MASK_SIZE                   = None
-    SCORE_THRESHOLD                 = None
-    IOU_THRESHOLD                   = None
-    MINIMUM_TILE_OVERLAP            = None
-    EDGE_CASE_MARGIN                = None
-    PREFER_POLYGONS                 = None
-    EXPERIMENTAL_NMS_OPTIMIZATION   = None
-    TIME                            = None
-    TILE_SIZE                       = None
-    BATCH_SIZE                      = None
+    MIN_MAX_OBJ_SIZE : Tuple[int, int] = None
+    """
+    Defines the minimum and maximum object size as seen in a single tile. \\
+    Size is defined as the square root of the pixel area of the bounding box.
+    """
+    MAX_MASK_SIZE : int = None
+    """
+    Defines the maximum size of the segmentation masks. \\
+    Only applies if PREFER_POLYGONS is False.
+    """
+    SCORE_THRESHOLD : float = None
+    """
+    The score threshold for the predictions. \\
+    TODO: This should be called CONFIDENCE_THRESHOLD.
+    """
+    IOU_THRESHOLD: float = None
+    """
+    The IOU threshold used to determine if two instances are duplicates. \\
+    """
+    MINIMUM_TILE_OVERLAP : int = None
+    """
+    The minimum - but not necessarily the maximum - overlap between tiles \\
+    in a single layer of the pyramid. Increasing this value will increase \\
+    the computation time, but may improve the detection of large instances. 
+    """
+    EDGE_CASE_MARGIN : int = None
+    """
+    The margin to add to the edge of the image to catch instances that are \\
+    split between tiles. The margin is added to the edge of the image, such \\
+    that instances on the true edge of the images are not removed.
+    """
+    PREFER_POLYGONS : bool = None
+    """
+    Whether to prefer representing the instance segmentation using polygons \\
+    instead of masks. This is a much more compact representation, but cannot \\
+    represent complex shapes (like holes in the mask), only concave polygons.
+    """
+    EXPERIMENTAL_NMS_OPTIMIZATION : bool = None
+    """
+    Enables an experimental optimization for the NMS step. \\
+    This optimization improves the performance of the NMS step when there are \\
+    many instances in a large image and CUDA is available.
+    """
+    TIME : bool = None
+    """
+    Whether to time the different parts of the prediction process. \\
+    Enabling this will print a verbose output of the timing of the different \\
+    parts of the prediction process.
+    """
+    TILE_SIZE : int = None
+    """
+    The size of the tiles to split the image into. \\
+    This is defined by the model and should probably not be changed.
+    """
+    BATCH_SIZE : int = None
+    """
+    The batch size to use for the prediction. \\
+    This determines how many tiles are processed in parallel. \\
+    Increasing this value may improve performance, but will also increase memory usage.
+    """
 
     # Enable debug mode, only for development
     DEBUG = False
 
     def __init__(
             self, 
-            model : Union[str, pathlib.Path], 
+            model : Union[str, pathlib.Path]="flat_bug_M.pt", 
             cfg : Optional[Union[dict, str, os.PathLike]]=None, 
-            device : Union[DeviceLikeType, List[DeviceLikeType]]=torch.device("cpu"), 
-            dtype : torch.types._dtype=torch.float32
+            device : Union[str, torch.device, int, List[Union[str, torch.device, int]]]=torch.device("cpu"), 
+            dtype : Union[torch.types._dtype, str]=torch.float32
         ):
         if cfg is None:
             cfg = DEFAULT_CFG
@@ -1021,11 +1153,21 @@ class Predictor(object):
         self._multi_gpu = isinstance(device, (list, tuple))
         self._devices = [torch.device(device)] if not self._multi_gpu else [torch.device(d) for d in device]
         if len(self._devices) > 1:
+            # TODO: Implement  single-producer multi-consumer model for _detect_instances in the multi-gpu case
             raise NotImplementedError("Multi-GPU is not implemented yet")
         self._device = self._devices[0]
+        if isinstance(dtype, str):
+            dtype = getattr(torch, dtype)
+        if dtype not in [torch.float16, torch.float32, torch.bfloat16]:
+            raise ValueError(f"Dtype '{dtype}' is not supported.")
         self._dtype = dtype
 
         if isinstance(model, str):
+            if not os.path.exists(model):
+                success = download_from_repository("models/" + "/".join(os.path.normpath(model).split(os.path.sep)), model, False)
+                if not success:
+                    raise FileNotFoundError(f"No such model or file: '{model}'")
+            
             yolo = YOLO(model, "segment", verbose=True)
             pred = yolo._smart_load("predictor")
             class dict2attr:
@@ -1033,12 +1175,13 @@ class Predictor(object):
                     self.__dict__ = d
             args = dict2attr({
                 "device": self._device,
-                "half": dtype == torch.float16,
+                "half": self._dtype == torch.float16,
                 "batch": self.BATCH_SIZE,
                 "model": yolo.model,
-                "fp16" : dtype == torch.float16,
+                "fp16" : self._dtype == torch.float16,
                 "dnn" : False,
-                "data" : None # If we want to support multiclass inference, this needs to point to "Path to the additional data.yaml file containing class names. Optional." see: https://github.com/ultralytics/ultralytics/blob/bc9fd45cdf10ebe8009037aaf8def2353761c9ed/ultralytics/nn/autobackend.py#L53
+                "data" : None # If we want to support multiclass inference, this needs to point to "Path to the additional data.yaml file containing class names. Optional." 
+                              # see: https://github.com/ultralytics/ultralytics/blob/bc9fd45cdf10ebe8009037aaf8def2353761c9ed/ultralytics/nn/autobackend.py#L53
             })
             pred.args = args
             pred.setup_model(self=pred, model=yolo.model, verbose=True)
@@ -1120,19 +1263,11 @@ class Predictor(object):
             image = torch.nn.functional.pad(image, pad_lrtb, mode="constant", value=0) # Pad with black
             h, w = image.shape[1:]
 
-        # Tile calculation
-        x_n_tiles = math.ceil(w / (TILE_SIZE - self.MINIMUM_TILE_OVERLAP)) if w != TILE_SIZE else 1
-        y_n_tiles = math.ceil(h / (TILE_SIZE - self.MINIMUM_TILE_OVERLAP)) if h != TILE_SIZE else 1
-
-        x_stride = TILE_SIZE - math.floor((TILE_SIZE * (x_n_tiles + 0) - w) / x_n_tiles) if x_n_tiles > 1 else TILE_SIZE
-        y_stride = TILE_SIZE - math.floor((TILE_SIZE * (y_n_tiles + 0) - h) / y_n_tiles) if y_n_tiles > 1 else TILE_SIZE
-        x_stride -= x_stride % 4
-        y_stride -= y_stride % 4
-
-        x_range = [i if (i + TILE_SIZE) < w else (w - TILE_SIZE - w % 4) for i in range(0, x_stride * x_n_tiles, x_stride)]
-        y_range = [i if (i + TILE_SIZE) < h else (h - TILE_SIZE - h % 4) for i in range(0, y_stride * y_n_tiles, y_stride)]
-
-        offsets = [((m, n), (j, i)) for n, j in enumerate(y_range) for m, i in enumerate(x_range)]
+        offsets = calculate_tile_offsets(
+            image_size=(w, h),
+            tile_size=TILE_SIZE,
+            minimum_overlap=self.MINIMUM_TILE_OVERLAP
+        )
 
         hyperparams = {
             "image" : image,
@@ -1199,7 +1334,7 @@ class Predictor(object):
 
         # DEBUG #####
         # if self.DEBUG:
-        #     print(f'Number of tiles processed before merging and plotting: {len(postprocessed_results)}')
+        #     logger.info(f'Number of tiles processed before merging and plotting: {len(postprocessed_results)}')
         # for i in range(len(postprocessed_results)):
         #     postprocessed_results[i].orig_img = (postprocessed_results[i].orig_img.detach().contiguous() * 255).to(torch.uint8).cpu().numpy() # Needed for compatibility with the Results.plot function
         #     postprocessed_results[i].names = ["?" for _ in range(10)]
@@ -1207,8 +1342,7 @@ class Predictor(object):
         # axs = axs.flatten() if len(offsets) > 1 else [axs]
         # postprocessed_results : List[Results] = postprocessed_results
         # [axs[i].imshow(p.plot(pil=False, masks=True, probs=False, labels=False, kpt_line=False)) for i, p in enumerate(postprocessed_results)]
-        # image_base_name = os.path.splitext(os.path.basename(self.im_path))[0]
-        # plt.savefig(os.path.join(f"{image_base_name}_debug_{scale:.3f}_fraw.png"), dpi=300)
+        # plt.savefig(os.path.join(f"debug_{scale:.3f}_fraw.png"), dpi=300)
         # for i in range(len(postprocessed_results)):
         #     postprocessed_results[i].orig_img = torch.tensor(postprocessed_results[i].orig_img).squeeze(0).to(dtype=self._dtype, device=self._device) / 255.0 # Backtransform
         ###############
@@ -1244,11 +1378,11 @@ class Predictor(object):
 
         #### DEBUG #####
         # if self.DEBUG:
-        # print(f'Number of tiles processed after merging and filtering: {len(ps)}')
+        # logger.info(f'Number of tiles processed after merging and filtering: {len(ps)}')
         # fig, ax = plt.subplots(1, 1, figsize=(10, 10))
         # ps.orig_img = (ps.orig_img.detach().contiguous() * 255).to(torch.uint8).cpu().numpy() # Needed for compatibility with the Results.plot function
         # # ps.boxes.data[:, :4] /= scale
-        # print(ps.orig_img.shape)
+        # logger.info(ps.orig_img.shape)
         # ax.imshow(ps.plot(pil=False, masks=True, probs=False, labels=False, kpt_line=False))
         # plt.savefig(f"debug_{scale:.3f}_merged.png", dpi=300)
         # ps.orig_img = torch.tensor(ps.orig_img).squeeze(0).to(dtype=self._dtype, device=self._device) / 255.0 # Backtransform
@@ -1260,7 +1394,14 @@ class Predictor(object):
             torch.cuda.synchronize(device=self._device)
             total_detect_time = start_detect.elapsed_time(end_detect) / 1000  # Convert to seconds
             pred_prop = total_elapsed / total_detect_time
-            print(f'Prediction time: {total_elapsed:.3f}s/{pred_prop * 100:.3g}% (overhead: {overhead_prop * 100:.1f}) | Fetch {fetch_prop * 100:.1f}% | Forward {forward_prop * 100:.1f}% | Postprocess {postprocess_prop * 100:.1f}%)')
+            logger.info(
+                f'Prediction time: {total_elapsed:.3f}s/{pred_prop:>4.1%}'
+                f' (overhead: {overhead_prop:>4.1%}) |'
+                f' Fetch {fetch_prop:>4.1%} |'
+                f' Forward {forward_prop:>4.1%} |'
+                f' Postprocess {postprocess_prop:>4.1%} |'
+                f' Tiles {len(offsets)}'
+            )
             if hasattr(self, "total_detection_time"):
                 self.total_detection_time += total_detect_time
             if hasattr(self, "total_forward_time"):
@@ -1284,8 +1425,10 @@ class Predictor(object):
         Performs inference on an image at multiple scales and returns the predictions.
         
         Args:
-            image (Union[torch.Tensor, str]): The image to run inference on. If a string is given, the image is read from the path. 
-                If it is a `torch.Tensor`, the path must be provided. We assume that the image values are in the range [0, 255] if the data type is an integer, otherwise we assume that the values are in the range [0, 1].
+            image (Union[torch.Tensor, str]): The image to run inference on. If a string is given, the image is read from the path.
+                If it is a `torch.Tensor`, the path must be provided. \\
+                We assume that floating point images are in the range [0, 1] and integer images are in the range [0, integer_type_max]. \\
+                (see https://github.com/pytorch/vision/blob/6d7851bd5e2bedc294e40e90532f0e375fcfee04/torchvision/transforms/_functional_tensor.py#L66)
             path (Optional[str], optional): The path to the image. Defaults to None. Must be provided if `image` is a `torch.Tensor`.
             scale_increment (float, optional): The scale increment to use when resizing the image. Defaults to 2/3.
             scale_before (Union[float, int], optional): The scale to apply before running inference. Defaults to 1.
@@ -1300,54 +1443,22 @@ class Predictor(object):
             start_pyramid.record()
 
         if isinstance(image, str):
-            # C, H, W
-            im : torch.Tensor = read_image(image, mode=ImageReadMode.RGB).to(self._device)
-            if EXIFTOOL_AVAILABLE:
-                try:
-                    # Check for rotation in EXIF
-                    with exiftool.ExifToolHelper() as et:
-                        rotation = et.get_tags(image, ["EXIF:Orientation"])[0]
-                        rotation = rotation.get("EXIF:Orientation", 1)
-                except Exception as e:
-                    logging.warning(f"Failed to read EXIF data from image: {e}")
-                    rotation = 1
-                # 1 = Normal, 2 = Vertical Mirror, 3 = Upside Down, 4 = Horizontal Mirror, 5 = Rotated Left, 6 = Rotated Right, 7 = Horizontal Mirror Rotated Right, 8 = Horizontal Mirror Rotated Left
-                if rotation == 6:
-                    im = im.rot90(1, [2, 1])
-                elif rotation == 5:
-                    im = im.rot90(1, [1, 2])
-                elif rotation == 4:
-                    im = im.flip(2)
-                elif rotation == 3:
-                    im = im.flip(0).flip(1)
-                elif rotation == 2:
-                    im = im.flip(1)
-                elif rotation == 1:
-                    pass
-                else:
-                    match rotation:
-                        case 7:
-                            unimplemented_rotation = "Horizontal Mirror Rotated Right"
-                        case 8:
-                            unimplemented_rotation = "Horizontal Mirror Rotated Left"
-                        case _:
-                            unimplemented_rotation = "Unknown/Invalid Rotation"
-                    raise NotImplementedError(f"EXIF rotation '{unimplemented_rotation}' not implemented")
-            path = image
-            self.im_path = path
+            path : str = image
+            image : torch.Tensor = read_image(
+                path=image, 
+                mode=ImageReadMode.RGB, 
+                apply_exif_orientation=True
+            ).to(self._device)
         elif isinstance(image, torch.Tensor):
-            im = image
-            assert path is not None, ValueError("Path must be provided if image is a tensor")
+            logger.debug("Input image source file not specified for prediction, saving the prediction will require specifying the source file basename.")
         else:
             raise TypeError(f"Unknown type for image: {type(image)}, expected str or torch.Tensor")
 
-        c, h, w = im.shape
-        # add transforms.toDType(self._dtype) here? (probably slower than forcing the user to precast the image)
+        c, h, w = image.shape
         transform_list = []
         # Check if the image has an integer data type
-        if im.dtype in [torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64]:
-            transform_list.append(transforms.Normalize(0, 255))
-            im = im.to(self._dtype)
+        if image.dtype in [torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64]:
+            transform_list.append(transforms.ConvertImageDtype(self._dtype))
 
         if scale_before != 1:
             w, h = int(w * scale_before), int(h * scale_before)
@@ -1358,36 +1469,36 @@ class Predictor(object):
         edge_case_margin_padding_multiplier = 2
         padding_offset = torch.tensor((self.EDGE_CASE_MARGIN, self.EDGE_CASE_MARGIN), dtype=self._dtype, device=self._device) * edge_case_margin_padding_multiplier
         if padding_offset.sum() > 0:
-            # padding_for_edge_cases = transforms.Pad(
-            #     padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier, 
-            #     fill=0.5,
-            #     padding_mode='constant'
-            # )
-            padding_for_edge_cases = InpaintPad(padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier)
+            padding_for_edge_cases = transforms.Pad(
+                padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier, 
+                fill=0,
+                padding_mode='constant'
+            )
+            # padding_for_edge_cases = InpaintPad(padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier)
             transform_list.append(padding_for_edge_cases)
         else:
             padding_offset[:] = 0
         if transform_list:
             transforms_composed = transforms.Compose(transform_list)
 
-        im_b = transforms_composed(im) if transform_list else im
+        transformed_image = transforms_composed(image) if transform_list else image
 
-        # Check dimensions and channels
-        assert im_b.dim() == 3, f"Image is not 3-dimensional"
-        assert im_b.size(0) == 3, f"Image does not have 3 channels"
+        # Check correct dimensions
+        assert len(transformed_image.shape) == 3, RuntimeError(f"transformed_image.shape {transformed_image.shape} != 3") 
+        # Check correct number of channels
+        assert transformed_image.shape[0] == 3, RuntimeError(f"transformed_image.shape[0] {transformed_image.shape[0]} != 3. The image is probably supplied in WxHxC instead of CxWxH, try image.permute(2, 1, 0) before passing it.")
 
-        max_dim = max(im_b.shape[1:])
-        min_dim = min(im_b.shape[1:])
+        max_dim = max(transformed_image.shape[1:])
+        min_dim = min(transformed_image.shape[1:])
 
-        # fixme, what to do if the image is too small? - RE: Fixed by adding padding in _detect_instances
         scales = []
 
         if single_scale:
-            scales.append(min(1, 1024 / min_dim))
+            scales = [1]
         else:
-            s = 1024 / max_dim
+            s = self.TILE_SIZE / max_dim
 
-            if s > 1:
+            if s >= 1:
                 scales.append(s)
             else:
                 while s <= 0.9:  # Cut off at 90%, to avoid having s~1 and s=1.
@@ -1396,18 +1507,25 @@ class Predictor(object):
                 if s != 1:
                     scales.append(1.0)
 
-        logging.info(f"Running inference on scales: {scales}")
+        logger.debug(f"Running inference on scales: {scales}")
 
         if self.TIME:
             self.total_detection_time, self.total_forward_time = 0, 0
-        all_preds = [self._detect_instances(im_b, scale=s, max_scale=s == min(scales)) for s in reversed(scales)]  #
+        all_preds = [self._detect_instances(transformed_image, scale=s, max_scale=s == min(scales)) for s in reversed(scales)]
 
         if self.TIME:
-            print(f'Total detection time: {self.total_detection_time:.3f}s ({self.total_forward_time / self.total_detection_time * 100:.3g}% forward)')
+            if self.total_detection_time > 0:
+                perc_forward = f'{self.total_forward_time / self.total_detection_time * 100:.3g}'
+            else:
+                perc_forward = "N/A"
+            logger.info(
+                f'Total detection time: {self.total_detection_time:.3f}s'
+                f' ({perc_forward}% forward)'
+            )
 
         all_preds = TensorPredictions(
             predictions     = all_preds,
-            image           = im,
+            image           = image,
             image_path      = path,
             dtype           = self._dtype,
             device          = self._device,
@@ -1428,6 +1546,38 @@ class Predictor(object):
             end_pyramid.record()
             torch.cuda.synchronize()
             total_pyramid_time = start_pyramid.elapsed_time(end_pyramid) / 1000
-            print(f'Total pyramid time: {total_pyramid_time:.3f}s ({self.total_detection_time / total_pyramid_time * 100:.3g}% detection | {self.total_forward_time / total_pyramid_time * 100:.3g}% forward)')
+            logger.info(
+                f'Total pyramid time: {total_pyramid_time:.3f}s'
+                f' ({self.total_detection_time / total_pyramid_time * 100:.3g}% detection |'
+                f' {self.total_forward_time / total_pyramid_time * 100:.3g}% forward)'
+            )
 
         return all_preds
+
+    def __call__(
+            self, 
+            image : Union[torch.Tensor, str], 
+            path : Optional[str]=None, 
+            scale_increment : float=2/3, 
+            scale_before : Union[float, int]=1, 
+            single_scale : bool=False
+        ) -> TensorPredictions:
+        """
+        Performs inference on an image at multiple scales and returns the predictions.
+        
+        Args:
+            image (Union[torch.Tensor, str]): The image to run inference on. If a string is given, the image is read from the path.
+                If it is a `torch.Tensor`, the path must be provided. \\
+                We assume that floating point images are in the range [0, 1] and integer images are in the range [0, integer_type_max]. \\
+                (see https://github.com/pytorch/vision/blob/6d7851bd5e2bedc294e40e90532f0e375fcfee04/torchvision/transforms/_functional_tensor.py#L66)
+            path (Optional[str], optional): The path to the image. Defaults to None. Must be provided if `image` is a `torch.Tensor`.
+            scale_increment (float, optional): The scale increment to use when resizing the image. Defaults to 2/3.
+            scale_before (Union[float, int], optional): The scale to apply before running inference. Defaults to 1.
+            single_scale (bool, optional): Whether to run inference on a single scale. Defaults to False.
+
+        Returns:
+            TensorPredictions: The predictions for the image.
+        """
+        params = locals()
+        params.pop("self", None)
+        return self.pyramid_predictions(**params)

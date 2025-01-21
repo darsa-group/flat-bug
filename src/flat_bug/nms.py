@@ -1,8 +1,12 @@
-from typing import Union, List, Tuple, Optional, Any, Callable
+from typing import Any, Callable, List, Optional, Tuple, Union
 
-import torch, torchvision
 import numpy as np
+import torch
+import torchvision
 from shapely.geometry import Polygon
+
+from flat_bug import logger
+
 
 def iou_boxes(
         rectangles : torch.Tensor,
@@ -455,7 +459,7 @@ def _compute_transitive_closure_compatible(adjacency_matrix : torch.Tensor) -> t
     # Check for possible overflow
     if csize > 2 ** (32 - 1) - 1:
         raise ValueError(f"Matrix is too large ({csize}x{csize}) for computation")
-    # We convert to torch.int16 to avoid overflow when squaring the matrix and ensure torch compatibility
+    # We convert to fp32 to avoid overflow when squaring the matrix and ensure torch compatibility
     closure = adjacency_matrix.to(dtype) 
     # Expand the adjacency matrix to the transitive closure matrix, by squaring the matrix and clamping the values to 1 - each step essentially corresponds to one step of parallel breadth-first search for all nodes
     last_max = torch.zeros(csize, dtype=dtype, device=device)
@@ -482,14 +486,14 @@ def _compute_transitive_closure_cuda(adjacency_matrix : torch.Tensor) -> torch.T
     Returns:
         torch.Tensor: A boolean matrix of shape (n, n), which is the transitive closure of the adjacency matrix.
     """
-    # torch._int_mm only supports matrices such that the output is larger than 32x32 and a multiple of 8
+    # torch._int_mm only supports matrices such that the output is larger than 32x32 and a multiple of 32
     if len(adjacency_matrix) < 32:
         padding = 32 - len(adjacency_matrix)
-    elif len(adjacency_matrix) % 8 != 0:
-        padding = 8 - len(adjacency_matrix) % 8
+    elif len(adjacency_matrix) % 32 != 0:
+        padding = 32 - len(adjacency_matrix) % 32
     else:
         padding = 0
-    # Convert the adjacency matrix to float16, this is just done to ensure that the values don't overflow when squaring the matrix before clamping - if there existed a "or-matrix multiplication" for boolean matrices, this would not be necessary
+    # Pad the adjacency matrix to the nearest multiple of 8 and convert it to int8
     closure = torch.nn.functional.pad(adjacency_matrix, (0, padding, 0, padding), value=0.).to(torch.int8) 
     # Expand the adjacency matrix to the transitive closure matrix, by squaring the matrix and clamping the values to 1 - each step essentially corresponds to one step of parallel breadth-first search for all nodes
     last_max = torch.zeros(len(closure), dtype=torch.int32, device=closure.device)
@@ -509,11 +513,11 @@ def _compute_transitive_closure_cuda(adjacency_matrix : torch.Tensor) -> torch.T
 # Check if the _int_mm function is compatible with the current environment
 if torch.cuda.is_available():
     try:
-        _compute_transitive_closure_cuda(torch.zeros((32, 32), dtype=torch.bool).cuda())
+        _compute_transitive_closure_cuda(torch.zeros((33, 33), dtype=torch.bool).cuda())
         _INT_MM_SUPPORTED = True
     except:
         _INT_MM_SUPPORTED = False
-        print("Warning: _int_mm is not supported on this device, falling back to CPU implementation")
+        logger.warning("_int_mm is not supported on this device, transitive closure subroutine falling back to CPU implementation")
 else:
     _INT_MM_SUPPORTED = False
 

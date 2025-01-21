@@ -1,12 +1,15 @@
-import os, time
 import csv
-
-from typing import Union, List, Tuple, List, Dict, Any, Optional
+import os
+import time
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
 
-from flat_bug.coco_utils import contour_bbox, contour_area, annotations_to_numpy
+from flat_bug import logger
+from flat_bug.coco_utils import (annotations_to_numpy, contour_area,
+                                 contour_bbox)
+
 
 def isfloat(num : str) -> bool:
     try:
@@ -354,7 +357,7 @@ def plot_heatmap(
             scale_dims = 1000 / min_dim
             dimensions = tuple([int(d * scale_dims) for d in dimensions])
     if mat.shape[0] == 0 or mat.shape[1] == 0:
-        print('WARNING: Empty matrix. Cannot plot heatmap.')
+        logger.warning('Empty matrix. Cannot plot heatmap.')
         return
 
     # Create a colormap for viridis
@@ -840,8 +843,9 @@ def compatible_display(image: np.array):
     # Check if the image is displayed in a Jupyter notebook
     if 'get_ipython' in globals():
         # Only import the necessary modules if the image is displayed in a Jupyter notebook, ensures they are optional dependencies
-        from IPython.display import display, clear_output
         import ipywidgets as widgets
+        from IPython.display import clear_output, display
+
         # Convert the image from BGR to RGB
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         # Create a button widget
@@ -867,11 +871,11 @@ def compatible_display(image: np.array):
         start_time = time.time()
         while not button_clicked and (time.time() - start_time) < TIMEOUT:
             time.sleep(0.01)
-        print('Image display closed')
+        logger.info('Image display closed')
     else:
         # Check if a display is available
         if os.environ.get('DISPLAY', '') == '':
-            print('No display found, unable to display the image')
+            logger.info('No display found, unable to display the image')
         else:
             # Display the image
             cv2.imshow('Matches', image)

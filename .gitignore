@@ -70,6 +70,7 @@ instance/
 
 # Sphinx documentation
 docs/_build/
+docs/source/README_sphinx.md
 
 # PyBuilder
 .pybuilder/
@@ -163,9 +164,10 @@ cython_debug/
 
 runs/
 *.pt
-!src/flat_bug/tests/assets/**.pt
 *.pth
 *.jpg
+*.png
+*.pdf
 *.yaml
 !scripts/**/*.yaml
 *.out
@@ -177,10 +179,19 @@ test/
 prototypes/
 slurm_logs/
 scripts/experiments/results/
+scripts/manuscript/statistics/data
+scripts/manuscript/statistics/combined_results.csv
 
 utils/eval_slurm.sh
 utils/tune_slurm.sh
 utils/zip_output_for_ERDA.sh
 
-src/flat_bug/tests/assets/*.txt
+src/flat_bug/tests/assets/ALUS_Non-miteArachnids_Unknown_2020_11_03_4545.txt
 !src/flat_bug/tests/assets/ALUS_Non-miteArachnids_Unknown_2020_11_03_4545.jpg
+
+install_digital_research_alliance_canada.sh
+pyvenv.cfg
+*.whl
+*.gz
+
+!/prediction.jpg
