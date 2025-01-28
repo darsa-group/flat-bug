@@ -162,7 +162,7 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-runs/
+/runs/
 *.pt
 *.pth
 *.jpg
@@ -171,13 +171,13 @@ runs/
 *.yaml
 !scripts/**/*.yaml
 *.out
-datasets/
+/datasets/
 
 s3/
-dev/
-test/
-prototypes/
-slurm_logs/
+/dev/
+/test/
+/prototypes/
+/slurm_logs/
 scripts/experiments/results/
 scripts/manuscript/statistics/data
 scripts/manuscript/statistics/combined_results.csv

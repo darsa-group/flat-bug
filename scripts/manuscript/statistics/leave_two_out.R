@@ -1,6 +1,5 @@
-source("flatbug_init.R")
-
-leave_two_out_full <- read_csv("data/leave_two_out_combined_recomputed.csv") %>% 
+leave_two_out_full <- "data/leave_two_out_combined_recomputed.csv" %>% 
+  read_csv(show_col_types = F) %>% 
   mutate(
     left_short = short_name(left),
     right_short = short_name(right),
@@ -11,7 +10,7 @@ leave_two_out_full_clean <- leave_two_out_full %>%
   mutate(
     across(c(left, right, dataset), ~str_remove(.x, "^01-partial-"))
   ) %>% 
-  add_count(left) %>% 
+  add_count(left, name = "nn") %>% 
   arrange(nn) %>% 
   mutate(
     left = factor(left, unique(c(left, right))),
@@ -135,6 +134,26 @@ focal_matrix_P  <- compute_focal(leave_two_out_cube_P, leave_two_out_control_P)
 focal_matrix_R  <- compute_focal(leave_two_out_cube_R, leave_two_out_control_R)
 
 
+focal_subdatasets <- focal_matrix_F1 %>% 
+  dimnames %>% 
+  first
+
+focal_subdatasets_latex <- tibble(
+  name = c("which", "subdatasets"),
+  value = c(
+    str_c(focal_subdatasets, collapse = ", "),
+    as.character(length(focal_subdatasets))
+  )
+) %>% 
+  mutate(
+    ltx = str_c("\\defexperiment{3}{", name, "}{", value, "}")
+  ) %>% 
+  pull(ltx) %>% 
+  str_c(collapse = "\n")
+
+add_group("Experiment 3 - Subdatasets")
+write_data("Experiment 3 - Subdatasets", focal_subdatasets_latex)
+
 library(tidygraph)
 library(ggraph)
 
@@ -191,11 +210,11 @@ l2o_tree_plt <- twr_dist %>%
     ),
     image_fun = function(x) image_circlecut(magick::image_sample(x, 200), 1, T, 5),
     size = 0.055,
-    position = position_nudge(y = 0.015)
+    position = position_nudge(y = 0.018)
   ) +
   geom_label(
-    aes(x,y,label = ifelse(leaf, label, NA_character_)), 
-    label.padding = unit(0.025, "lines"), 
+    aes(x, y, label = ifelse(leaf, label, NA_character_)), 
+    label.padding = unit(0.05, "lines"), 
     label.size = 0,
     hjust = 0,
     family = "Courier New",
@@ -206,7 +225,7 @@ l2o_tree_plt <- twr_dist %>%
     hjust = 1,
     label.size = 0,
     label.padding = unit(0.25, "lines"),
-    position = position_nudge(y = -0.0005, x = 0.25)
+    position = position_nudge(y = -0.0005, x = 0.175)
   ) +
   scale_y_continuous(
     breaks = seq(-1, 1, 0.05), 
@@ -234,7 +253,7 @@ ggsave(
   "figures/leave_two_out_tree.pdf", 
   l2o_tree_plt,
   device = cairo_pdf,
-  width = 4, height = 3,
+  width = 4, height = 4,
   scale = 3,
   antialias = "subpixel"
 )
@@ -374,4 +393,21 @@ ggsave(
   antialias = "subpixel"
 )
 
+l2o_comb_plt <- (l2o_tree_plt | l2o_proj_plt) +
+  plot_annotation(
+    tag_levels = "A", tag_prefix = "", tag_suffix = ")"
+  ) &
+  theme(
+    plot.tag = element_text(family = "CMU Serif", face = "bold", size = 20, vjust = 1), 
+    plot.tag.position = "left",
+    plot.tag.location = "margin"
+  )
 
+ggsave(
+  "figures/leave_two_out_combined.pdf", 
+  l2o_comb_plt,
+  device = cairo_pdf,
+  width = 8, height = 4,
+  scale = 3,
+  antialias = "subpixel"
+)

@@ -1,4 +1,3 @@
-source("flatbug_init.R")
 library(furrr)
 
 recompute_stats <- function(file, size_threshold, boot.n=1000) {

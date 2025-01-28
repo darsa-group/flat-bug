@@ -1,4 +1,5 @@
-erda_repository <- "https://anon.erda.au.dk/share_redirect/OzZk71Y5SS"
+train_repository <- "https://anon.erda.au.dk/share_redirect/OzZk71Y5SS"
+fb_repository <- "https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6"
 
 chr_equal <- function(a, b) {
   return(as.character(a) == as.character(b))
@@ -218,3 +219,55 @@ plot_matrix <- function(mat, limits=nice_limits, title=NULL, text=F) {
   
   p
 }
+
+
+## Latex data management
+start_pattern <- "% ### <NAME> ###"
+end_pattern   <- "% ### </NAME> ###"
+
+make_data_file <- function(file="experiment_results_latex.tex", clear=TRUE, header=c("% Automatically generated data file", "")) {
+  write_lines(header, file, append = !clear)
+  invisible()
+}
+
+find_group <- function(name, lines) {
+  start <- str_replace(start_pattern, "NAME", name)
+  end <- str_replace(end_pattern, "NAME", name)
+  start <- which(str_detect(lines, str_escape(start))) 
+  if (length(start) == 0) stop(str_c("Unable to find group (", name, ") in data."))
+  if (length(start) > 1) stop(str_c("Found duplicate entries for group (", name, ") in data"))
+  end <- which(str_detect(lines, str_escape(end)))
+  if (length(end) == 0) stop(str_c("Unable to find end-of-group (", name, ") in data."))
+  if (length(end) > 1) stop(str_c("Found duplicate entries for end-of-group (", name, ") in latex data file (", file, ")"))
+  if (end <= start) stop(str_c("Found invalid start- and end-of-group (", name, ") in latex data file (", file, ")"))
+  return(c(start, end))
+}
+
+add_group <- function(name, file="experiment_results_latex.tex") {
+  group_exists <- tryCatch({
+    find_group(name, read_lines(file))
+    TRUE
+  }, error = function(x) FALSE)
+  if (group_exists) stop(str_c("Group (", name, ") already exists in latex data file (", file, "). If you are updating the values it is best practice to clear the data file; run `make_data_file()`."))
+  start <- str_replace(start_pattern, "NAME", name)
+  end <- str_replace(end_pattern, "NAME", name)
+  write_lines(c("", start, "", end), file, append = TRUE)
+}
+
+get_data <- function(name, file="experiment_results_latex.tex") {
+  if (!file.exists(file)) stop(str_c("Latex data file (", file, ") does not exist. Perhaps call `make_data_file`."))
+  lines <- read_lines(file)
+  SE <- find_group(name, lines)
+  return(lines[(SE[1] + 1):(SE[2] - 1)])
+}
+
+write_data <- function(name, data, file="experiment_results_latex.tex") {
+  if (!file.exists(file)) stop(str_c("Latex data file (", file, ") does not exist. Perhaps call `make_data_file`."))
+  lines <- read_lines(file)
+  SE <- find_group(name, lines)
+  lines <- c(lines[1:SE[1]], data, lines[SE[2]:length(lines)])
+  write_lines(lines, file)
+  return(invisible(lines))
+}
+
+

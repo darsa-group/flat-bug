@@ -1,5 +1,3 @@
-source("flatbug_init.R")
-
 cutoff_data <- read_csv2("data/compare_backbone_sizes_L_full.csv") %>% 
   mutate(
     across(c(conf1, conf2, IoU), as.numeric),
