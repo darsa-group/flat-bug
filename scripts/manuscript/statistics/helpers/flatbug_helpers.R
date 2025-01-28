@@ -6,15 +6,39 @@ chr_equal <- function(a, b) {
 }
 
 # Auto select email if possible
-googlesheets4::gs4_auth(email = T)
-
-short_index <- googlesheets4::range_read(
-  "1X3Dlj3hyT990B-sZWk8EWL-kWMNzhqrCYp4vD7cIkfg",
-  "Sheet1",
-  range = "A:C"
-) %>% 
-  select(!ID) %>% 
-  rename(dataset = name, short_name = three_letter_code)
+"
+dataset,short_name
+abram2023,ABR
+ALUS,ALU
+amarathunga2022,AMA
+AMI-traps,AMI
+AMT,AMT
+anTraX,ATX
+ArTaxOr,ATO
+biodiscover-arm,BDA
+BIOSCAN,BIS
+blair2020,BLR
+cao2022,CAO
+CollembolAI,CAI
+Diopsis,DPS
+DIRT,DIR
+DiversityScanner,DIS
+gernat2018,GER
+https://www.mdpi.com/2077-0472/12/11/1967,IUL
+InsectCV,ICV
+mosquitos-citizen-science,MCS
+Mothitor,MOI
+NHM-beetles-crops,NBC
+PeMaToEuroPep,PME
+pinoy2023,PIN
+sittinger2023,SIT
+STARdbi,STA
+sticky-pi,SPI
+ubc-pitfall-traps,UPT
+ubc-scanned-sticky-cards-2023,USC
+vespAI,VES
+" %>% 
+  read_csv(show_col_types = F) -> dict
 
 short_name <- Vectorize(
   memoise::memoise(function(x, dict=short_index) {

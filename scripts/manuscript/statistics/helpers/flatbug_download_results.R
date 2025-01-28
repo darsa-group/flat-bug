@@ -137,6 +137,24 @@ list(
   invisible()
 
 # Move or download ROI tiles and pyramid visualization
+
+get_local_or_remote <- function(
+    name, local_dst_dir, local_src_dir, remote_src_dir, 
+    local_proc=identity, remote_proc=identity
+  ) {
+  dst <- file.path(local_dst_dir, name)
+  if (file.exists(dst)) return("skip")
+  # Manually created figure
+  local <- file.path(local_src_dir, local_proc(name))
+  if (file.exists(local) && file.copy(local, dst)) return("local")
+  # Pregenerated remote figure
+  f <- CFILE(dst, "wb")
+  r <- str_c(remote_src_dir, remote_proc(name), sep="/")
+  curlPerform(url = r, writedata = f@ref, noprogress = T)
+  close(f)
+  return("remote")
+}
+
 pyramid_files <- c(
   "full_prediction.png",
   "test_image.jpg",
@@ -149,19 +167,13 @@ pyramid_dir <- file.path("figures", "pyramid")
 if (!dir.exists(pyramid_dir)) dir.create(pyramid_dir, recursive=T)
 
 pyramid_files %>% 
-  map_chr(function(name) {
-    dst <- file.path(pyramid_dir, name)
-    if (file.exists(dst)) return("skip")
-    # Manually created figure
-    local <- file.path("..", "pyramid_visualization", name)
-    if (file.exists(local) && file.copy(local, dst)) return("local")
-    # Pregenerated remote figure
-    f <- CFILE(dst, "wb")
-    r <- str_c(fb_repository, "manuscript", "figures", "pyramid", name, sep="/")
-    curlPerform(url = r, writedata = f@ref, noprogress = T)
-    close(f)
-    return("remote")
-  }, .progress = "progressr")
+  map_chr(
+    get_local_or_remote,
+    local_dst_dir=pyramid_dir,
+    local_src_dir=file.path("..", "pyramid_visualization"),
+    remote_src_dir=str_c(fb_repository, "manuscript", "figures", "pyramid", sep="/"),
+    .progress = "progressr"
+  )
 
 tile_files <- c(
   "ABR.jpg",
@@ -193,18 +205,35 @@ tile_dir <- "tiles"
 if (!dir.exists(tile_dir)) dir.create(tile_dir)
 
 tile_files %>% 
-  map_chr(function(name) {
-    dst <- file.path(tile_dir, name)
-    if (file.exists(dst)) return("skip")
-    # Manually created figure
-    local <- file.path("..", "figure_tiles", "raw_tiles", name)
-    if (file.exists(local) && file.copy(local, dst)) return("local")
-    # Pregenerated remote figure
-    f <- CFILE(dst, "wb")
-    r <- str_c(fb_repository, "manuscript", "tiles", name, sep="/")
-    curlPerform(url = r, writedata = f@ref, noprogress = T)
-    close(f)
-    return("remote")
-  }, .progress = "progressr") 
+  map_chr(
+    get_local_or_remote,
+    local_dst_dir = tile_dir,
+    local_src_dir = file.path("..", "figure_tiles", "raw_tiles"),
+    remote_src_dir = str_c(fb_repository, "manuscript", "tiles", sep="/"),
+    .progress = "progressr"
+  ) 
+
+example_bbox_figure <- "example_bbox_vs_contour.png"
+get_local_or_remote(
+  name = example_bbox_figure,
+  local_dst_dir = "figures",
+  local_src_dir = "..",
+  remote_src_dir = str_c(fb_repository, "manuscript", "figures", sep="/")
+)
+
+mosaic_files <- c(
+  "prediction_mosaic.jpg",
+  "annotation_mosaic.jpg",
+  "raw_mosaic.jpg"
+)
+mosaic_files %>% 
+  map_chr(
+    get_local_or_remote,
+    local_dst_dir = "figures",
+    local_src_dir = file.path("..", "figure_tiles", "mosaic"),
+    remote_src_dir = str_c(fb_repository, "manuscript", "figures", sep="/"),
+    local_proc = function(x) str_remove(x, "_mosaic")
+  )
 
 invisible()
+
