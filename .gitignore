@@ -181,6 +181,7 @@ s3/
 scripts/experiments/results/
 scripts/manuscript/statistics/data
 scripts/manuscript/statistics/combined_results.csv
+scripts/manuscript/statistics/*.tex
 
 utils/eval_slurm.sh
 utils/tune_slurm.sh
