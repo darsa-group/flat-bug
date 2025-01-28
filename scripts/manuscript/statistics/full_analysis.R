@@ -24,6 +24,9 @@ main <- function() {
   pb <- progressr::progressor(steps = 7 + do_recompute, auto_finish = F)
   
   pb("Setting up environment...", amount=0)
+  if (!dir.exists("data")) dir.create("data")
+  if (!dir.exists("figures")) dir.create("figures")
+  if (!dir.exists("tiles")) dir.create("tiles")
   execute_script("helpers/flatbug_init.R", !dry_run)
   if (!dry_run) make_data_file()
   pb()

@@ -1,6 +1,8 @@
 library(furrr)
 library(RCurl)
 
+if (!dir.exists("data")) dir.create("data")
+
 # Compare backbone sizes / Deployment models
 plan(multisession, workers = round(availableCores() / 2))
 
@@ -131,4 +133,78 @@ list(
     curlPerform(url = r, writedata = f@ref, noprogress = T)
     close(f)
     return(invisible())
+  }, .progress = "progressr") %>% 
+  invisible()
+
+# Move or download ROI tiles and pyramid visualization
+pyramid_files <- c(
+  "full_prediction.png",
+  "test_image.jpg",
+  "tile_and_pred_1.00.png",
+  "tile_and_pred_0.52.png",
+  "tile_and_pred_0.26.png"
+)
+
+pyramid_dir <- file.path("figures", "pyramid")
+if (!dir.exists(pyramid_dir)) dir.create(pyramid_dir, recursive=T)
+
+pyramid_files %>% 
+  map_chr(function(name) {
+    dst <- file.path(pyramid_dir, name)
+    if (file.exists(dst)) return("skip")
+    # Manually created figure
+    local <- file.path("..", "pyramid_visualization", name)
+    if (file.exists(local) && file.copy(local, dst)) return("local")
+    # Pregenerated remote figure
+    f <- CFILE(dst, "wb")
+    r <- str_c(fb_repository, "manuscript", "figures", "pyramid", name, sep="/")
+    curlPerform(url = r, writedata = f@ref, noprogress = T)
+    close(f)
+    return("remote")
   }, .progress = "progressr")
+
+tile_files <- c(
+  "ABR.jpg",
+  "ALU.jpg",
+  "AMA.jpg",
+  "AMI.jpg",
+  "AMT.jpg",
+  "ATO.jpg",
+  "ATX.jpg",
+  "BDA.jpg",
+  "BIS.jpg",
+  "CAI.jpg",
+  "CAO.jpg",
+  "DIR.jpg",
+  "DIS.jpg",
+  "DPS.jpg",
+  "GER.jpg",
+  "MOI.jpg",
+  "NBC.jpg",
+  "PIN.jpg",
+  "PME.jpg",
+  "SIT.jpg",
+  "SPI.jpg",
+  "UPT.jpg",
+  "USC.jpg"
+)
+
+tile_dir <- "tiles"
+if (!dir.exists(tile_dir)) dir.create(tile_dir)
+
+tile_files %>% 
+  map_chr(function(name) {
+    dst <- file.path(tile_dir, name)
+    if (file.exists(dst)) return("skip")
+    # Manually created figure
+    local <- file.path("..", "figure_tiles", "raw_tiles", name)
+    if (file.exists(local) && file.copy(local, dst)) return("local")
+    # Pregenerated remote figure
+    f <- CFILE(dst, "wb")
+    r <- str_c(fb_repository, "manuscript", "tiles", name, sep="/")
+    curlPerform(url = r, writedata = f@ref, noprogress = T)
+    close(f)
+    return("remote")
+  }, .progress = "progressr") 
+
+invisible()
