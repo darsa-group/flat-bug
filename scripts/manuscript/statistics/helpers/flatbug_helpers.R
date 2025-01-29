@@ -38,7 +38,7 @@ ubc-pitfall-traps,UPT
 ubc-scanned-sticky-cards-2023,USC
 vespAI,VES
 " %>% 
-  read_csv(show_col_types = F) -> dict
+  read_csv(show_col_types = F) -> short_index
 
 short_name <- Vectorize(
   memoise::memoise(function(x, dict=short_index) {
