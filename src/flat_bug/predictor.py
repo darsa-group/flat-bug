@@ -20,7 +20,6 @@ from ultralytics.engine.results import Results
 
 # from flat_bug.yolo_helpers import *
 from flat_bug import download_from_repository, logger
-from flat_bug.augmentations import InpaintPad
 from flat_bug.config import CFG_PARAMS, DEFAULT_CFG, read_cfg
 from flat_bug.geometric import (calculate_tile_offsets, chw2hwc_uint8,
                                 contours_to_masks, create_contour_mask,

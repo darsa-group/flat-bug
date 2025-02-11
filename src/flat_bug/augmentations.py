@@ -63,7 +63,6 @@ def apply_segments(
     segments[..., 0] = segments[..., 0].clip(bboxes[:, 0:1], bboxes[:, 2:3])
     segments[..., 1] = segments[..., 1].clip(bboxes[:, 1:2], bboxes[:, 3:4])
     return bboxes, segments
-###
 
 def low_res_inpaint(
         img : np.ndarray, 
@@ -494,7 +493,6 @@ class FlatBugRandomPerspective(RandomPerspective):
 
         # labels["instances"].normalize(*labels["resized_shape"][::-1])
         return labels
-
 
 class Crop:
     bg_fill = (0, 0, 0)

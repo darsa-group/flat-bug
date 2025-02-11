@@ -34,32 +34,6 @@ def iou_boxes(
         raise ValueError(f"Other rectangles must be of shape (n, 4), not {other_rectangles.shape}")
     
     return torchvision.ops.box_iou(rectangles, rectangles if other_rectangles is None else other_rectangles)
-
-def iou_boxes_2sets(
-        rectangles1 : torch.Tensor, 
-        rectangles2 : torch.Tensor
-    ) -> torch.Tensor:
-    """
-    Calculates the intersection over union (IoU) of a set of rectangles with another set of rectangles.
-
-    Args:
-        rectangles1 (torch.Tensor): A tensor of shape (n, 4), where n is the number of rectangles and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles.
-        rectangles2 (torch.Tensor): A tensor of shape (m, 4), where m is the number of rectangles and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles.
-
-    Returns:
-        torch.Tensor: A tensor of shape (n, m), where n is the number of rectangles in rectangles1 and m is the number of rectangles in rectangles2, containing the IoU of each rectangle in rectangles1 with each rectangle in rectangles2.
-    """
-    if not len(rectangles1.shape) == 2 or rectangles1.shape[1] != 4:
-        if len(rectangles1.shape) == 1 and rectangles1.shape[0] == 4:
-            rectangles1 = rectangles1.unsqueeze(0)
-        else:
-            raise ValueError(f"Rectangles must be of shape (n, 4), not {rectangles1.shape}")
-    if not len(rectangles2.shape) == 2 or rectangles2.shape[1] != 4:
-        if len(rectangles2.shape) == 1 and rectangles2.shape[0] == 4:
-            rectangles2 = rectangles2.unsqueeze(0)
-        else:
-            raise ValueError(f"Rectangles must be of shape (n, 4), not {rectangles2.shape}")
-    return torchvision.ops.box_iou(rectangles1, rectangles2)
     
 def fancy_nms(
         objects : Any, 

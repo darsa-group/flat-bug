@@ -93,7 +93,6 @@ def get_datasets(files : List[str]) -> Dict[str, List[str]]:
         datasets[fd].append(file)
     return datasets
 
-
 def subset(
         self : "FlatBugYOLODataset", 
         n : Optional[int]=None, 
@@ -191,7 +190,6 @@ def validation_augmentation_pipeline(
             mask_overlap=True
         )
     ])
-
 
 class FlatBugYOLODataset(YOLODataset):
     _min_size : int=32 # What is the minimum size of an instance to be considered (width or height in pixels after augmentations)
@@ -298,7 +296,6 @@ class FlatBugYOLODataset(YOLODataset):
 
     def __getitem__(self, index):
         return self.transforms(self.get_image_and_label(self.__indices[index]))
-
 
 class FlatBugYOLOValidationDataset(FlatBugYOLODataset):
     _resample_n : int= 5

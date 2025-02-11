@@ -55,61 +55,6 @@ def calculate_tile_offsets(
 
     return [((m, n), (j, i)) for n, j in enumerate(y_range) for m, i in enumerate(x_range)]
 
-def intersect(
-        rect1s : torch.Tensor, 
-        rect2s : torch.Tensor, 
-        area_only : bool=False
-    ) -> torch.Tensor:
-    """
-    Calculates the intersections between two sets of rectangles. The rectangles are represented as tensors of shape (n, 4)
-    where the 4 columns are the x and y coordinates of the top-left and bottom-right corners of the rectangles. 
-    The intersection is calculated as the rectangle that covers the intersection of the two rectangles. 
-    
-    If `area_only` is True, only the area of the intersection(s) are/is returned, otherwise the intersecting rectangle(s) are/is returned.
-
-    Args:
-        rect1s (`torch.Tensor`): A tensor of shape (n_1, 4) representing the left hand set of rectangles.
-        rect2s (`torch.Tensor`): A tensor of shape (n_2, 4) representing the right hand set of rectangles.
-        area_only (`bool`, optional): Whether to return only the area of the intersection(s). Defaults to False.
-    
-    Returns:
-        `torch.Tensor`: A tensor of shape (n_1, n_2, 4) representing the intersection(s) of the two sets of rectangles. \\ 
-            If `area_only` is True, the tensor will have shape (n_1, n_2) instead. \\
-            Empty intersections are represented as rectangles with area 0 and coordinates (0, 0, 0, 0).
-    """
-    # Shape checking
-    if len(rect1s.shape) == 1 and not rect1s.shape[0] == 4 or len(rect1s.shape) == 2 and not rect1s.shape[1] == 4:
-        raise ValueError(f"Rectangles must be of shape (n, 4), not {rect1s.shape}")
-    if len(rect2s.shape) == 1 and not rect2s.shape[0] == 4 or len(rect2s.shape) == 2 and not rect2s.shape[1] == 4:
-        raise ValueError(f"Rectangles must be of shape (n, 4), not {rect2s.shape}")
-    # Ensure that the rectangles are of shape (n, 4) not (4,)
-    if len(rect1s.shape) == 1:
-        rect1s = rect1s.unsqueeze(0)
-    if len(rect2s.shape) == 1:
-        rect2s = rect2s.unsqueeze(0)
-    # Manually broadcast the rectangles
-    n1 = rect1s.shape[0]
-    n2 = rect2s.shape[0]
-    rect1s = rect1s.unsqueeze(1).repeat(1, n2, 1)
-    rect2s = rect2s.unsqueeze(0).repeat(n1, 1, 1)
-
-    # Calculate the intersections rectangle corners - the most top-right (i.e. max) of the bottom-left corners is the intersection's bottom-left, and vice versa for the top-right
-    intersections_max = torch.max(rect1s[:, :, :2], rect2s[:, :, :2]) # Intersection's bottom-left corner
-    intersections_min = torch.min(rect1s[:, :, 2:], rect2s[:, :, 2:]) # Intersection's top-right corner
-
-    # Calculate the area of the intersections or the intersections themselves
-    if area_only:
-        intersections = (intersections_min - intersections_max).prod(dim=2)
-    else:
-        intersections = torch.zeros((n1, n2, 4), dtype=rect1s.dtype, device=rect1s.device)
-        intersections[:, :, :2] = intersections_max
-        intersections[:, :, 2:] = intersections_min
-    
-    # Check for no intersection - if the bottom-left corner is greater than the top-right corner in any dimension, the intersection is empty
-    intersections[(intersections_min <= intersections_max).any(dim=2)] = 0
-
-    return intersections
-
 def create_contour_mask(
         mask: torch.Tensor, 
         width: int=1
