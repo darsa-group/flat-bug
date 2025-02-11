@@ -249,5 +249,5 @@ l1o_delta_stratified_latex <- leave_one_out_cleaned %>%
   pull(ltx) %>% 
   str_c(collapse = "\n") 
 
-add_group("Experiment 2 - Leave-on-out stratified")
-write_data("Experiment 2 - Leave-on-out stratified", l1o_delta_stratified_latex)
+add_group("Experiment 2 - Leave-one-out stratified")
+write_data("Experiment 2 - Leave-one-out stratified", l1o_delta_stratified_latex)

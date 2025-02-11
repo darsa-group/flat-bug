@@ -182,6 +182,8 @@ ggsave(
   antialias = "subpixel"
 )
 
+anno_pos <- max(abs(twr_dist))/4 * c(1, 0.5, 0, -0.5, -1) 
+
 l2o_tree_plt <- twr_dist %>%
   hclust("average") %>% 
   tidygraph::as_tbl_graph() %>% 
@@ -198,6 +200,18 @@ l2o_tree_plt <- twr_dist %>%
     linetype = "dashed", 
     linewidth = 0.75
   ) +
+  annotate(
+    "label",
+    x = Inf,
+    y = anno_pos,
+    label = c("Antagonistic", "←", "Redundant", "→", "Synergistic"),
+    vjust = 0.3,
+    hjust = 0.5,
+    fontface = "bold",
+    size = c(4, 8, 4, 8, 4),
+    fill = "white",
+    label.size = 0
+  ) +
   ggraph::geom_edge_elbow(
     linewidth = 0.5, 
     color = "gray25"
@@ -210,7 +224,7 @@ l2o_tree_plt <- twr_dist %>%
     ),
     image_fun = function(x) image_circlecut(magick::image_sample(x, 200), 1, T, 5),
     size = 0.055,
-    position = position_nudge(y = 0.018)
+    position = position_nudge(y = 0.02)
   ) +
   geom_label(
     aes(x, y, label = ifelse(leaf, label, NA_character_)), 
@@ -225,7 +239,7 @@ l2o_tree_plt <- twr_dist %>%
     hjust = 1,
     label.size = 0,
     label.padding = unit(0.25, "lines"),
-    position = position_nudge(y = -0.0005, x = 0.175)
+    position = position_nudge(y = -0.00035, x = 0.25)
   ) +
   scale_y_continuous(
     breaks = seq(-1, 1, 0.05), 
@@ -238,14 +252,15 @@ l2o_tree_plt <- twr_dist %>%
     #   breaks = scales::breaks_extended
     # )
   ) +
-  coord_flip() +
+  coord_flip(clip = "off") +
   theme(
     # panel.grid.minor.x = element_line(linewidth = 0.25, color = "gray35", linetype = "dashed"),
     # panel.grid.major.x = element_line(linewidth = 0.25, color = "gray35", linetype = "solid"),
     axis.text.x = element_text(),
     axis.ticks.x = element_line(linewidth = 0.75),
     axis.line.x = element_line(linewidth = 0.75),
-    axis.title.x = element_text(family = "Lucida Sans")
+    axis.title.x = element_text(family = "Lucida Sans"),
+    plot.margin = margin(1, 1, 0.25, 1, "lines")
   ) +
   labs(y = "Two-Way Redundancy (p²)")
 
@@ -253,7 +268,7 @@ ggsave(
   "figures/leave_two_out_tree.pdf", 
   l2o_tree_plt,
   device = cairo_pdf,
-  width = 4, height = 4,
+  width = 4, height = 3,
   scale = 3,
   antialias = "subpixel"
 )

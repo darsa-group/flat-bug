@@ -250,7 +250,7 @@ worst_case_latex <- worst_case_results %>%
     label = label %>% 
       str_replace_all("%", "\\\\%") %>% 
       str_remove("\\s\\S+$"),
-    ltx = str_c("\\defexperiment{2}{", model_size,"-delta-", metric, "}{", label, "}")
+    ltx = str_c("\\defexperiment{1}{", model_size,"-delta-", metric, "}{", label, "}")
   ) %>% 
   pull(ltx) %>% 
   str_c(collapse = "\n") 
