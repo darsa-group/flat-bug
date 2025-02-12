@@ -62,9 +62,9 @@ def fancy_nms(
         return_indices (bool, optional): A flag to indicate whether to return the indices of the picked objects or the objects themselves. Defaults to False. If True, both the picked objects and scores are returned.
 
     Returns:
-        torch.Tensor: A tensor of shape (m, ) containing the indices of the picked objects.
-            or
-        tuple of length 2: A tuple containing the picked objects and their scores.
+        (Union[torch.Tensor, Tuple[Any, torch.Tensor]]):
+            - _torch.Tensor_: A tensor of shape `(m,)` containing the indices of the picked objects.
+            - _Tuple[Any, torch.Tensor]_: A tuple where the first element contains the picked objects and the second element is a tensor of their scores.
     """
     if not len(objects.shape) == 2:
         raise ValueError(f"Boxes must be of shape (n, x), not {objects.shape}")
@@ -583,8 +583,9 @@ def cluster_iou_boxes(
     Computes the connected components of a set of boxes, where boxes are connected if their IoU is greater than the threshold.
 
     Args:
-        boxes (any): A set of boxes with a __len__ method.
+        boxes (torch.Tensor): A tensor of shape (n, 4), where n is the number of rectangles and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles.
         iou_threshold (float): The IoU threshold for clustering. Defaults to 0.5.
+        time (bool, optional): UNUSED.
 
     Returns:
         List[torch.Tensor]: A list of tensors, where each tensor contains the indices of the objects in a cluster.
@@ -630,14 +631,29 @@ def nms_masks(
         boxes : torch.Tensor=None
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
     """
-    Efficiently perform non-maximum suppression on a set of masks.
+    Efficiently perform non-maximum suppression on a set of boolean masks.
+
+    Defaults to a modified two-stage NMS algorithm, that aims to minimize the number of mask intersection calculations needed.
+
+    Args:
+        masks (torch.Tensor): A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
+        scores (torch.Tensor): A tensor of shape (n, ) containing the "scores" of the masks, this can merely be though of as a priority score, where the higher the score, the higher the priority of the object - it does not have to be a probability/confidence.
+        iou_threshold (float, optional): The IoU threshold for non-maximum suppression. Defaults to 0.5.
+        return_indices (bool, optional): A flag to indicate whether to return the indices of the picked objects or the objects themselves. Defaults to False. If True, both the picked objects and scores are returned.
+        group_first (bool, optional): A flag to indicate whether two use the two-stage NMS method. Defaults to True.
+        boxes (Optional[torch.Tensor], optional): Bounding boxes for the masks. A tensor of shape (n, 4), where n is the number of masks and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the bounding boxes.
+    
+    Returns:
+        (Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]):
+            - _torch.Tensor_: A tensor of shape `(m,)` containing the indices of the picked objects.
+            - _Tuple[torch.Tensor, torch.Tensor]_: A tuple where the first element contains the picked masks and the second element is a tensor of their scores.
     """
     if not group_first or len(masks) < 10:
         nms_ind = nms_masks_(masks=masks, scores=scores, iou_threshold=iou_threshold)
     else:
         if boxes is None:
             raise ValueError("'boxes' must be specified for nms_masks when 'group_first' is True")
-        # We decrease the iou_threshold for the clustering, since there is no straight-forward relationship between the IoU of the boxes and the IoU of the polygons
+        # We decrease the iou_threshold for the clustering, since there is no straight-forward relationship between the IoU of the boxes and the IoU of the masks
         groups, _ = cluster_iou_boxes(boxes=boxes, iou_threshold=min(1, iou_threshold / 4), time=False)
         _nms_ind = [torch.empty(0) for i in range(len(groups))]
         for i, group in enumerate(groups):
@@ -661,15 +677,27 @@ def nms_polygons(
         scores : torch.Tensor, 
         iou_threshold : Union[float, int]=0.5, 
         return_indices : bool=False, 
-        dtype : torch.dtype=None, 
         group_first : bool=True, 
         boxes : Optional[torch.Tensor]=None
     ) -> Union[torch.Tensor, Tuple[List[torch.Tensor], torch.Tensor]]:
     """
     Efficiently perform non-maximum suppression on a set of polygons.
+
+    Defaults to a modified two-stage NMS algorithm, that aims to minimize the number of polygon intersection calculations needed (very expensive).
+
+    Args:
+        polygons (List[torch.Tensor]): A list of tensors of shape (n, 2), where n is the number of vertices in the polygon and the 2 columns are the x and y coordinates of the vertices.
+        scores (torch.Tensor): A tensor of shape (n, ) containing the "scores" of the polygons, this can merely be though of as a priority score, where the higher the score, the higher the priority of the object - it does not have to be a probability/confidence.
+        iou_threshold (float, optional): The IoU threshold for non-maximum suppression. Defaults to 0.5.
+        return_indices (bool, optional): A flag to indicate whether to return the indices of the picked objects or the objects themselves. Defaults to False. If True, both the picked objects and scores are returned.
+        group_first (bool, optional): A flag to indicate whether two use the two-stage NMS method. Defaults to True (recommended).
+        boxes (Optional[torch.Tensor], optional): Bounding boxes for the polygons. A tensor of shape (n, 4), where n is the number of polygons and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the bounding boxes.
+    
+    Returns:
+        (Union[torch.Tensor, Tuple[List[torch.Tensor], torch.Tensor]]):
+            - _torch.Tensor_: A tensor of shape `(m,)` containing the indices of the picked polygons.
+            - _Tuple[List[torch.Tensor], torch.Tensor]_: A tuple where the first element contains the picked polygons and the second element is a tensor of their scores.
     """
-    if dtype is None:
-        raise ValueError("'dtype' must be specified for nms_masks")
     device = polygons[0].device
     if not group_first or len(polygons) < 10:
         nms_ind = nms_polygons_(polys=polygons, scores=scores, iou_threshold=iou_threshold)
@@ -716,11 +744,11 @@ def base_nms_(
         strict (bool, optional): A flag to indicate whether to perform strict checks on the algorithm. Defaults to True.
         return_indices (bool, optional): A flag to indicate whether to return the indices of the picked objects or the objects themselves. Defaults to False. If True, both the picked objects and scores are returned.
         **kwargs: Additional keyword arguments to be passed to the iou_fun function.
-
+    
     Returns:
-        torch.Tensor: A tensor of shape (n, ) containing the indices of the picked objects.
-            or
-        tuple of length 2: A tuple containing the picked objects and their scores.
+        (Union[torch.Tensor, Tuple[Any, torch.Tensor]]):
+            - _torch.Tensor_: A tensor of shape `(m,)` containing the indices of the picked objects.
+            - _Tuple[Any, torch.Tensor]_: A tuple where the first element contains the picked objects and the second element is a tensor of their scores.
     """
     if collate_fn is None:
         if isinstance(objects, torch.Tensor):
@@ -791,7 +819,7 @@ def nms_boxes(
         iou_threshold : Union[float, int]=0.5
     ) -> torch.Tensor:
     """
-    Wrapper for the standard non-maximum suppression algorithm.
+    Wrapper for `torchvision.ops.nms`; the standard non-maximum suppression algorithm.
     """
     return torchvision.ops.nms(boxes, scores, iou_threshold)
 

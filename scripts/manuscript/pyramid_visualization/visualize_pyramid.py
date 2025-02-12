@@ -182,7 +182,7 @@ if __name__ == "__main__":
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
 
     # === Step 2. For each row, add two axes with custom positions so that the midline is at x=0.5
-    for i, scale in enumerate(TQDM(scales_order)):
+    for i, scale in enumerate(TQDM(scales_order, desc="Arranging pyramid tiling visualization...")):
         offsets, scaled_image = pyramid_params[scale]
         ys, xs = [set(cs) for cs in zip(*[o[1] for o in offsets])]
         _, dy, dx = scaled_image.shape  # dy = height, dx = width
@@ -272,5 +272,7 @@ if __name__ == "__main__":
     plt.savefig("pyramid_tiling_visualization.png", transparent=True, bbox_inches="tight")
     plt.close()
 
-    # model(image).plot(outpath="full_prediction.png")
+
+    print("Producing full predictions...")
+    model(image).plot(outpath="full_prediction.png")
 
