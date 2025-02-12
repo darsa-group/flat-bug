@@ -163,8 +163,8 @@ def contours_to_masks(
 
     Args:
         contours (`List[torch.Tensor]`): List of contours represented as (i, j) index-coordinates in a Nx2 tensor (OBS: dtype=torch.long)
-        height (`int | torch.Tensor`): The height of the masks
-        width (`int | torch.Tensor`): The width of the masks
+        height (`Union[int, torch.Tensor]`): The height of the masks
+        width (`Union[int, torch.Tensor]`): The width of the masks
 
     Returns:
         out (`torch.Tensor`): NxHxW tensor of boolean masks with the contours filled in
