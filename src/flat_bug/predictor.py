@@ -351,7 +351,6 @@ class TensorPredictions:
                     scores=self.confs,# * torch.tensor(self.scales, dtype=self.dtype, device=self.device),
                     iou_threshold=iou_threshold, 
                     return_indices=True, 
-                    dtype=self.dtype,
                     boxes=self.boxes, 
                     **kwargs
                 )
