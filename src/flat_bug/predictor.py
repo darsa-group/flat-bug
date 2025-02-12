@@ -553,68 +553,155 @@ class TensorPredictions:
                 setattr(new_tp, k, new_value)
         return new_tp
     
-    def plot(self, *args, **kwargs):
-        return self._plot_jpeg(*args, **kwargs)
+    def plot(self, **kwargs):
+        outpath : Union[str, None] = kwargs.get("outpath", None)
+        if outpath not in [None, ""] and outpath.lower().endswith(".svg"):
+            return self._plot_svg(**kwargs)
+        return self._plot_image(**kwargs)
 
-    def _plot_svg(self, linewidth=2, masks=True, boxes=True, confidence=True, outpath=None, scale=1):
-        image = self.image.round().to(torch.uint8).permute(1, 2, 0).cpu().numpy()
+    @staticmethod
+    def _box_to_svg_element(
+            box: torch.Tensor, 
+            scale: float = 1.0, 
+            color: Tuple[int, int, int] = (0, 0, 0), 
+            linewidth: Union[float, int] = 2, 
+            label: Optional[str] = None,
+            label_fontsize : Union[float, int] = 12,
+            background_image: Optional[Any] = None  # expected to be a NumPy array in BGR
+        ) -> str:
+        # Convert box color (RGB tuple) to hex.
+        hex_color = f'#{"".join(hs if len(hs)==2 else hs+"0" for v in color if len(hs:=hex(v)[2:]))}'
+
+        if scale != 1:
+            box = (box.float() * scale).round().long()
+        xmin, ymin, xmax, ymax = box.tolist()
+        width = xmax - xmin
+        height = ymax - ymin
+
+        # Build the rectangle SVG element.
+        rect_svg = (
+            f'<rect x="{xmin}" y="{ymin}" width="{width}" height="{height}" '
+            f'style="stroke:{hex_color};stroke-width:{linewidth};fill:none"/>'
+        )
+
+        if label is not None:
+            avg_char_width = label_fontsize * 0.6 # 0.6: Arbitrarly chosen value for ~avg. character aspect ratio 
+            text_width = int(len(label) * avg_char_width)
+            text_height = label_fontsize
+            offset = (linewidth * 3) // 2  # offset in pixels above the box
+            text_y = ymin - offset
+            if text_y < text_height:
+                text_y = ymax + text_height
+            label_color = color
+
+            # If a background image is provided, sample the region where the label will appear.
+            if background_image is not None:
+                ih, iw = background_image.shape[:2]
+                text_x = xmin
+                # Ensure we don't sample outside the image.
+                region_x_end = min(text_x + round(1 * text_width), iw)
+                region_y_end = min(text_y + round(1 * text_height), ih)
+                if region_x_end > text_x and region_y_end > text_y:
+                    region = background_image[text_y:region_y_end, text_x:region_x_end]
+                    avg_brightness = np.mean(region)
+                    # If the sampled area is dark, switch the label to white.
+                    label_color = (0, 0, 0) if avg_brightness > 150 else (255, 255, 255)
+
+            # Convert the label color to hex.
+            label_hex = f'#{"".join(hs if len(hs)==2 else hs+"0" for v in label_color if len(hs:=hex(v)[2:]))}'
+            # Create a <text> element. Note that we use a fixed font size (12px) and family.
+            text_svg = (
+                f'<text x="{xmin}" y="{text_y}" fill="{label_hex}" '
+                f'style="font-size:{label_fontsize}px;font-family:Arial;font-weight:bold;">{label}</text>'
+            )
+            out = f'<g>{rect_svg}{text_svg}</g>'
+        else:
+            out = rect_svg
+
+        return out
+
+    @staticmethod
+    def _contour_to_svg_element(
+            contour: Union["torch.Tensor", Any], 
+            scale: float = 1.0,
+            color: Tuple[int, int, int] = (255, 0, 0),
+            linewidth: Union[int, float] = 2,
+            alpha: Union[int, float] = 0.33
+        ):
+        d_list = []
+        hex_color = f'#{"".join(hs if len(hs) == 2 else hs + "0" for v in color if len(hs := hex(v)[2:]))}'
+
+        stroke_colour = hex_color
+        fill_colour   = hex_color
+        if alpha > 1:
+            alpha = alpha / 255
+        for i in range(len(contour)):
+            name = i
+            x, y = (contour[i] * scale).round().long().tolist()
+            d_list.append(f"{x},{y}")
+        d_str = ' '.join(d_list)
+        return (
+            f'<path name="{name}" '
+            f'style="stroke:{stroke_colour};stroke-width:{linewidth};stroke-opacity:1;'
+            f'fill:{fill_colour};fill-opacity:{alpha}" d="M{d_str} Z"/>'
+        )
+
+    def _plot_svg(
+        self, 
+        linewidth: int = 2, 
+        masks: bool = True, 
+        boxes: bool = True, 
+        confidence: bool = True, 
+        outpath: Optional[str] = None, 
+        scale: float = 1,
+        contour_color: Tuple[int, int, int] = (255, 0, 0),
+        box_color: Tuple[int, int, int] = (0, 0, 0),
+        alpha: float = 0.3
+        ):
+        # Convert pred.image (a torch tensor) to a NumPy array and convert RGB -> BGR.
+        image = torchvision.transforms.ConvertImageDtype(torch.uint8)(self.image).permute(1, 2, 0).cpu().numpy()
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         embed_jpeg = True
         if scale != 1:
             image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
 
-        tmp_svg = tempfile.mktemp(suffix='.svg')
-
         try:
             height, width = image.shape[0:2]
+            ((_, text_height), _) = cv2.getTextSize("0", cv2.FONT_HERSHEY_SIMPLEX, 1 * scale, 2)
 
             encoded_string = base64.b64encode(cv2.imencode('.jpg', image)[1])
             desc = ''
-
-            with open(tmp_svg, 'w+') as f:
-                f.write('<svg width="' + str(width) + '"' +
+            content = []
+            content.append('<svg width="' + str(width) + '"' +
                         ' height="' + str(height) + '"' +
                         ' xmlns:xlink="http://www.w3.org/1999/xlink"' +
                         ' xmlns="http://www.w3.org/2000/svg"' +
                         ' >')
-                #     f.write('<metadata  id="sticky_pi"> "%s" </metadata>' % str(self.metadata()))
-                if embed_jpeg:
-                    f.write('<image %s width="%i" height="%i" x="0" y="0" xlink:href="data:image/jpeg;base64,%s"/>' % \
-                            (desc, width, height, str(encoded_string, 'utf-8')))
-
-                for c, conf in zip(self.contours, self.confs):
-                    f.write(self._contour_to_svg_element(c, scale=scale, confidence=conf))
-                f.write('</svg>')
-
+            # Embed the background image.
+            if embed_jpeg:
+                content.append('<image %s width="%i" height="%i" x="0" y="0" xlink:href="data:image/jpeg;base64,%s"/>' % \
+                        (desc, width, height, str(encoded_string, 'utf-8')))
+            if masks:
+                for cont in self.contours:
+                    content.append(self._contour_to_svg_element(cont, scale=scale, color=contour_color, linewidth=linewidth, alpha=alpha))
+            if boxes:
+                for box, conf in zip(self.boxes, self.confs):
+                    lbl = f'{conf.item():.1%}' if confidence else None
+                    # Pass the background image so the function can sample the area behind the label.
+                    content.append(self._box_to_svg_element(box, scale=scale, color=box_color, linewidth=linewidth, label=lbl, background_image=image, label_fontsize=text_height))
+            content.append('</svg>')
+            
             if outpath:
-                shutil.move(tmp_svg, outpath)
+                with open(outpath, 'w+') as f:
+                    f.writelines(content)
+                return outpath
 
         except Exception as e:
-            os.remove(tmp_svg)
             raise e
+        
+        return content
 
-    def _contour_to_svg_element(
-            self, 
-            contour : Union["torch.Tensor", Any], 
-            confidence : float, 
-            scale : float=1.0
-        ) -> str:
-        d_list = []
-
-        value = confidence
-        stroke_colour = '#ff0000'
-        fill_colour ='#0000ff'
-        fill_opacity = 0.3
-        for i in range(len(contour)):
-            name=i
-            x, y = contour[i][0] * scale
-            d_list.append(str(x) + ',' + str(y))
-        d_str = ' '.join(d_list)
-        out = '<path name="%s" value="%i" style="stroke:%s;stroke-opacity:1;fill:%s;fill-opacity:%f" d="M%s Z"/>' % \
-              (name, value, stroke_colour, fill_colour, fill_opacity, d_str)
-        return out
-
-    def _plot_jpeg(
+    def _plot_image(
             self, 
             linewidth : int=2, 
             masks : bool=True, 
@@ -622,7 +709,7 @@ class TensorPredictions:
             confidence : bool=True, 
             outpath : Optional[str]=None, 
             scale : float=1,
-            contour_color : Tuple[int, int, int] = (0, 0, 255),
+            contour_color : Tuple[int, int, int] = (255, 0, 0),
             box_color : Tuple[int, int, int] = (0, 0, 0),
             alpha : float = 0.3
         ) -> Optional[cv2.UMat]:
@@ -631,6 +718,9 @@ class TensorPredictions:
         image : cv2.UMat = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         if scale != 1:
             image = cv2.resize(image, (0, 0), fx=scale, fy=scale)
+        # Convert colors from RGB to BGR
+        contour_color = contour_color[::-1]
+        box_color = box_color[::-1]
 
         if len(self) > 0:
             # Draw masks
@@ -675,9 +765,9 @@ class TensorPredictions:
                             thickness=max(1, round(2 * scale))
                         )
                         # Calculate the text position
-                        xp, yp = start_point[0], start_point[1] - text_height // 2
+                        xp, yp = start_point[0], start_point[1] - linewidth * 2
                         if yp < text_height:
-                            yp = end_point[1] + text_height + 4 * linewidth
+                            yp = end_point[1] + text_height + linewidth * 2
                         # Get the average color intensity behind the text
                         avg_color = np.mean(image[yp:yp + text_height, xp:xp + text_width])
                         # Draw the text
@@ -687,7 +777,7 @@ class TensorPredictions:
                             org=(xp, yp), 
                             fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                             fontScale=1 * scale,
-                            color=(0, 0, 0) if avg_color > 127 else (255, 255, 255),
+                            color=(0, 0, 0) if avg_color > 150 else (255, 255, 255),
                             thickness=max(1, round(2 * scale))
                         )
 
