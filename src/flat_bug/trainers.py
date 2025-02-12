@@ -9,8 +9,7 @@ from typing import Any, Dict, List, Optional, Self, Tuple, Union
 import numpy as np
 import torch
 from ultralytics.data import build_dataloader
-from ultralytics.data.build import InfiniteDataLoader, seed_worker
-from ultralytics.data.utils import PIN_MEMORY
+from ultralytics.data.build import InfiniteDataLoader
 from ultralytics.models import yolo
 from ultralytics.models.yolo.segment import SegmentationTrainer
 from ultralytics.nn.tasks import attempt_load_one_weight

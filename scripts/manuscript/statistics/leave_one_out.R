@@ -1,7 +1,5 @@
-source("flatbug_init.R")
-
 leave_one_out_data <- "data/leave_one_out_combined_recomputed.csv" %>% 
-  read_csv() %>% 
+  read_csv(show_col_types = F) %>% 
   filter(leave_out_dataset != "AMI-traps") %>% 
   mutate(
     across(c(leave_out_short, short), ~factor(.x, sort(unique(.x[!is.na(.x)])))),
@@ -111,7 +109,7 @@ leave_one_out_plot_elems <- list(
   ),
   scale_x_discrete(labels = str_to_sentence),
   facet_wrap(~metric, scales = "free_x"),
-  labs(y = NULL, x = NULL, fill = NULL),
+  labs(y = "Normalized relative change (δ)", x = NULL, fill = NULL),
   guides(
     fill = guide_legend(
       override.aes = list(color = "black")
@@ -203,3 +201,53 @@ ggsave(
   antialias = "subpixel"
 )
 
+l1o_delta_summary_latex <- l1o_delta_summary %>% 
+  select(metric, type, label) %>% 
+  mutate(
+    metric = case_match(
+      metric,
+      "Precision" ~ "P",
+      "Recall" ~ "R",
+      "F1" ~ "F1"
+    ),
+    type = case_match(
+      type,
+      "Out-of-box" ~ "oob",
+      "Fine-tuned" ~ "ft"
+    ),
+    label = label %>% 
+      str_replace_all("%", "\\\\%") %>% 
+      str_remove("\\s\\S+$"),
+    ltx = str_c("\\defexperiment{2}{",metric,"-", type, "}{", label, "}")
+  ) %>% 
+  arrange(metric, type) %>% 
+  pull(ltx) %>% 
+  str_c(collapse = "\n")
+
+add_group("Experiment 2 - Leave-one-out summary")
+write_data("Experiment 2 - Leave-one-out summary", l1o_delta_summary_latex)
+
+l1o_delta_stratified_latex <- leave_one_out_cleaned %>% 
+  select(short, metric, type, rel_delta) %>% 
+  mutate(
+    metric = case_match(
+      metric,
+      "Precision" ~ "P",
+      "Recall" ~ "R",
+      "F1" ~ "F1"
+    ),
+    type = case_match(
+      type,
+      "Out-of-box" ~ "oob",
+      "Fine-tuned" ~ "ft"
+    ),
+    label = scales::label_percent(.1)(rel_delta) %>% 
+      str_replace_all("%", "\\\\%"),
+    ltx = str_c("\\defexperiment{2}{",metric,"-", type, "-", short,"}{", label, "}")
+  ) %>% 
+  arrange(metric, type, short) %>% 
+  pull(ltx) %>% 
+  str_c(collapse = "\n") 
+
+add_group("Experiment 2 - Leave-one-out stratified")
+write_data("Experiment 2 - Leave-one-out stratified", l1o_delta_stratified_latex)

@@ -16,11 +16,11 @@ def iou_boxes(
     Calculates the intersection over union (IoU) of a set of rectangles.
 
     Args:
-        rectangles (torch.Tensor): A tensor of shape (n, 4), where n is the number of rectangles and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles.
-        other_rectangles (torch.Tensor, optional): A tensor of shape (m, 4), where m is the number of rectangles and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles. Defaults to None, in which case the symmetric IoU of the rectangles with themselves is calculated.
+        rectangles (`torch.Tensor`): A tensor of shape (n, 4), where n is the number of rectangles and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles.
+        other_rectangles (`Optional[torch.Tensor]`, optional): A tensor of shape (m, 4), where m is the number of rectangles and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles. Defaults to None, in which case the symmetric IoU of the rectangles with themselves is calculated.
 
     Returns:
-        torch.Tensor: A tensor of shape (n, n), where n is the number of rectangles, containing the IoU of each rectangle with each other rectangle.
+        out (`torch.Tensor`): A tensor of shape (n, n), where n is the number of rectangles, containing the IoU of each rectangle with each other rectangle.
     """
     if not isinstance(rectangles, torch.Tensor):
         raise ValueError(f"Rectangles must be a tensor, not {type(rectangles)}")
@@ -34,32 +34,6 @@ def iou_boxes(
         raise ValueError(f"Other rectangles must be of shape (n, 4), not {other_rectangles.shape}")
     
     return torchvision.ops.box_iou(rectangles, rectangles if other_rectangles is None else other_rectangles)
-
-def iou_boxes_2sets(
-        rectangles1 : torch.Tensor, 
-        rectangles2 : torch.Tensor
-    ) -> torch.Tensor:
-    """
-    Calculates the intersection over union (IoU) of a set of rectangles with another set of rectangles.
-
-    Args:
-        rectangles1 (torch.Tensor): A tensor of shape (n, 4), where n is the number of rectangles and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles.
-        rectangles2 (torch.Tensor): A tensor of shape (m, 4), where m is the number of rectangles and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles.
-
-    Returns:
-        torch.Tensor: A tensor of shape (n, m), where n is the number of rectangles in rectangles1 and m is the number of rectangles in rectangles2, containing the IoU of each rectangle in rectangles1 with each rectangle in rectangles2.
-    """
-    if not len(rectangles1.shape) == 2 or rectangles1.shape[1] != 4:
-        if len(rectangles1.shape) == 1 and rectangles1.shape[0] == 4:
-            rectangles1 = rectangles1.unsqueeze(0)
-        else:
-            raise ValueError(f"Rectangles must be of shape (n, 4), not {rectangles1.shape}")
-    if not len(rectangles2.shape) == 2 or rectangles2.shape[1] != 4:
-        if len(rectangles2.shape) == 1 and rectangles2.shape[0] == 4:
-            rectangles2 = rectangles2.unsqueeze(0)
-        else:
-            raise ValueError(f"Rectangles must be of shape (n, 4), not {rectangles2.shape}")
-    return torchvision.ops.box_iou(rectangles1, rectangles2)
     
 def fancy_nms(
         objects : Any, 
@@ -81,16 +55,16 @@ def fancy_nms(
 
     
     Args:
-        objects (Any): Any object collection that can be indexed by a tensor, where the first dimension corresponds to the objects.
-        iou_fun (Callable): A function that calculates the symmetric IoU matrix of a set of objects returned as a `torch.Tensor` of shape (n, n), where n is the number of objects. The device should match the device of the scores.
-        scores (torch.Tensor): A tensor of shape (n, ) containing the scores of the objects.
-        iou_threshold (Union[float, int], optional): The IoU threshold for non-maximum suppression. Defaults to 0.5.
-        return_indices (bool, optional): A flag to indicate whether to return the indices of the picked objects or the objects themselves. Defaults to False. If True, both the picked objects and scores are returned.
+        objects (`Any`): Any object collection that can be indexed by a tensor, where the first dimension corresponds to the objects.
+        iou_fun (`Callable`): A function that calculates the symmetric IoU matrix of a set of objects returned as a `torch.Tensor` of shape (n, n), where n is the number of objects. The device should match the device of the scores.
+        scores (`torch.Tensor`): A tensor of shape (n, ) containing the scores of the objects.
+        iou_threshold (`Union[float, int]`, optional): The IoU threshold for non-maximum suppression. Defaults to 0.5.
+        return_indices (`bool`, optional): A flag to indicate whether to return the indices of the picked objects or the objects themselves. Defaults to False. If True, both the picked objects and scores are returned.
 
     Returns:
-        torch.Tensor: A tensor of shape (m, ) containing the indices of the picked objects.
-            or
-        tuple of length 2: A tuple containing the picked objects and their scores.
+        out (`Union[torch.Tensor, Tuple[Any, torch.Tensor]]`):
+            - `torch.Tensor`: A tensor of shape `(m,)` containing the indices of the picked objects.
+            - `Tuple[Any, torch.Tensor]`: A tuple where the first element contains the picked objects and the second element is a tensor of their scores.
     """
     if not len(objects.shape) == 2:
         raise ValueError(f"Boxes must be of shape (n, x), not {objects.shape}")
@@ -132,12 +106,12 @@ def intersect_masks_2sets(
     Computes intersection between all pairs between two sets of masks.
 
     Args:
-        m1s (torch.Tensor): A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
-        m2s (torch.Tensor): A tensor of shape (m, h, w), where m is the number of masks and h and w are the height and width of the masks.
-        dtype (torch.dtype, optional): The data type of the output tensor. Defaults to torch.float32.
+        m1s (`torch.Tensor`): A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
+        m2s (`torch.Tensor`): A tensor of shape (m, h, w), where m is the number of masks and h and w are the height and width of the masks.
+        dtype (`torch.dtype`, optional): The data type of the output tensor. Defaults to torch.float32.
 
     Returns:
-        torch.Tensor: A tensor of shape (n, m) containing the intersection (i.e. sum of elementwise product) of each pair of masks.
+        out (`torch.Tensor`): A tensor of shape (n, m) containing the intersection (i.e. sum of elementwise product) of each pair of masks.
     """
     return (torch.matmul(m1s.reshape(m1s.shape[0], -1).to(dtype), m2s.reshape(m2s.shape[0], -1).t().to(dtype))).to(torch.int32)
 
@@ -163,14 +137,14 @@ def iou_masks_2sets(
     OBS: Results will only be valid for boolean or masks containing only 0s and 1s.
 
     Args:
-        m1s (torch.Tensor): A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
-        m2s (torch.Tensor): A tensor of shape (m, h, w), where m is the number of masks and h and w are the height and width of the masks.
-        a1s (Union[torch.Tensor, None], optional): A tensor of shape (n, ) containing the areas of the masks in m1s. Defaults to None, in which case the areas are calculated.
-        a2s (Union[torch.Tensor, None], optional): A tensor of shape (m, ) containing the areas of the masks in m2s. Defaults to None, in which case the areas are calculated.
-        dtype (torch.dtype, optional): The data type of the output tensor. Defaults to torch.float32.
+        m1s (`torch.Tensor`): A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
+        m2s (`torch.Tensor`): A tensor of shape (m, h, w), where m is the number of masks and h and w are the height and width of the masks.
+        a1s (`Optional[torch.Tensor]`, optional): A tensor of shape (n, ) containing the areas of the masks in m1s. Defaults to None, in which case the areas are calculated.
+        a2s (`Optional[torch.Tensor]`, optional): A tensor of shape (m, ) containing the areas of the masks in m2s. Defaults to None, in which case the areas are calculated.
+        dtype (`torch.dtype`, optional): The data type of the output tensor. Defaults to torch.float32.
         
     Returns:
-        torch.Tensor: A tensor of shape (n, m) containing the IoU of each pair of masks.
+        out (`torch.Tensor`): A tensor of shape (n, m) containing the IoU of each pair of masks.
     """
     if len(m1s.shape) == 2:
         m1s = m1s.unsqueeze(0)
@@ -214,14 +188,14 @@ def ios_masks_2sets(
     OBS: Results will only be valid for boolean or masks containing only 0s and 1s.
 
     Args:
-        m1s (torch.Tensor): A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
-        m2s (torch.Tensor): A tensor of shape (m, h, w), where m is the number of masks and h and w are the height and width of the masks.
-        a1s (Union[torch.Tensor, None], optional): A tensor of shape (n, ) containing the areas of the masks in m1s. Defaults to None, in which case the areas are calculated.
-        a2s (Union[torch.Tensor, None], optional): A tensor of shape (m, ) containing the areas of the masks in m2s. Defaults to None, in which case the areas are calculated.
-        dtype (torch.dtype, optional): The data type of the output tensor. Defaults to torch.float32.
+        m1s (`torch.Tensor`): A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
+        m2s (`torch.Tensor`): A tensor of shape (m, h, w), where m is the number of masks and h and w are the height and width of the masks.
+        a1s (`Optional[torch.Tensor]`, optional): A tensor of shape (n, ) containing the areas of the masks in m1s. Defaults to None, in which case the areas are calculated.
+        a2s (`Optional[torch.Tensor]`, optional): A tensor of shape (m, ) containing the areas of the masks in m2s. Defaults to None, in which case the areas are calculated.
+        dtype (`torch.dtype`, optional): The data type of the output tensor. Defaults to torch.float32.
 
     Returns:
-        torch.Tensor: A tensor of shape (n, m) containing the IoS of each pair of masks.
+        out (`torch.Tensor`): A tensor of shape (n, m) containing the IoS of each pair of masks.
     """
     if len(m1s.shape) == 2:
         m1s = m1s.unsqueeze(0)
@@ -252,12 +226,12 @@ def iou_masks(
     Low-memory wrapper for `flat-bug.nms.iou_masks_2sets` that calculates the IoU of a set of masks with itself, in the symmetric case.
 
     Args:
-        masks (torch.Tensor): A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
-        areas (Union[torch.Tensor, None], optional): A tensor of shape (n, ) containing the areas of the masks. Defaults to None, in which case the areas are calculated.
-        dtype (torch.dtype, optional): The data type of the output tensor. Defaults to torch.float32.
+        masks (`torch.Tensor`): A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
+        areas (`Optional[torch.Tensor]`, optional): A tensor of shape (n, ) containing the areas of the masks. Defaults to None, in which case the areas are calculated.
+        dtype (`torch.dtype`, optional): The data type of the output tensor. Defaults to torch.float32.
 
     Returns:
-        torch.Tensor: A tensor of shape (n, n) containing the IoU of each pair of masks.
+        out (`torch.Tensor`): A tensor of shape (n, n) containing the IoU of each pair of masks.
     """
     if areas is None:
         areas = masks.sum(dim=(1, 2))
@@ -280,12 +254,12 @@ def nms_masks_(
     Performs non-maximum suppression on a set of masks.
     
     Args:
-        masks (torch.Tensor): A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
-        scores (torch.Tensor): A tensor of shape (n, ) containing the scores of the masks.
-        iou_threshold (float, optional): The IoU threshold for non-maximum suppression. Defaults to 0.5.
+        masks (`torch.Tensor`): A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
+        scores (`torch.Tensor`): A tensor of shape (n, ) containing the scores of the masks.
+        iou_threshold (`float`, optional): The IoU threshold for non-maximum suppression. Defaults to 0.5.
 
     Returns:
-        torch.Tensor: A tensor containing the indices of the picked masks.
+        out (`torch.Tensor`): A tensor containing the indices of the picked masks.
     """
     # Sort the boxes by score (implicitly)
     indices = torch.argsort(scores, descending=True)
@@ -339,11 +313,11 @@ def iou_polygons(
     OBS: Invalid polygons are handled by using the buffer(0) method from Shapely, which ensures that the function does not crash, but the results are not guaranteed to be "correct" for invalid polygons.
 
     Args:
-        polygons1 (List[torch.Tensor]): A list of tensors of shape (n, 2), where n is the number of vertices in the polygon and the 2 columns are the x and y coordinates of the vertices.
-        polygons2 (List[torch.Tensor], optional): A list of tensors of shape (m, 2), where m is the number of vertices in the polygon and the 2 columns are the x and y coordinates of the vertices. Defaults to None, in which case the symmetric IoU of the polygons with themselves is calculated.
+        polygons1 (`List[torch.Tensor]`): A list of tensors of shape (n, 2), where n is the number of vertices in the polygon and the 2 columns are the x and y coordinates of the vertices.
+        polygons2 (`Optional[List[torch.Tensor]]`, optional): A list of tensors of shape (m, 2), where m is the number of vertices in the polygon and the 2 columns are the x and y coordinates of the vertices. Defaults to None, in which case the symmetric IoU of the polygons with themselves is calculated.
 
     Returns:
-        torch.Tensor: A tensor of shape (n, m), where n is the number of polygons in polygons1 and m is the number of polygons in polygons2, containing the IoU of each polygon in polygons1 with each polygon in polygons2.
+        out (`torch.Tensor`): A tensor of shape (n, m), where n is the number of polygons in polygons1 and m is the number of polygons in polygons2, containing the IoU of each polygon in polygons1 with each polygon in polygons2.
     """
     device = polygons1[0].device
     if polygons2 is None:
@@ -392,12 +366,12 @@ def nms_polygons_(
     Performs non-maximum suppression on a set of polygons.
 
     Args:
-        polys (List[torch.Tensor]): A list of tensors of shape (n, 2), where n is the number of vertices in the polygon and the 2 columns are the x and y coordinates of the vertices.
-        scores (torch.Tensor): A tensor of shape (n, ) containing the scores of the polygons.
-        iou_threshold (float, optional): The IoU threshold for non-maximum suppression. Defaults to 0.5.
+        polys (`List[torch.Tensor]`): A list of tensors of shape (n, 2), where n is the number of vertices in the polygon and the 2 columns are the x and y coordinates of the vertices.
+        scores (`torch.Tensor`): A tensor of shape (n, ) containing the scores of the polygons.
+        iou_threshold (`float`, optional): The IoU threshold for non-maximum suppression. Defaults to 0.5.
 
     Returns:
-        torch.Tensor: A tensor containing the indices of the picked polygons.
+        out (`torch.Tensor`): A tensor containing the indices of the picked polygons.
     """
     if len(polys) == 0 or len(polys) == 1:
         return torch.arange(len(polys))
@@ -448,10 +422,10 @@ def _compute_transitive_closure_compatible(adjacency_matrix : torch.Tensor) -> t
     This function uses PyTorch operations compatible with both CPU and CUDA devices.
 
     Args:
-        adjacency_matrix (torch.Tensor): A boolean matrix of shape (n, n), where n is the size of the graph represented by the matrix.
+        adjacency_matrix (`torch.Tensor`): A boolean matrix of shape (n, n), where n is the size of the graph represented by the matrix.
 
     Returns:
-        torch.Tensor: A boolean matrix of shape (n, n), which is the transitive closure of the adjacency matrix.
+        out (`torch.Tensor`): A boolean matrix of shape (n, n), which is the transitive closure of the adjacency matrix.
     """
     device = adjacency_matrix.device
     dtype = torch.float32
@@ -481,10 +455,10 @@ def _compute_transitive_closure_cuda(adjacency_matrix : torch.Tensor) -> torch.T
     This function uses the torch._int_mm function, which is only available on CUDA devices and is significantly faster than the CPU implementation.
 
     Args:
-        adjacency_matrix (torch.Tensor): A boolean matrix of shape (n, n), where n is the size of the graph represented by the matrix.
+        adjacency_matrix (`torch.Tensor`): A boolean matrix of shape (n, n), where n is the size of the graph represented by the matrix.
 
     Returns:
-        torch.Tensor: A boolean matrix of shape (n, n), which is the transitive closure of the adjacency matrix.
+        out (`torch.Tensor`): A boolean matrix of shape (n, n), which is the transitive closure of the adjacency matrix.
     """
     # torch._int_mm only supports matrices such that the output is larger than 32x32 and a multiple of 32
     if len(adjacency_matrix) < 32:
@@ -532,10 +506,10 @@ if _INT_MM_SUPPORTED:
         Supports both CPU and CUDA devices, with performance and compatibility optimized sub-functions for each device.
 
         Args:
-            adjacency_matrix (torch.Tensor): A boolean matrix of shape (n, n), where n is the size of the graph represented by the matrix.
+            adjacency_matrix (`torch.Tensor`): A boolean matrix of shape (n, n), where n is the size of the graph represented by the matrix.
 
         Returns:
-            torch.Tensor: A boolean matrix of shape (n, n), which is the transitive closure of the adjacency matrix.
+            out (`torch.Tensor`): A boolean matrix of shape (n, n), which is the transitive closure of the adjacency matrix.
         """
         if len(adjacency_matrix.shape) != 2 or adjacency_matrix.shape[0] != adjacency_matrix.shape[1]:
             raise ValueError(f"Matrix must be of shape (n, n), not {adjacency_matrix.shape}")
@@ -556,10 +530,10 @@ else:
         Supports both CPU and CUDA devices, with performance and compatibility optimized sub-functions for each device.
 
         Args:
-            adjacency_matrix (torch.Tensor): A boolean matrix of shape (n, n), where n is the size of the graph represented by the matrix.
+            adjacency_matrix (`torch.Tensor`): A boolean matrix of shape (n, n), where n is the size of the graph represented by the matrix.
 
         Returns:
-            torch.Tensor: A boolean matrix of shape (n, n), which is the transitive closure of the adjacency matrix.
+            out (`torch.Tensor`): A boolean matrix of shape (n, n), which is the transitive closure of the adjacency matrix.
         """
         if len(adjacency_matrix.shape) != 2 or adjacency_matrix.shape[0] != adjacency_matrix.shape[1]:
             raise ValueError(f"Matrix must be of shape (n, n), not {adjacency_matrix.shape}")
@@ -575,11 +549,12 @@ def extract_components(transitive_closure : torch.Tensor) -> Tuple[List[torch.Te
     Extracts the connected components of a transitive closure matrix.
 
     Args:
-        transitive_closure (torch.Tensor): A boolean matrix of shape (n, n), where n is the number of objects.
+        transitive_closure (`torch.Tensor`): A boolean matrix of shape (n, n), where n is the number of objects.
 
     Returns:
-        List[torch.Tensor]: A list of tensors, where each tensor contains the indices of the objects in a cluster.
-        torch.Tensor: A tensor of shape (n, ) containing the cluster index of each object.
+        out (`Tuple[List[torch.Tensor], torch.Tensor]`):
+            1. `List[torch.Tensor]`: A list of tensors, where each tensor contains the indices of the objects in a cluster.
+            2. `torch.Tensor`: A tensor of shape (n, ) containing the cluster index of each object.
     """
     n = len(transitive_closure)
     cluster_vec = -torch.ones(n, dtype=torch.long, device=transitive_closure.device)
@@ -609,12 +584,14 @@ def cluster_iou_boxes(
     Computes the connected components of a set of boxes, where boxes are connected if their IoU is greater than the threshold.
 
     Args:
-        boxes (any): A set of boxes with a __len__ method.
-        iou_threshold (float): The IoU threshold for clustering. Defaults to 0.5.
+        boxes (`torch.Tensor`): A tensor of shape (n, 4), where n is the number of rectangles and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles.
+        iou_threshold (`float`, optional): The IoU threshold for clustering. Defaults to 0.5.
+        time (`bool`, optional): UNUSED.
 
     Returns:
-        List[torch.Tensor]: A list of tensors, where each tensor contains the indices of the objects in a cluster.
-        torch.Tensor: A tensor of shape (n, ) containing the cluster index of each object.
+        out (`Tuple[List[torch.Tensor], torch.Tensor]`):
+            1. `List[torch.Tensor]`: A list of tensors, where each tensor contains the indices of the objects in a cluster.
+            2. `torch.Tensor`: A tensor of shape (n, ) containing the cluster index of each object.
     """
     ## Due to the how torch.jit.script works, we can't use branched timing, so the code is commented out
     # if time:
@@ -656,14 +633,29 @@ def nms_masks(
         boxes : torch.Tensor=None
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
     """
-    Efficiently perform non-maximum suppression on a set of masks.
+    Efficiently perform non-maximum suppression on a set of boolean masks.
+
+    Defaults to a modified two-stage NMS algorithm, that aims to minimize the number of mask intersection calculations needed.
+
+    Args:
+        masks (`torch.Tensor`): A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
+        scores (`torch.Tensor`): A tensor of shape (n, ) containing the "scores" of the masks, this can merely be though of as a priority score, where the higher the score, the higher the priority of the object - it does not have to be a probability/confidence.
+        iou_threshold (`float`, optional): The IoU threshold for non-maximum suppression. Defaults to 0.5.
+        return_indices (`bool`, optional): A flag to indicate whether to return the indices of the picked objects or the objects themselves. Defaults to False. If True, both the picked objects and scores are returned.
+        group_first (`bool`, optional): A flag to indicate whether two use the two-stage NMS method. Defaults to True.
+        boxes (`Optional[torch.Tensor]`, optional): Bounding boxes for the masks. A tensor of shape (n, 4), where n is the number of masks and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the bounding boxes.
+    
+    Returns:
+        out (`Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]`):
+            - `torch.Tensor`: A tensor of shape `(m,)` containing the indices of the picked objects.
+            - `Tuple[torch.Tensor, torch.Tensor]`: A tuple where the first element contains the picked masks and the second element is a tensor of their scores.
     """
     if not group_first or len(masks) < 10:
         nms_ind = nms_masks_(masks=masks, scores=scores, iou_threshold=iou_threshold)
     else:
         if boxes is None:
             raise ValueError("'boxes' must be specified for nms_masks when 'group_first' is True")
-        # We decrease the iou_threshold for the clustering, since there is no straight-forward relationship between the IoU of the boxes and the IoU of the polygons
+        # We decrease the iou_threshold for the clustering, since there is no straight-forward relationship between the IoU of the boxes and the IoU of the masks
         groups, _ = cluster_iou_boxes(boxes=boxes, iou_threshold=min(1, iou_threshold / 4), time=False)
         _nms_ind = [torch.empty(0) for i in range(len(groups))]
         for i, group in enumerate(groups):
@@ -687,15 +679,27 @@ def nms_polygons(
         scores : torch.Tensor, 
         iou_threshold : Union[float, int]=0.5, 
         return_indices : bool=False, 
-        dtype : torch.dtype=None, 
         group_first : bool=True, 
         boxes : Optional[torch.Tensor]=None
     ) -> Union[torch.Tensor, Tuple[List[torch.Tensor], torch.Tensor]]:
     """
     Efficiently perform non-maximum suppression on a set of polygons.
+
+    Defaults to a modified two-stage NMS algorithm, that aims to minimize the number of polygon intersection calculations needed (very expensive).
+
+    Args:
+        polygons (`List[torch.Tensor]`): A list of tensors of shape (n, 2), where n is the number of vertices in the polygon and the 2 columns are the x and y coordinates of the vertices.
+        scores (`torch.Tensor`): A tensor of shape (n, ) containing the "scores" of the polygons, this can merely be though of as a priority score, where the higher the score, the higher the priority of the object - it does not have to be a probability/confidence.
+        iou_threshold (`float`, optional): The IoU threshold for non-maximum suppression. Defaults to 0.5.
+        return_indices (`bool`, optional): A flag to indicate whether to return the indices of the picked objects or the objects themselves. Defaults to False. If True, both the picked objects and scores are returned.
+        group_first (`bool`, optional): A flag to indicate whether two use the two-stage NMS method. Defaults to True (recommended).
+        boxes (`Optional[torch.Tensor]`, optional): Bounding boxes for the polygons. A tensor of shape (n, 4), where n is the number of polygons and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the bounding boxes.
+    
+    Returns:
+        out (`Union[torch.Tensor, Tuple[List[torch.Tensor], torch.Tensor]]`):
+            - `torch.Tensor`: A tensor of shape `(m,)` containing the indices of the picked polygons.
+            - `Tuple[List[torch.Tensor], torch.Tensor]`: A tuple where the first element contains the picked polygons and the second element is a tensor of their scores.
     """
-    if dtype is None:
-        raise ValueError("'dtype' must be specified for nms_masks")
     device = polygons[0].device
     if not group_first or len(polygons) < 10:
         nms_ind = nms_polygons_(polys=polygons, scores=scores, iou_threshold=iou_threshold)
@@ -733,20 +737,20 @@ def base_nms_(
     Implements the standard non-maximum suppression algorithm.
 
     Args:
-        objects (any): An object which can be indexed by a tensor of indices.
-        iou_fun (function): A function which takes an anchor object and a comparison set (not in the Python sense) of (different) objects and returns the IoU of the anchor object with each object in the comparison set as a tensor of shape (1, n). 
+        objects (`Any`): An object which can be indexed by a tensor of indices.
+        iou_fun (`Callable`): A function which takes an anchor object and a comparison set (not in the Python sense) of (different) objects and returns the IoU of the anchor object with each object in the comparison set as a tensor of shape (1, n). 
             The reason it is not just (n, ) is to allow for implementations of iou_fun functions between two sets, where the IoU is calculated between each pair of objects from distinct sets.
-        scores: A tensor of shape (n, ) containing the "scores" of the objects, this can merely be though of as a priority score, where the higher the score, the higher the priority of the object - it does not have to be a probability/confidence.
-        collate_fn (function): A function which takes a list of objects and returns a single combined object. Defaults to `torch.cat` if `objects` is a tensor and `lambda x : x` if `objects` is a list, otherwise it has to be specified.
-        iou_threshold (float, optional): The IoU threshold for non-maximum suppression. Defaults to 0.5.
-        strict (bool, optional): A flag to indicate whether to perform strict checks on the algorithm. Defaults to True.
-        return_indices (bool, optional): A flag to indicate whether to return the indices of the picked objects or the objects themselves. Defaults to False. If True, both the picked objects and scores are returned.
+        scores (`torch.Tensor`): A tensor of shape (n, ) containing the "scores" of the objects, this can merely be though of as a priority score, where the higher the score, the higher the priority of the object - it does not have to be a probability/confidence.
+        collate_fn (`Callable`, optional): A function which takes a list of objects and returns a single combined object. Defaults to `torch.cat` if `objects` is a tensor and `lambda x : x` if `objects` is a list, otherwise it has to be specified.
+        iou_threshold (`float`, optional): The IoU threshold for non-maximum suppression. Defaults to 0.5.
+        strict (`bool`, optional): A flag to indicate whether to perform strict checks on the algorithm. Defaults to True.
+        return_indices (`bool`, optional): A flag to indicate whether to return the indices of the picked objects or the objects themselves. Defaults to False. If True, both the picked objects and scores are returned.
         **kwargs: Additional keyword arguments to be passed to the iou_fun function.
-
+    
     Returns:
-        torch.Tensor: A tensor of shape (n, ) containing the indices of the picked objects.
-            or
-        tuple of length 2: A tuple containing the picked objects and their scores.
+        out (`Union[torch.Tensor, Tuple[Any, torch.Tensor]]`):
+            - `torch.Tensor`: A tensor of shape `(m,)` containing the indices of the picked objects.
+            - `Tuple[Any, torch.Tensor]`: A tuple where the first element contains the picked objects and the second element is a tensor of their scores.
     """
     if collate_fn is None:
         if isinstance(objects, torch.Tensor):
@@ -817,7 +821,7 @@ def nms_boxes(
         iou_threshold : Union[float, int]=0.5
     ) -> torch.Tensor:
     """
-    Wrapper for the standard non-maximum suppression algorithm.
+    Wrapper for `torchvision.ops.nms`; the standard non-maximum suppression algorithm.
     """
     return torchvision.ops.nms(boxes, scores, iou_threshold)
 
@@ -843,12 +847,12 @@ def detect_duplicate_boxes(
         Calculates the **NEGATED** maximum difference between the sides of box1 and boxs.
 
         Args:
-            box (torch.Tensor): A tensor of shape (4, ) representing the box in the format [x_min, y_min, x_max, y_max].
-            boxs (torch.Tensor): A tensor of shape (n, 4) representing the boxes in the format [x_min, y_min, x_max, y_max].
-            dtype (None, optional): OBS: Unused, only here for compatibility with the `iou_fun` signature.
+            box (`torch.Tensor`): A tensor of shape (4, ) representing the box in the format [x_min, y_min, x_max, y_max].
+            boxs (`torch.Tensor`): A tensor of shape (n, 4) representing the boxes in the format [x_min, y_min, x_max, y_max].
+            dtype (`None`, optional): OBS: Unused, only here for compatibility with the `iou_fun` signature.
 
         Returns:
-            torch.Tensor: A tensor of shape (n, ) representing the **NEGATED** maximum difference between the sides of box1 and each box in boxs.
+            out (`torch.Tensor`): A tensor of shape (n, ) representing the **NEGATED** maximum difference between the sides of box1 and each box in boxs.
         """
         return -(boxs - box).abs().max(dim=1).values
     return base_nms_(boxes, negated_max_side_difference, scores, iou_threshold=-margin, return_indices=return_indices, strict=False)

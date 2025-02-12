@@ -19,13 +19,13 @@ def equal_allocate_overlaps(total: int, segments: int, size: int) -> List[int]:
     adjusted slightly to ensure the segments collectively sum to `total`.
 
     Args:
-        total (int): The total length to be covered by the segments. This is the target cumulative length the segments should fit into.
-        segments (int): The number of segments to place within the total length.
+        total (`int`): The total length to be covered by the segments. This is the target cumulative length the segments should fit into.
+        segments (`int`): The number of segments to place within the total length.
             Must be greater than or equal to 2.
-        size (int): The desired size of each segment, used to determine the ideal spacing between segments.
+        size (`int`): The desired size of each segment, used to determine the ideal spacing between segments.
         
     Returns:
-        List[int]: A list of cumulative positions (starting from 0) where each segment should be placed.
+        out (`List[int]`): A list of cumulative positions (starting from 0) where each segment should be placed.
             These positions are spaced with controlled overlaps to ensure they collectively cover the `total` length.
             
     Example:
@@ -55,65 +55,34 @@ def calculate_tile_offsets(
 
     return [((m, n), (j, i)) for n, j in enumerate(y_range) for m, i in enumerate(x_range)]
 
-def intersect(
-        rect1s : torch.Tensor, 
-        rect2s : torch.Tensor, 
-        area_only : bool=False
-    ) -> torch.Tensor:
-    """
-    Calculates the intersections between two sets of rectangles. The rectangles are represented as tensors of shape (n, 4)
-    where the 4 columns are the x and y coordinates of the top-left and bottom-right corners of the rectangles. 
-    The intersection is calculated as the rectangle that covers the intersection of the two rectangles. 
-    
-    If `area_only` is True, only the area of the intersection(s) are/is returned, otherwise the intersecting rectangle(s) are/is returned.
-
-    Args:
-        rect1s (`torch.Tensor`): A tensor of shape (n_1, 4) representing the left hand set of rectangles.
-        rect2s (`torch.Tensor`): A tensor of shape (n_2, 4) representing the right hand set of rectangles.
-        area_only (`bool`, optional): Whether to return only the area of the intersection(s). Defaults to False.
-    
-    Returns:
-        `torch.Tensor`: A tensor of shape (n_1, n_2, 4) representing the intersection(s) of the two sets of rectangles. \\ 
-            If `area_only` is True, the tensor will have shape (n_1, n_2) instead. \\
-            Empty intersections are represented as rectangles with area 0 and coordinates (0, 0, 0, 0).
-    """
-    # Shape checking
-    if len(rect1s.shape) == 1 and not rect1s.shape[0] == 4 or len(rect1s.shape) == 2 and not rect1s.shape[1] == 4:
-        raise ValueError(f"Rectangles must be of shape (n, 4), not {rect1s.shape}")
-    if len(rect2s.shape) == 1 and not rect2s.shape[0] == 4 or len(rect2s.shape) == 2 and not rect2s.shape[1] == 4:
-        raise ValueError(f"Rectangles must be of shape (n, 4), not {rect2s.shape}")
-    # Ensure that the rectangles are of shape (n, 4) not (4,)
-    if len(rect1s.shape) == 1:
-        rect1s = rect1s.unsqueeze(0)
-    if len(rect2s.shape) == 1:
-        rect2s = rect2s.unsqueeze(0)
-    # Manually broadcast the rectangles
-    n1 = rect1s.shape[0]
-    n2 = rect2s.shape[0]
-    rect1s = rect1s.unsqueeze(1).repeat(1, n2, 1)
-    rect2s = rect2s.unsqueeze(0).repeat(n1, 1, 1)
-
-    # Calculate the intersections rectangle corners - the most top-right (i.e. max) of the bottom-left corners is the intersection's bottom-left, and vice versa for the top-right
-    intersections_max = torch.max(rect1s[:, :, :2], rect2s[:, :, :2]) # Intersection's bottom-left corner
-    intersections_min = torch.min(rect1s[:, :, 2:], rect2s[:, :, 2:]) # Intersection's top-right corner
-
-    # Calculate the area of the intersections or the intersections themselves
-    if area_only:
-        intersections = (intersections_min - intersections_max).prod(dim=2)
-    else:
-        intersections = torch.zeros((n1, n2, 4), dtype=rect1s.dtype, device=rect1s.device)
-        intersections[:, :, :2] = intersections_max
-        intersections[:, :, 2:] = intersections_min
-    
-    # Check for no intersection - if the bottom-left corner is greater than the top-right corner in any dimension, the intersection is empty
-    intersections[(intersections_min <= intersections_max).any(dim=2)] = 0
-
-    return intersections
-
 def create_contour_mask(
         mask: torch.Tensor, 
         width: int=1
     ) -> torch.Tensor:
+    """
+    Converts a binary mask for a filled polygon to a binary mask for the non-filled polygon::
+
+        #      Before         After
+        #
+        #    ---------      ---------
+        #    --#####--      --#####--
+        #    -#######-  =>  -##---##-
+        #    --#####--      --#####--
+        #    ---------      ---------
+        #
+        # (here dashes "-" represent 0s and hashes "#" represent 1s)
+
+    We call the result ("After") the "contour mask". 
+    
+    Optionally, the "linewidth" of the contour mask can be increased.
+    
+    Args:
+        mask (`torch.Tensor`): a NxM binary tensor with 1s inside the "polygon".
+        width (`int`, optional): Width of the contour in the result. Reasonable values are >= 1; Setting to 0 will result in all 0s in the output. Defaults to 1.
+
+    Returns:
+        out (`torch.Tensor`): a NxM binary tensor with 1s on the edge/border of the "polygon".
+    """
     device = mask.device
     # Kernel to check for 8-neighbors
     kernel = torch.ones((3, 3), dtype=torch.float, device=device).unsqueeze(0).unsqueeze(0)
@@ -170,7 +139,7 @@ def simplify_contour(
         tolerance (`float`, optional): The maximum distance between the original contour and the simplified contour. Defaults to 1.0.
 
     Returns:
-        `Union[torch.Tensor, np.ndarray]`: The simplified contour in the same format as the input.
+        out (`Union[torch.Tensor, np.ndarray]`): The simplified contour in the same format as the input.
     """
     if isinstance(contour, list):
         return [simplify_contour(c, tolerance) for c in contour]
@@ -194,11 +163,11 @@ def contours_to_masks(
 
     Args:
         contours (`List[torch.Tensor]`): List of contours represented as (i, j) index-coordinates in a Nx2 tensor (OBS: dtype=torch.long)
-        height (`int | torch.Tensor`): The height of the masks
-        width (`int | torch.Tensor`): The width of the masks
+        height (`Union[int, torch.Tensor]`): The height of the masks
+        width (`Union[int, torch.Tensor]`): The width of the masks
 
     Returns:
-        `torch.Tensor`: NxHxW tensor of boolean masks with the contours filled in
+        out (`torch.Tensor`): NxHxW tensor of boolean masks with the contours filled in
     """
     device = contours[0].device
     N = len(contours)
@@ -239,10 +208,10 @@ def poly_area(poly : torch.Tensor) -> float:
     See https://en.wikipedia.org/wiki/Shoelace_formula#Shoelace_formula for details.
 
     Args:
-        poly (torch.Tensor): A tensor of shape (n, 2), where n is the number of vertices and the 2 columns are the x and y coordinates of the vertices.
+        poly (`torch.Tensor`): A tensor of shape (n, 2), where n is the number of vertices and the 2 columns are the x and y coordinates of the vertices.
     
     Returns:
-        float: The area of the polygon
+        out (`float`): The area of the polygon
     """
     if len(poly) < 10e4:
         poly = poly.cpu()
@@ -254,10 +223,10 @@ def poly_normals(polygon : torch.Tensor) -> torch.Tensor:
     Calculates the normals of a polygon.
 
     Args:
-        poly (torch.Tensor): A tensor of shape (n, 2), where n is the number of vertices and the 2 columns are the x and y coordinates of the vertices.
+        poly (`torch.Tensor`): A tensor of shape (n, 2), where n is the number of vertices and the 2 columns are the x and y coordinates of the vertices.
 
     Returns:
-        torch.Tensor: A tensor of shape (n, 2), where n is the number of vertices and the 2 columns are the x and y coordinates of the normals.
+        out (`torch.Tensor`): A tensor of shape (n, 2), where n is the number of vertices and the 2 columns are the x and y coordinates of the normals.
     """
     v = np.roll(polygon, -1, axis=0) - polygon
     n = np.column_stack([v[:, 1], -v[:, 0]])
@@ -340,7 +309,7 @@ def resize_mask(
         new_shape (`Tuple[int, int] | List[int]`): The new shape of the mask (H', W').
 
     Returns:
-        `torch.Tensor`: The resized mask of shape (H', W') or (N, H', W').
+        out (`torch.Tensor`): The resized mask of shape (H', W') or (N, H', W').
     """
     # If the mask is a not a batch of masks, unsqueeze and call the function again
     if len(masks.shape) == 2:
@@ -368,7 +337,7 @@ def chw2hwc_uint8(
         mask (`torch.Tensor`): The mask to add as an alpha channel.
 
     Returns:
-        `torch.Tensor`: The crop in HWC format with the mask as an alpha channel, if supplied.
+        out (`torch.Tensor`): The crop in HWC format with the mask as an alpha channel, if supplied.
     """
     crop = _to_uint8(crop)
     if mask is not None:

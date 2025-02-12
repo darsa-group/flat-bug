@@ -1,8 +1,11 @@
+#
 ## **<center><ins>Insert Preprint/Paper Reference Here</ins></center>**
 
 <p align="center">
     <img src="prediction.jpg" style="width: 75%;">
 </p>
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/darsa-group/flat-bug/blob/master/docs/flat-bug.ipynb)
 
 `flat-bug` is partly a high-performance pyramid tiling inference wrapper for [`YOLOv8`](https://github.com/ultralytics/ultralytics) and partly a hybrid instance segmentation dataset of terrestrial arthropods accompanied by an appropriate training schedule for `YOLOv8` segmentation models, built on top of the original [`YOLOv8` training schedule](https://docs.ultralytics.com/modes/train/#why-choose-ultralytics-yolo-for-training). 
 

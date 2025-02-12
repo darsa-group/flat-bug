@@ -1,5 +1,6 @@
 from typing import List, Optional, Tuple, Union
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 from ultralytics.engine.results import Masks, Results
@@ -143,12 +144,12 @@ def stack_masks(
     If the masks are not all the same size, they are resized to the largest size in the list.
 
     Args:
-        masks (list): A list of ultralytics.engine.results.Masks objects (or torch.Tensor).
-        orig_shape (tuple, optional): The original shape of the image. Defaults to None. If None, the original shape is inferred from the first Masks object in the list if there is one, otherwise the original shape None.
-        antialias (bool, optional): A flag to indicate whether to use antialiasing when resizing the masks. Defaults to False.
+        masks (`list`): A list of ultralytics.engine.results.Masks objects (or torch.Tensor).
+        orig_shape (`tuple`, optional): The original shape of the image. Defaults to None. If None, the original shape is inferred from the first Masks object in the list if there is one, otherwise the original shape None.
+        antialias (`bool`, optional): A flag to indicate whether to use antialiasing when resizing the masks. Defaults to False.
 
     Returns:
-        ultralytics.engine.results.Masks: A Masks object containing the stacked masks.
+        out (`ultralytics.engine.results.Masks`): A Masks object containing the stacked masks.
     """
     assert isinstance(masks, list), f"'masks' must be a list, not {type(masks)}"
     for m in masks:
@@ -187,11 +188,11 @@ def crop_mask(
     It takes a mask and a bounding box, and returns a mask that is cropped to the bounding box.
 
     Args:
-        masks (torch.Tensor): [n, h, w] tensor of masks
-        boxes (torch.Tensor): [n, 4] tensor of bbox coordinates in relative point form
+        masks (`torch.Tensor`): [n, h, w] tensor of masks
+        boxes (`torch.Tensor`): [n, 4] tensor of bbox coordinates in relative point form
 
     Returns:
-        (torch.Tensor): The masks are being cropped to the bounding box.
+        out (`torch.Tensor`): The masks are being cropped to the bounding box.
     """
     n, h, w = masks.shape
     x1, y1, x2, y2 = torch.chunk(boxes[:, :, None], 4, 1)  # x1 shape(n,1,1)
@@ -211,14 +212,14 @@ def process_mask(
     Apply masks to bounding boxes using the output of the mask head.
 
     Args:
-        protos (torch.Tensor): A tensor of shape [mask_dim, mask_h, mask_w].
-        masks_in (torch.Tensor): A tensor of shape [n, mask_dim], where n is the number of masks after NMS.
-        bboxes (torch.Tensor): A tensor of shape [n, 4], where n is the number of masks after NMS.
-        shape (tuple): A tuple of integers representing the size of the input image in the format (h, w).
-        upsample (bool): A flag to indicate whether to upsample the mask to the original image size. Default is False.
+        protos (`torch.Tensor`): A tensor of shape [mask_dim, mask_h, mask_w].
+        masks_in (`torch.Tensor`): A tensor of shape [n, mask_dim], where n is the number of masks after NMS.
+        bboxes (`torch.Tensor`): A tensor of shape [n, 4], where n is the number of masks after NMS.
+        shape (`tuple`): A tuple of integers representing the size of the input image in the format (h, w).
+        upsample (`bool`, optional): A flag to indicate whether to upsample the mask to the original image size. Default is False.
 
     Returns:
-        (torch.Tensor): A binary mask tensor of shape [n, h, w], where n is the number of masks after NMS, and h and w
+        out (`torch.Tensor`): A binary mask tensor of shape [n, h, w], where n is the number of masks after NMS, and h and w
             are the height and width of the input image. The mask is applied to the bounding boxes.
     """
     c, mh, mw = protos.shape  # CHW
@@ -242,51 +243,34 @@ def process_mask(
 
     return masks
 
-def expand_bottom_right(mask : "torch.Tensor") -> "torch.Tensor":
+def expand_bottom_right(mask : torch.Tensor):
     """
     Add an extra pixel above next to bottom/right edges of the region of 1s.
 
     Args:
-        mask (torch.Tensor): A binary mask tensor of shape [h, w].
+        mask (`torch.Tensor`): A binary mask tensor of shape [h, w].
 
     Returns:
-        (torch.Tensor): A binary mask tensor of shape [h, w], where an extra pixel is added above next to left/top edges of the region of 1s.
+        out (`torch.Tensor`): A binary mask tensor of shape [h, w], where an extra pixel is added above next to left/top edges of the region of 1s.
     """
     bottom_right_kernel = torch.tensor([[-1, -1, -1], [-1, -1, 1], [-1, 1, 1]], dtype=torch.float16, device=mask.device).t()
     bottom_right = F.conv2d(mask.to(torch.float16).unsqueeze(1), bottom_right_kernel.unsqueeze(0).unsqueeze(0), padding=1).squeeze(1).clamp(0)
     return mask + bottom_right
 
-def cumsum(nums : list) -> list:
-    """
-    Calculates the cumulative sum of a list of numbers.
-
-    Args:
-        nums (list): A list of numbers.
-
-    Returns:
-        list: A list of the cumulative sums of the input list.
-    """
-    running_sum = 0
-    sums = [None] * len(nums)
-    for i in range(len(nums)):
-        running_sum += nums[i]
-        sums[i] = running_sum
-    return sums
-
 ## These are taken from ultralytics to avoid unnecessary dependencies
 def clip_boxes(
-        boxes : torch.Tensor, 
+        boxes : Union[torch.Tensor, np.ndarray], 
         shape : Tuple[int, int]
-    ) -> torch.Tensor:
+    ):
     """
     Takes a list of bounding boxes and a shape (height, width) and clips the bounding boxes to the shape.
 
     Args:
-        boxes (torch.Tensor): the bounding boxes to clip
-        shape (tuple): The maximum x and y values for the bounding boxes.
+        boxes (`Union[torch.Tensor, np.ndarray]`): the bounding boxes to clip
+        shape (`tuple`): The maximum x and y values for the bounding boxes.
 
     Returns:
-        (torch.Tensor | numpy.ndarray): Clipped boxes
+        out (`Union[torch.Tensor, np.ndarray]`): Clipped boxes
     """
     if isinstance(boxes, torch.Tensor):  # faster individually (WARNING: inplace .clamp_() Apple MPS bug)
         boxes[..., 0] = boxes[..., 0].clamp(0, shape[1])  # x1
@@ -305,23 +289,23 @@ def scale_boxes(
         ratio_pad=None, 
         padding : bool=True, 
         xywh : bool=False
-    ) -> Optional[torch.Tensor]:
+    ) -> torch.Tensor:
     """
     Rescales bounding boxes (in the format of xyxy by default) from the shape of the image they were originally
     specified in (img1_shape) to the shape of a different image (img0_shape).
 
     Args:
-        img1_shape (tuple): The shape of the image that the bounding boxes are for, in the format of (height, width).
-        boxes (torch.Tensor): the bounding boxes of the objects in the image, in the format of (x1, y1, x2, y2)
-        img0_shape (tuple): the shape of the target image, in the format of (height, width).
-        ratio_pad (tuple): a tuple of (ratio, pad) for scaling the boxes. If not provided, the ratio and pad will be
-            calculated based on the size difference between the two images.
-        padding (bool): If True, assuming the boxes is based on image augmented by yolo style. If False then do regular
-            rescaling.
-        xywh (bool): The box format is xywh or not, default=False.
+        img1_shape (`tuple`): The shape of the image that the bounding boxes are for, in the format of (height, width).
+        boxes (`torch.Tensor`): the bounding boxes of the objects in the image, in the format of (x1, y1, x2, y2)
+        img0_shape (`tuple`): the shape of the target image, in the format of (height, width).
+        ratio_pad (`Optional[Tuple[float, Tuple[int, int]]]`, optional): a tuple of (ratio, pad) for scaling the boxes. If None, the ratio and pad will be
+            calculated based on the size difference between the two images. Defaults to None.
+        padding (`bool`, optional): If True, assuming the boxes is based on image augmented by yolo style. If False then do regular
+            rescaling. Defaults to True.
+        xywh (`bool`, optional): The box format is xywh or not. Defaults to False.
 
     Returns:
-        boxes (torch.Tensor): The scaled bounding boxes, in the format of (x1, y1, x2, y2)
+        boxes (`torch.Tensor`): The scaled bounding boxes, in the format of (x1, y1, x2, y2)
     """
     if ratio_pad is None:  # calculate from img0_shape
         gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])  # gain  = old / new
@@ -353,20 +337,21 @@ def postprocess(
         valid_size_range : Optional[Union[Tuple[int, int], List[int]]]=None, 
         edge_margin : Optional[int]=None
     ) -> List[Results]:
-    """Postprocesses the predictions of the model.
+    """
+    Postprocesses the predictions of the model.
 
     Args:
-        preds (list): A list of predictions from the model.
-        imgs (list): A list of images that were passed to the model.
-        max_det (int, optional): The maximum number of detections to return. Defaults to 300.
-        min_confidence (float, optional): The minimum confidence of the predictions to return. Defaults to 0.
-        iou_threshold (float, optional): The IoU threshold for non-maximum suppression. Defaults to 0.1.
-        nms (int, optional): The type of non-maximum suppression to use. Defaults to 0. 0 is no NMS, 1 is standard NMS, 2 is fancy NMS and 3 is mask NMS.
-        valid_size_range (tuple, optional): The range of valid sizes for the bounding boxes in pixels. Defaults to None (no valid size range).
-        edge_margin (int, optional): The minimum gap between the edge of the image and the bounding box in pixels for a prediction to be considered valid. Defaults to None (no edge margin).
+        preds (`list`): A list of predictions from the model.
+        imgs (`List[torch.Tensor]`): A list of images that were passed to the model.
+        max_det (`int`, optional): The maximum number of detections to return. Defaults to 300.
+        min_confidence (`float`, optional): The minimum confidence of the predictions to return. Defaults to 0.
+        iou_threshold (`float`, optional): The IoU threshold for non-maximum suppression. Defaults to 0.1.
+        nms (`int`, optional): The type of non-maximum suppression to use. Defaults to 0. 0 is no NMS, 1 is standard NMS, 2 is fancy NMS and 3 is mask NMS.
+        valid_size_range (`tuple`, optional): The range of valid sizes for the bounding boxes in pixels. Defaults to None (no valid size range).
+        edge_margin (`int`, optional): The minimum gap between the edge of the image and the bounding box in pixels for a prediction to be considered valid. Defaults to None (no edge margin).
 
     Returns:
-        list: A list of postprocessed predictions.
+        out (`List[ultralytics.engine.results.Results]`): A list of postprocessed predictions.
     """
     tile_size = imgs[0].shape[-1]
     p : torch.Tensor = preds[0]

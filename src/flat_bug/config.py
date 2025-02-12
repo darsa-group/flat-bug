@@ -81,11 +81,11 @@ def get_type_def(
         - the type definition for the object `[[2, "B"], [3, "C"]]` would be `[list, [[list, [int, str]], [list, [int, str]]]]`.
 
     Parameters:
-        obj (Any): The object to generate a type definition for.
-        tuple_list_interchangeable (bool): If True, tuples and lists are considered interchangeable.
+        obj (`Any`): The object to generate a type definition for.
+        tuple_list_interchangeable (`bool`, optional): If True, tuples and lists are considered interchangeable. Defaults to False.
 
     Returns:
-        Union[Any, List[Any]]: The type definition for the object.
+        out (`Union[Any, List[Any]]`): The type definition for the object.
     """
     if isinstance(obj, (tuple, list)):
         otype = type(obj)
@@ -107,14 +107,14 @@ def check_types(
 
     If the expected type is a list, the first element is the type of the value, and the second element is a list of types that the elements of the value match, a single type that all elements should match or a tuple/type of types that all elements should match any of.
 
-    Parameters:
-        value: The value to check.
-        expected_type: The expected type of the value.
-        key: Name of the value to use in error messages.
-        strict: If True, raise an error if the check fails.
+    Args:
+        value (`Any`): The value to check.
+        expected_type (`Union[List[Any], Iterable[type], type]`): The expected type of the value.
+        key (`str`, optional): Name of the value to use in error messages. Defaults to "\\<Not specified\\>".
+        strict (`bool`, optional): If True, raise an error if the check fails. Defaults to True.
 
     Returns:
-        bool: True if the check passes, and False if strict is False and the check fails. Raises an error otherwise.
+        out (`bool`): True if the check passes, and False if strict is False and the check fails. Raises an error otherwise.
 
     Raises:
         ValueError: If the expected type list does not have exactly 2 elements.
@@ -193,8 +193,8 @@ def check_cfg_types(
     Check if the config is a dictionary and that the types of the values in the config dictionary are correct.
 
     Parameters:
-        cfg (dict): The config dictionary to check.
-        strict (bool): If True, raise an error if a key is not recognized.
+        cfg (`dict`): The config dictionary to check.
+        strict (`bool`, optional): If True, raise an error if a key is not recognized. Defaults to False.
     
     Returns:
         bool: True if all checks pass, raises an error otherwise.
@@ -224,11 +224,11 @@ def read_cfg(
     Missing keys are replaced with default values.
 
     Parameters:
-        config (Union[str, os.PathLike]): The path to the config file.
-        strict (bool): If True, raise an error if a key is not recognized.
+        config (`Union[str, os.PathLike]`): The path to the config file.
+        strict (`bool`, optional): If True, raise an error if a key is not recognized. Defaults to False.
 
     Returns:
-        dict: The config dictionary.
+        out (`dict`): The config dictionary.
     """
     # Check if config is a string or path-like object
     if not isinstance(path, (str, os.PathLike)):
@@ -260,12 +260,12 @@ def write_cfg(
     Save the config dictionary to a YAML file.
 
     Parameters:
-        cfg (dict): The config dictionary to save.
-        path (Union[str, os.PathLike]): The path to save the config file.
-        overwrite (bool): If True, overwrite the file if it already exists.
+        cfg (`dict`): The config dictionary to save.
+        path (`Union[str, os.PathLike]`): The path to save the config file.
+        overwrite (`bool`, optional): If True, overwrite the file if it already exists. Defaults to False.
 
     Returns:
-        Union[str, os.PathLike]: The path to the saved config file.
+        out (`Union[str, os.PathLike]`): The path to the saved config file.
     """
     # Check if path is a string or path-like object
     if not isinstance(path, (str, os.PathLike)):

@@ -1,6 +1,5 @@
-source("flatbug_init.R")
-
-cutoff_data <- read_csv2("data/compare_backbone_sizes_L_full.csv") %>% 
+cutoff_data <- "data/compare_backbone_sizes_L_full.csv" %>% 
+  read_csv2(show_col_types = F) %>% 
   mutate(
     across(c(conf1, conf2, IoU), as.numeric),
     instance_area = ifelse(idx_1 != -1, contourArea_1, contourArea_2),

@@ -1,13 +1,11 @@
-source("flatbug_init.R")
-
 compare_sizes_data <- "data/compare_backbone_sizes_combined_recomputed.csv" %>% 
-  read_csv() %>% 
+  read_csv(show_col_types = F) %>% 
   mutate(
     dataset = str_remove(dataset, "^01-partial-"),
     model_size = factor(model_size, levels = c("L", "M", "S", "N"))
   )
 
-comp_bb_plt <- compare_sizes_data %>% 
+backbone_size_results <- compare_sizes_data %>% 
   arrange(short, dataset) %>% 
   mutate(
     across(c(short, dataset), ~factor(.x, unique(.x))),
@@ -53,7 +51,50 @@ comp_bb_plt <- compare_sizes_data %>%
     )
   ) %>%
   select(!quantile) %>% 
-  pivot_wider(id_cols = c(model_size, metric), names_from = qname, values_from = value) %>%
+  pivot_wider(id_cols = c(model_size, metric), names_from = qname, values_from = value)
+
+backbone_results_latex <- backbone_size_results %>% 
+  pivot_longer(!c(model_size, metric), names_to = "qtd") %>% 
+  mutate(
+    qtd = if_else(qtd == "median", "", qtd) %>% 
+      factor(c("lower", "q1", "", "q3", "upper", "ci")),
+    model_size = case_match(
+      model_size,
+      "Large" ~ "large",
+      "Medium" ~ "medium",
+      "Small" ~ "small",
+      "Nano" ~ "nano"
+    ),
+    label = scales::label_percent(.1)(value),
+    label = label %>% 
+      str_replace_all("%", "\\\\%") %>% 
+      str_remove("\\s\\S+$"),
+  ) %>% 
+  select(!value) %>% 
+  nest(dat = !c(model_size, metric)) %>%
+  mutate(
+    dat = map(dat, function(d) {
+      d %>% 
+        arrange(qtd) %>% 
+        add_row(
+          qtd = "ci", label = str_c(.$label[3], " [", .$label[1], ", ", .$label[5], "]")
+        )
+    })
+  ) %>% 
+  unnest(dat) %>% 
+  mutate(
+    ltx_resname = str_c(model_size, "-", metric, "-", qtd) %>% 
+      str_remove("-$"),
+    ltx = str_c("\\defexperiment{1}{", ltx_resname, "}{", label, "}")
+  ) %>% 
+  arrange(model_size, metric, qtd) %>% 
+  pull(ltx) %>% 
+  str_c(collapse = "\n")
+
+add_group("Experiment 1 - Backbone-size metrics")
+write_data("Experiment 1 - Backbone-size metrics", backbone_results_latex)
+
+comp_bb_plt <- backbone_size_results %>%
   arrange(model_size, metric) %>%
   mutate(
     grp = paste0(model_size, metric) %>% 
@@ -173,17 +214,19 @@ ggsave(
 
 ## Difference in worst-case performance of medium/small/nano models compared to large
 
-worst_case_penalty_plt <- compare_sizes_data %>% 
-  select(model_size, dataset, short, n, F1_lower) %>% 
+worst_case_results <- compare_sizes_data %>% 
+  select(model_size, dataset, short, n, contains("_lower")) %>% 
+  pivot_longer(contains("_lower"), names_to = "metric", names_pattern = "(^\\w+)_") %>% 
   group_by(dataset) %>% 
   arrange(model_size) %>% 
   mutate(
-    delta = F1_lower - F1_lower[model_size == "L"]
+    delta = value - value[model_size == "L"]
   ) %>%
+  ungroup %>% 
   filter(model_size != "L") %>% 
-  group_by(model_size) %>% 
   summarize(
-    delta = weighted_cl_boot(delta, log(n), boot=100000)
+    delta = weighted_cl_boot(delta, log(n), boot=10000),
+    .by = c(model_size, metric)
   ) %>% 
   unnest_wider(delta) %>% 
   mutate(
@@ -193,7 +236,30 @@ worst_case_penalty_plt <- compare_sizes_data %>%
   unnest(ci_el) %>% 
   mutate(
     label = str_c(label, " ", str_extract(p, "[^ \\d]+$"))
+  )
+
+worst_case_latex <- worst_case_results %>% 
+  select(model_size, metric, label) %>% 
+  mutate(
+    model_size = case_match(
+      model_size,
+      "M" ~ "medium",
+      "S" ~ "small",
+      "N" ~ "nano"
+    ),
+    label = label %>% 
+      str_replace_all("%", "\\\\%") %>% 
+      str_remove("\\s\\S+$"),
+    ltx = str_c("\\defexperiment{1}{", model_size,"-delta-", metric, "}{", label, "}")
   ) %>% 
+  pull(ltx) %>% 
+  str_c(collapse = "\n") 
+
+add_group("Experiment 1 - Backbone-size worst case")
+write_data("Experiment 1 - Backbone-size worst case", worst_case_latex)
+
+worst_case_penalty_plt <- worst_case_results %>%
+  filter(metric == "F1") %>% 
   ggplot(aes(y, forcats::fct_rev(model_size), xmin = ymin, xmax = ymax, label = label)) +
   geom_pointrange() +
   geom_text(

@@ -15,4 +15,4 @@ theme_set(
     )
 )
 
-source("flatbug_palette.R")
+source("helpers/flatbug_palette.R")
