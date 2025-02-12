@@ -30,10 +30,10 @@ def calculate_image_weights(image_paths : List[str]) -> List[float]:
     normalized by the minimum file size, so that the values are between 1 and infinity.
     
     Args:
-        image_paths (list of str): List of image file paths.
+        image_paths (`List[str]`): List of image file paths.
     
     Returns:
-        list of float: normalized weights for each image.
+        out (`List[float]`): normalized weights for each image.
     """
     file_sizes = [get_area(path) + 1 for path in image_paths]
     min_size = min(file_sizes)
@@ -47,11 +47,11 @@ def reweight(
     Reweights the provided list of weights so that their sum equals the target sum.
     
     Args:
-        weights (list of float): List of weights to reweight.
-        target_sum (float): Desired sum of the weights.
+        weights (`List[float]`): List of weights to reweight.
+        target_sum (`Union[float, int]`): Desired sum of the weights.
     
     Returns:
-        list of float: Reweighted weights.
+        out (`List[float]`): Reweighted weights.
     """
     sum_weights = sum(weights)
     return [max(round(w * target_sum / sum_weights), 1) for w in weights]
@@ -64,11 +64,11 @@ def generate_indices(
     Deterministically generates a list of indices based on the provided weights to oversample the items.
     
     Args:
-        weights (list of float): List of weights for each item.
-        target_size (int): Desired size of the output list. If None, the size of the output is approximately the sum of the weights.
+        weights (`List[float]`): List of weights for each item.
+        target_size (`Optional[int]`, optional): Desired size of the output list. If None, the size of the output is approximately the sum of the weights.
 
     Returns:
-        list of int: List of indices to oversample the items.
+        out (`List[int]`): List of indices to oversample the items.
     """
     n = len(weights)
     weights = [max(round(w), 1) for w in weights]
@@ -102,8 +102,8 @@ def subset(
     Subsets the dataset to the first 'n' elements that match the pattern.
 
     Args:
-        n (int, optional): The number of elements to keep. Defaults to None; keep all.
-        pattern (str, optional): A regex pattern to match the filenames. Defaults to None; match all.
+        n (`Optional[int]`, optional): The number of elements to keep. Defaults to None; keep all.
+        pattern (`Optional[str]`, optional): A regex pattern to match the filenames. Defaults to None; match all.
     """
     if pattern is None and (n is None or n == -1):
         return self

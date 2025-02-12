@@ -24,12 +24,12 @@ def segment2box(
     Convert 1 segment label to 1 box label, applying inside-image constraint, i.e. (xy1, xy2, ...) to (xyxy).
 
     Args:
-        segment (torch.Tensor): the segment label
-        width (int): OBS: Unused. The width of the image. Defaults to 640.
-        height (int): OBS: Unused. The height of the image. Defaults to 640. 
+        segment (`torch.Tensor`): the segment label
+        width (`int`, optional): OBS: Unused. The width of the image. Defaults to 640.
+        height (`int`, optional): OBS: Unused. The height of the image. Defaults to 640. 
 
     Returns:
-        (np.ndarray): the minimum and maximum x and y values of the segment.
+        out (`np.ndarray`): the minimum and maximum x and y values of the segment.
     """
     x, y = segment.T  # segment xy
     return np.array([x.min(), y.min(), x.max(), y.max()], dtype=segment.dtype)  # xyxy
@@ -42,12 +42,13 @@ def apply_segments(
     Apply affine to segments and generate new bboxes from segments.
 
     Args:
-        segments (np.ndarray): list of segments, [num_samples, 500, 2].
-        M (np.ndarray): affine matrix.
+        segments (`np.ndarray`): list of segments, [num_samples, 500, 2].
+        M (`np.ndarray`): affine matrix.
 
     Returns:
-        new_segments (np.ndarray): list of segments after affine, [num_samples, 500, 2].
-        new_bboxes (np.ndarray): bboxes after affine, [N, 4].
+        out (`Tuple[np.ndarray, np.ndarray]`):
+        * new_segments (`np.ndarray`): list of segments after affine, [num_samples, 500, 2].
+        * new_bboxes (`np.ndarray`): bboxes after affine, [N, 4].
     """
     n, num = segments.shape[:2]
     if n == 0:
@@ -88,7 +89,7 @@ def telea_inpaint_polys(
         img : np.ndarray, 
         polys : List[np.ndarray], 
         exclude_polys : Optional[List[np.ndarray]]=None, 
-        downscale_factor : Union[int, float] = 6, 
+        downscale_factor : Union[int, float]=6, 
         **kwargs
     ) -> np.ndarray:
     """
@@ -97,14 +98,14 @@ def telea_inpaint_polys(
     The inpainting algorithm is performed on a downsampled version of the image to speed up the process, and the inpainted results are then upsampled and pasted back into the original image.
     
     Args:
-        img (np.ndarray): The image to inpaint.
-        polys (List[np.ndarray]): A list of polygons to inpaint.
-        exclude_polys (Optional[List[np.ndarray]]): A list of polygons to exclude from inpainting. Default is `None`.
-        downscale_factor (Union[int, float]): The factor by which to downscale the image before inpainting. Default is 6.
+        img (`np.ndarray`): The image to inpaint.
+        polys (`List[np.ndarray]`): A list of polygons to inpaint.
+        exclude_polys (`Optional[List[np.ndarray]]`, optional): A list of polygons to exclude from inpainting. Defaults to None.
+        downscale_factor (`Union[int, float]`, optional): The factor by which to downscale the image before inpainting. Defaults to 6.
         **kwargs: Additional keyword arguments to pass to `cv2.drawContours`.
 
     Returns:
-        np.ndarray: The inpainted image.
+        out (`np.ndarray`): The inpainted image.
     """
     # Type checking and sanitizing
     check_types(img, np.ndarray)
@@ -648,29 +649,33 @@ class FixInstances:
         A callable class that removes instances that are too small or which overlap less than a certain threshold with the image.
 
         Args:
-            area_thr (Union[float, int]): The minimum proportion of the instance that must be within the image in order for it to be kept.
-            max_targets (Optional[int]): The maximum number of instances to keep. If there are more instances than this, a random subset of instances will be kept. If `None`, all instances will be kept. Default is `None`.
-            min_size (int): The minimum size of the bounding box of the instance. Instances with a width or height less than this value will be removed.
-
-        Returns:
-            dict: A dictionary containing the updated instances.
+            area_thr (`Union[float, int]`): The minimum proportion of the instance that must be within the image in order for it to be kept.
+            max_targets (`Optional[int]`): The maximum number of instances to keep. If there are more instances than this, a random subset of instances will be kept. If `None`, all instances will be kept.
+            min_size (`int`): The minimum size of the bounding box of the instance. Instances with a width or height less than this value will be removed.
         """
         self.area_thr = area_thr
         self.max_targets = max_targets if max_targets is None or max_targets > 0 else None
         self.min_size = min_size
     
-    def __call__(self, labels : Dict) -> Dict:
+    def __call__(self, labels : dict) -> dict:
+        """
+        Performs instance fixing.
+
+        Args:
+            labels (`dict`): Dictionary containing the instances.
+        Returns:
+            out (`dict`): A dictionary containing the updated instances.
+        """
         return remove_instances(labels, area_thr=self.area_thr, max_targets=self.max_targets, min_size=self.min_size)
 
 class RandomColorInv(object):
-    """
-    Invert the colors of an image with a probability p
-
-    Args:
-        p (float): probability of inverting the colors
-    """
-
     def __init__(self, p : float=0.5):
+        """
+        Invert the colors of an image with a probability p.
+
+        Args:
+            p (`float`, optional): probability of inverting the colors. Defaults to 0.5
+        """
         if p < 0:
             logger.warning("p should be in [0,1], got", p, "setting to 0")
             p = 0

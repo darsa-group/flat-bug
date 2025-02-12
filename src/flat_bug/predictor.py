@@ -158,9 +158,6 @@ class TensorPredictions:
         Args:
             predictions (list[Prepared_Results]): A list of Prepared_Results objects.
             offset (torch.Tensor): A vector of length 2 containing the x and y offset of the image.
-
-        Returns:
-            None: The function is performed in-place, so it returns None.
         """
         if self.time:
             # Initialize timing calculations
@@ -245,6 +242,9 @@ class TensorPredictions:
             scale (`float`): The scale factor of the image.
             pad (`int`, optional): The number of pixels to pad the boxes by. Defaults to 0. (Not to be confused with image-padding, 
                 this is about expanding the boxes a bit to ensure they cover the entire mask)
+
+        Returns:
+            out (`Self`): The `TensorPredictions` object with the masks, polygons and boxes offset, scaled and padded.
         """
         if self.time:
             # Initialize timing calculations
@@ -444,7 +444,7 @@ class TensorPredictions:
             scale (`float`, optional): The scale factor to apply to the contour. Defaults to 1.
 
         Returns:
-            `torch.Tensor`: The contour in image coordinates.
+            out (`torch.Tensor`): The contour in image coordinates.
         """
         image_h, image_w = self.image.shape[1:]
         mask_to_image_scale = [(image_h - 1) / (self.mask_height - 1), (image_w - 1) / (self.mask_width - 1)]
@@ -467,7 +467,7 @@ class TensorPredictions:
                 Defaults to "vertical". Should be one of "vertical", "y", "horizontal" or "x".
 
         Returns:
-            Self: The `TensorPredictions` object with the masks, polygons and boxes flipped.
+            out (`Self`): The `TensorPredictions` object with the masks, polygons and boxes flipped.
         """
         if self.time:
             # Initialize timing calculations
@@ -553,21 +553,53 @@ class TensorPredictions:
                 setattr(new_tp, k, new_value)
         return new_tp
     
-    def plot(self, **kwargs):
-        outpath : Union[str, None] = kwargs.get("outpath", None)
+    def plot(
+            self, 
+            linewidth : int=2, 
+            masks : bool=True, 
+            boxes : bool=True, 
+            confidence : bool=True, 
+            outpath : Optional[str]=None, 
+            scale : float=1,
+            contour_color : Tuple[int, int, int] = (255, 0, 0),
+            box_color : Tuple[int, int, int] = (0, 0, 0),
+            alpha : float = 0.3
+        ):
+        """
+        Visualizes `flatbug` predictions from a `TensorPredictions` object.
+        
+        Args:
+            linewidth (`int`, optional): Linewidth of the segmentation countours and bounding boxes. Default to 2.
+            masks (`bool`, optional): Flag to indicate whether segmentation contours should be included. Default to True.
+            boxes (`bool`, optional): Flag to indicate whether bounding boxes should be included, if False confidences are also omitted. Defaults to True.
+            confidences (`bool`, optional): Flag to indicate whether detection confidences should be included, if boxes is False, this argument is ignored. Defaults to True.
+            outpath (`Optional[str]`, optional): Where should the visualization be saved? If outpath is None, then the rasterized visualization is returned as a `cv2.UMat`/`np.ndarray` (shape: HWC, colors: BGR). Defaults to None.
+            scale (`float`, optional): Render the visualization at a scale relative to the image size (from which the predictions originate). **OBS**: Large images and/or scales can be very slow to render. Defaults to 1. 
+            contour_color (`Tuple[int, int, int]`, optional): RGB color ([0, 255]) to use for contour border and fill. Defaults to `(255, 0, 0)` (red).
+            box_color (`Tuple[int, int, int]`, optional): RGB color ([0, 255]) to use for bounding box and confidence text color. Defaults to `(0, 0, 0)` (black).
+            alpha (`float`, optional): Transparency of the contour fill ([0, 1]). Defaults to 0.3.
+
+        Returns:
+            out (`Union[cv2.UMat, str]`): If outpath is supplied, it is returned, otherwise the rasterized visualization is returned as as a `cv2.UMat`/`np.ndarray` (shape: HWC, colors: BGR).
+        """
+        params = locals()
+        params.pop("self", None)
         if outpath not in [None, ""] and outpath.lower().endswith(".svg"):
-            return self._plot_svg(**kwargs)
-        return self._plot_image(**kwargs)
+            retval = self._plot_svg(**params)
+        retval = self._plot_image(**params)
+        if retval is None:
+            return outpath
+        return retval
 
     @staticmethod
     def _box_to_svg_element(
-            box: torch.Tensor, 
-            scale: float = 1.0, 
-            color: Tuple[int, int, int] = (0, 0, 0), 
-            linewidth: Union[float, int] = 2, 
-            label: Optional[str] = None,
-            label_fontsize : Union[float, int] = 12,
-            background_image: Optional[Any] = None  # expected to be a NumPy array in BGR
+            box : torch.Tensor, 
+            scale : float=1.0, 
+            color : Tuple[int, int, int]=(0, 0, 0), 
+            linewidth : Union[float, int]=2, 
+            label : Optional[str]=None,
+            label_fontsize : Union[float, int]=12,
+            background_image : Optional[Any]=None  # expected to be a NumPy array in BGR
         ) -> str:
         # Convert box color (RGB tuple) to hex.
         hex_color = f'#{"".join(hs if len(hs)==2 else hs+"0" for v in color if len(hs:=hex(v)[2:]))}'
@@ -622,11 +654,11 @@ class TensorPredictions:
 
     @staticmethod
     def _contour_to_svg_element(
-            contour: Union["torch.Tensor", Any], 
-            scale: float = 1.0,
-            color: Tuple[int, int, int] = (255, 0, 0),
-            linewidth: Union[int, float] = 2,
-            alpha: Union[int, float] = 0.33
+            contour : Union["torch.Tensor", Any], 
+            scale : float=1.0,
+            color : Tuple[int, int, int]=(255, 0, 0),
+            linewidth : Union[int, float]=2,
+            alpha : Union[int, float]=0.33
         ):
         d_list = []
         hex_color = f'#{"".join(hs if len(hs) == 2 else hs + "0" for v in color if len(hs := hex(v)[2:]))}'
@@ -647,16 +679,16 @@ class TensorPredictions:
         )
 
     def _plot_svg(
-        self, 
-        linewidth: int = 2, 
-        masks: bool = True, 
-        boxes: bool = True, 
-        confidence: bool = True, 
-        outpath: Optional[str] = None, 
-        scale: float = 1,
-        contour_color: Tuple[int, int, int] = (255, 0, 0),
-        box_color: Tuple[int, int, int] = (0, 0, 0),
-        alpha: float = 0.3
+            self, 
+            linewidth : int=2, 
+            masks : bool=True, 
+            boxes : bool=True, 
+            confidence : bool=True, 
+            outpath : Optional[str]=None, 
+            scale : float=1,
+            contour_color : Tuple[int, int, int] = (255, 0, 0),
+            box_color : Tuple[int, int, int] = (0, 0, 0),
+            alpha : float = 0.3
         ):
         # Convert pred.image (a torch tensor) to a NumPy array and convert RGB -> BGR.
         image = torchvision.transforms.ConvertImageDtype(torch.uint8)(self.image).permute(1, 2, 0).cpu().numpy()
@@ -694,7 +726,7 @@ class TensorPredictions:
             if outpath:
                 with open(outpath, 'w+') as f:
                     f.writelines(content)
-                return outpath
+                return None
 
         except Exception as e:
             raise e
@@ -1654,17 +1686,17 @@ class Predictor(object):
         Performs inference on an image at multiple scales and returns the predictions.
         
         Args:
-            image (Union[torch.Tensor, str]): The image to run inference on. If a string is given, the image is read from the path.
+            image (`Union[torch.Tensor, str]`): The image to run inference on. If a string is given, the image is read from the path.
                 If it is a `torch.Tensor`, the path must be provided. \\
                 We assume that floating point images are in the range [0, 1] and integer images are in the range [0, integer_type_max]. \\
                 (see https://github.com/pytorch/vision/blob/6d7851bd5e2bedc294e40e90532f0e375fcfee04/torchvision/transforms/_functional_tensor.py#L66)
-            path (Optional[str], optional): The path to the image. Defaults to None. Must be provided if `image` is a `torch.Tensor`.
-            scale_increment (float, optional): The scale increment to use when resizing the image. Defaults to 2/3.
-            scale_before (Union[float, int], optional): The scale to apply before running inference. Defaults to 1.
-            single_scale (bool, optional): Whether to run inference on a single scale. Defaults to False.
+            path (`Optional[str]`, optional): The path to the image. Defaults to None. Must be provided if `image` is a `torch.Tensor`.
+            scale_increment (`float`, optional): The scale increment to use when resizing the image. Defaults to 2/3.
+            scale_before (`Union[float, int]`, optional): The scale to apply before running inference. Defaults to 1.
+            single_scale (`bool`, optional): Whether to run inference on a single scale. Defaults to False.
 
         Returns:
-            TensorPredictions: The predictions for the image.
+            out (`TensorPredictions`): The predictions for the image.
         """
         params = locals()
         params.pop("self", None)
