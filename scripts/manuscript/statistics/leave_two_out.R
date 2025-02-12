@@ -210,7 +210,8 @@ l2o_tree_plt <- twr_dist %>%
     fontface = "bold",
     size = c(4, 8, 4, 8, 4),
     fill = "white",
-    label.size = 0
+    label.size = 0,
+    family = c("CMU Serif", "", "CMU Serif", "", "CMU Serif")
   ) +
   ggraph::geom_edge_elbow(
     linewidth = 0.5, 
@@ -224,22 +225,26 @@ l2o_tree_plt <- twr_dist %>%
     ),
     image_fun = function(x) image_circlecut(magick::image_sample(x, 200), 1, T, 5),
     size = 0.055,
-    position = position_nudge(y = 0.02)
+    position = position_nudge(y = 0.014)
   ) +
   geom_label(
     aes(x, y, label = ifelse(leaf, label, NA_character_)), 
+    size = 3.5,
+    hjust = 0,
     label.padding = unit(0.05, "lines"), 
     label.size = 0,
-    hjust = 0,
     family = "Courier New",
     fontface = "bold"
   ) +
   geom_label(
     aes(x,y,label = ifelse(!leaf, as.character(round(height, 3)), NA_character_)),
+    size = 3,
     hjust = 1,
+    vjust = 0.5,
     label.size = 0,
-    label.padding = unit(0.25, "lines"),
-    position = position_nudge(y = -0.00035, x = 0.25)
+    label.padding = unit(0.1, "lines"),
+    position = position_nudge(y = -0.001, x = 0.32),
+    family = "CMU Serif"
   ) +
   scale_y_continuous(
     breaks = seq(-1, 1, 0.05), 
@@ -259,16 +264,16 @@ l2o_tree_plt <- twr_dist %>%
     axis.text.x = element_text(),
     axis.ticks.x = element_line(linewidth = 0.75),
     axis.line.x = element_line(linewidth = 0.75),
-    axis.title.x = element_text(family = "Lucida Sans"),
+    axis.title.x = element_text(),
     plot.margin = margin(1, 1, 0.25, 1, "lines")
   ) +
-  labs(y = "Two-Way Redundancy (p²)")
+  labs(y = expression(bold('Two-Way Redundancy ' (rho^"2"))))
 
 ggsave(
   "figures/leave_two_out_tree.pdf", 
   l2o_tree_plt,
   device = cairo_pdf,
-  width = 4, height = 3,
+  width = 4, height = 2,
   scale = 3,
   antialias = "subpixel"
 )
