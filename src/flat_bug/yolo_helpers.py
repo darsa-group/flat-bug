@@ -366,6 +366,7 @@ def postprocess(
     if min_confidence > 0:
         num_above_min_conf = (p[:, 4, :] > min_confidence).sum(dim=1)
         max_det = min(max_det, num_above_min_conf.max().item())
+    # Filter top-`max_det` predictions
     if max_det != 0:
         # Filter out the predictions with the lowest confidence
         p = p.gather(2, torch.argsort(p[:, 4, :], dim=1, descending=True)[:, :max_det].unsqueeze(1).expand(-1, p.size(1), -1))
@@ -378,19 +379,22 @@ def postprocess(
     if len(protos.shape) == 3:
         protos = protos.unsqueeze(0)
     for i, (pred, _) in enumerate(zip(p, range(len(imgs)))):
-        # Remove the predictions with a confidence less than min_confidence
+        # Remove predictions with a confidence below min_confidence
         if min_confidence != 0:
             pred = pred[pred[:, 4] > min_confidence]
         boxes = scale_boxes((tile_size, tile_size), pred[:, :4], imgs[i].shape[-2:], padding=False)
+        # Remove predictions outside the valid size range
         if valid_size_range is not None and valid_size_range[0] > 0 and valid_size_range[1] > 0 and valid_size_range[1] < tile_size:
             valid_size = ((boxes[:, 2:] - boxes[:, :2]).log().sum(dim=1) / 2).exp()
             valid = (valid_size >= valid_size_range[0]) & (valid_size <= valid_size_range[1])
             pred = pred[valid]
             boxes = boxes[valid]
+        # Remove predictions too close to the margin
         if edge_margin is not None and edge_margin > 0:
             close_to_edge = (boxes[:, :2] < edge_margin).any(dim=1) | (boxes[:, 2:] > (tile_size - edge_margin)).any(dim=1)
             pred = pred[~close_to_edge]
             boxes = boxes[~close_to_edge]
+        # Deduplicate predictions
         if nms != 0:
             if nms == 1:
                 nms_ind = nms_boxes(boxes, pred[:, 4], iou_threshold=iou_threshold)

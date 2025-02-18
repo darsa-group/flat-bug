@@ -102,7 +102,7 @@ output.save(
 ```
 
 ### Tutorials
-We provide a number of tutorials on general and advanced usage, training, deployment and hyperparameters of `flat-bug` in [examples/tutorials](examples/tutorials) or with Google Colab (see our [docs[INSERT LINK]](INSERT_LINK)).
+We provide a number of tutorials on general and advanced usage, training, deployment and hyperparameters of `flat-bug` in [examples/tutorials](examples/tutorials) or with Google Colab [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/darsa-group/flat-bug/blob/master/docs/flat-bug.ipynb).
 
 <!-- fixme: Remember to add this later! -->
 <!-- ### Archive
