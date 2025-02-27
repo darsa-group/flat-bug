@@ -263,5 +263,7 @@ if __name__ == "__main__":
     lines = ["model,mean_ms_per_instance,median_ms_per_instance,min_ms_per_instance,max_ms_per_instance\n"]
     for s, (tavg, tmed, tmin, tmax) in time_summary.items():
         lines.append(f'{s},{tavg},{tmed},{tmin},{tmax}\n')
+    print("Timing results:\n")
+    print(*lines)
     with open("model_timing.csv", "w") as f:
         f.writelines(lines)

@@ -16,13 +16,16 @@ class DownloadProgressBar(tqdm):
             self.total = tsize
         self.update(b * bsize - self.n)
 
-def download_from_repository(url : str, output_path : Optional[str]=None, strict : bool=True):
+def download_from_repository(url : str, output_path : Optional[str]=None, strict : bool=True, progress : bool=True):
     if output_path is None:
         output_path = url
     url = urllib.parse.quote(urllib.parse.urljoin(REMOTE_REPOSITORY, url), safe="/:")
     try:
-        with DownloadProgressBar(unit='B', unit_scale=True, miniters=1, desc=f'Downloading {url} to {output_path}') as t:
-            urllib.request.urlretrieve(url, filename=output_path, reporthook=t.update_to)
+        if progress:
+            with DownloadProgressBar(unit='B', unit_scale=True, miniters=1, desc=f'Downloading {url} to {output_path}') as t:
+                urllib.request.urlretrieve(url, filename=output_path, reporthook=t.update_to)
+        else:
+                urllib.request.urlretrieve(url, filename=output_path)
     except Exception as e:
         if not strict:
             return False
