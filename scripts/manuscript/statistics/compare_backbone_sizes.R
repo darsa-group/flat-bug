@@ -122,22 +122,24 @@ comp_bb_plt <- backbone_size_results %>%
     position = position_dodge(width = 1),
     key_glyph = draw_key_point
   ) +
-  geom_text(
+  geom_label(
     aes(
-      x = q3
+      x = upper
     ),
     position = position_dodge(width = 1),
     size = 5,
-    hjust = -0.1,
-    vjust = -0.15,
+    hjust = 0,
+    vjust = 0.5,
     fontface = "bold",
-    family = "CMU Serif"
+    family = "CMU Serif",
+    fill = "white",
+    label.size = 0
   ) +
-  annotation_custom(grid::linesGrob(y = c(0, 0), gp = grid::gpar(lwd = 0.5))) +
+  annotation_custom(grid::linesGrob(y = c(0, 0), gp = grid::gpar(lwd = 2, col = "gray50"))) +
   scale_x_continuous(
-    limits = c(0.4, 1),
-    breaks = seq(0, 1, 0.1),
-    minor_breaks = seq(0, 1, 0.05),
+    limits = c(0.75, 1),
+    breaks = seq(0, 1, 0.05),
+    minor_breaks = seq(0, 1, 0.025),
     expand = expansion(0, c(0, 0.015)), 
     labels = scales::percent_format()
   ) +
@@ -145,7 +147,7 @@ comp_bb_plt <- backbone_size_results %>%
   scale_color_flatbug("main_text", guide = "none") +
   facet_wrap(~metric, scales = "free_y", strip.position = "left", ncol = 1) +
   coord_cartesian(clip = "off") +
-  labs(x = NULL, y = NULL, fill = "Model\nSize") +
+  labs(x = NULL, y = NULL, fill = "Model\nsize") +
   guides(
     fill = guide_legend(
       override.aes = list(
@@ -157,9 +159,10 @@ comp_bb_plt <- backbone_size_results %>%
     )
   ) +
   theme(
+    legend.position = "inside",
+    legend.position.inside = c(0.94, 0.8),
     axis.text.y = element_blank(),
     axis.ticks.y = element_blank(),
-    # legend.box.spacing = unit(1.5, "lines"),
     panel.grid.major.x = element_line(color = "gray75", linewidth = 0.25, linetype = "solid"),
     panel.grid.minor.x = element_line(color = "gray75", linewidth = 0.25, linetype = "dashed"),
     plot.margin = margin(0.1, 0.1, 0.1, 0.1, "cm")
@@ -169,20 +172,18 @@ ggsave(
   "figures/compare_sizes_f1.pdf", 
   comp_bb_plt, 
   device = cairo_pdf,
-  width = 5, height = 2, 
+  width = 5, height = 2.5, 
   scale = 2.5, 
   antialias = "subpixel"
 )
 
 anno_mat_plt <- magick::image_read("figures/annotation_mosaic.jpg") %>%
   magick::image_sample(2000) %>%
-  magick::image_ggplot() 
-# theme(plot.margin = margin())
+  magick::image_ggplot()
 
 pred_mat_plt <- magick::image_read("figures/prediction_mosaic.jpg") %>%
   magick::image_sample(2000) %>%
-  magick::image_ggplot() 
-# theme(plot.margin = margin())
+  magick::image_ggplot()
 
 comp_mat_plt <- list(
   A = free(comp_bb_plt),
@@ -190,7 +191,7 @@ comp_mat_plt <- list(
   C = pred_mat_plt
 ) %>%
   wrap_plots(
-    heights = c(1.55, 1), widths = c(1, 1), design = "AA\nBC",
+    heights = c(1.5, 1), widths = c(1, 1), design = "AA\nBC",
     axes = "keep",
     tag_level = "keep"
   ) +
@@ -207,7 +208,7 @@ ggsave(
   "figures/compare_sizes_mosaic_f1.pdf", 
   comp_mat_plt, 
   device = cairo_pdf,
-  width = 5, height = 4, 
+  width = 5, height = 3.8, 
   scale = 2.5, 
   antialias = "subpixel"
 )
