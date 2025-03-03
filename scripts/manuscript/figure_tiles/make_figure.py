@@ -15,7 +15,6 @@ from flat_bug.coco_utils import annotations_to_numpy, split_annotations
 from flat_bug.predictor import Predictor, TensorPredictions
 
 ## STATICS
-
 ROI_SIZE = 1000
 ROI_PADDING = 500
 MOSAIC_SPACING = 0
@@ -138,7 +137,7 @@ def create_mosaic(ims : List[np.ndarray], spacing : int = 100, labels : Optional
 
 if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    model = Predictor(device=device, dtype=torch.float16)
+    model = Predictor("flat_bug_L.pt", device=device, dtype=torch.float16)
 
     example_df = pd.read_csv(os.path.join(THIS_DIR, "clean_flatbug_datasets.csv"))
     with open(ANNOTATION_COCO, "r") as f:
@@ -184,7 +183,7 @@ if __name__ == "__main__":
             :
         ]
         roi = np.copy(roi, order="C")
-        roi_tensor = torch.tensor(roi).permute(2, 1, 0).clone(memory_format=torch.contiguous_format)
+        roi_tensor = torch.as_tensor(roi).permute(2, 1, 0).to(memory_format=torch.contiguous_format)
 
         return roi, roi_tensor, offset
 
@@ -216,7 +215,7 @@ if __name__ == "__main__":
 
         roi_pred = TensorPredictions().load(rois["prediction"][i])
         roi_pred.image = roi_raw_tensor
-        roi_pred = roi_pred.plot(confidence=False, contour_color=(178, 34, 34)) # Red contours
+        roi_pred = roi_pred.plot(confidence=False, contour_color=(34, 34, 178)) # Red contours
         roi_pred = np.transpose(roi_pred, (1, 0, 2))
 
         roi_raw = roi_raw[ROI_PADDING:-ROI_PADDING, ROI_PADDING:-ROI_PADDING, :]
@@ -234,7 +233,8 @@ if __name__ == "__main__":
 
     for tp, ims in tqdm(rois.items(), desc="Creating mosaics", leave=False):
         mosaic = create_mosaic(ims, MOSAIC_SPACING, labels=example_df.short_name.tolist())
-        cv2.imwrite(os.path.join(OUR_MOSAIC, f"{tp}.jpg"), mosaic, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+        # mosaic = cv2.resize(mosaic, None, fx=2, fy=2)
+        cv2.imwrite(os.path.join(OUR_MOSAIC, f"{tp}.jpg"), mosaic, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
 
     """
     cd annotated_tiles && for i in *.jpg; do magick $i -fill '#0008' -draw 'rectangle  0,100,1000,0' -fill white   -font DejaVu-Sans-Mono-Book -pointsize 64  -annotate +40+70 "$(echo $i| cut -f 1 -d .)" $i; done && magick -size 1000x1000 canvas:white AAA.jpg && montage *.jpg -tile 4x6 -geometry 500x500+10+10 tiles.jpeg && cd ..

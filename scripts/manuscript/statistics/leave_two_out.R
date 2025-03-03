@@ -41,6 +41,11 @@ leave_two_out_full_clean <- leave_two_out_full %>%
 write_csv(leave_two_out_full_clean, "data/leave_two_out_combined_recomputed_clean.csv")
 write_rds(leave_two_out_full_clean, "data/leave_two_out_combined_recomputed_clean.rds")
 
+subdataset_count <- leave_two_out_full_clean %>% 
+  filter(is.na(left) | is.na(right)) %>% 
+  distinct(short, n) %>%
+  {set_names(.$n, .$short)}
+
 # Convert from long tidy format to data cube
 convert_to_cube <- function(data, metric) {
   metric <- substitute(metric)
@@ -139,10 +144,11 @@ focal_subdatasets <- focal_matrix_F1 %>%
   first
 
 focal_subdatasets_latex <- tibble(
-  name = c("which", "subdatasets"),
+  name = c("which", "subdatasets", "subexperiments"),
   value = c(
     str_c(focal_subdatasets, collapse = ", "),
-    as.character(length(focal_subdatasets))
+    as.character(length(focal_subdatasets)),
+    str_c((length(focal_subdatasets)^2)/2 + length(focal_subdatasets)/2, " + 1")
   )
 ) %>% 
   mutate(
@@ -184,8 +190,11 @@ ggsave(
 
 anno_pos <- max(abs(twr_dist))/4 * c(1, 0.5, 0, -0.5, -1) 
 
+twr_weight <- log10(subdataset_count[attr(twr_dist, "Labels")])
+twr_weight <- twr_weight / mean(twr_weight)
+
 l2o_tree_plt <- twr_dist %>%
-  hclust("average") %>% 
+  hclust("average", members=twr_weight) %>% 
   tidygraph::as_tbl_graph() %>% 
   mutate(
     parent = map_dfs_back_int(node_is_root(), .f = function(node, path, parent, graph, ...) {
