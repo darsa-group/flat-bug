@@ -43,8 +43,12 @@ TEST_CFG = deepcopy(DEFAULT_CFG)
 setattr(TEST_CFG, "task", "segment")
 
 def mock_verify_image_label(image_path : str, label_path : str) -> dict:
-    args = (image_path, label_path, "unit_test", False, 1, 0, 0)
-    im_file, lb, shape, segments, keypoint, nm_f, nf_f, ne_f, nc_f, msg = verify_image_label(args)
+    try:
+        args = (image_path, label_path, "unit_test", False, 1, 0, 0)
+        im_file, lb, shape, segments, keypoint, nm_f, nf_f, ne_f, nc_f, msg = verify_image_label(args)
+    except ValueError as e:
+        args = (image_path, label_path, "unit_test", False, 1, 0, 0, True)
+        im_file, lb, shape, segments, keypoint, nm_f, nf_f, ne_f, nc_f, msg = verify_image_label(args)
     label = {
         "im_file": im_file,
         "shape": shape,
