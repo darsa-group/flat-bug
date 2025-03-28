@@ -5,6 +5,8 @@ chr_equal <- function(a, b) {
   return(as.character(a) == as.character(b))
 }
 
+show_progress <- function() !isTRUE(getOption("full_analysis_running"))
+
 # Auto select email if possible
 "
 dataset,short_name

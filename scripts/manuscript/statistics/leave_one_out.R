@@ -4,7 +4,7 @@ leave_one_out_data <- "data/leave_one_out_combined_recomputed.csv" %>%
   mutate(
     across(c(leave_out_short, short), ~factor(.x, sort(unique(.x[!is.na(.x)])))),
     fine_tune = factor(fine_tune, levels = c("Before", "After"))
-  ) 
+  )
 
 l1o_heatmap_plt <- leave_one_out_data %>% 
   pivot_longer(
@@ -66,8 +66,8 @@ l1o_easy_treat <- function(x) {
   x %>% 
     as.character %>% 
     case_match(
-      "Before" ~ "Out-of-box",
-      "After" ~ "Fine-tuned",
+      "Before" ~ "Leave-one-out",
+      "After" ~ "Fine tuned",
       "Full" ~ "Full"
     )
 }
@@ -95,7 +95,7 @@ leave_one_out_cleaned <- leave_one_out_data %>%
   select(!fine_tune) 
 
 leave_one_out_plot_elems <- list(
-  scale_fill_flatbug("RdBu", lighten = 0.33),
+  scale_fill_flatbug("RdBu", lighten = 0.15),
   geom_label(
     aes(
       label = ifelse(outlier, as.character(short), NA_character_),
@@ -212,8 +212,8 @@ l1o_delta_summary_latex <- l1o_delta_summary %>%
     ),
     type = case_match(
       type,
-      "Out-of-box" ~ "oob",
-      "Fine-tuned" ~ "ft"
+      "Leave-one-out" ~ "oob",
+      "Fine tuned" ~ "ft"
     ),
     label = label %>% 
       str_replace_all("%", "\\\\%") %>% 
@@ -238,8 +238,8 @@ l1o_delta_stratified_latex <- leave_one_out_cleaned %>%
     ),
     type = case_match(
       type,
-      "Out-of-box" ~ "oob",
-      "Fine-tuned" ~ "ft"
+      "Leave-one-out" ~ "oob",
+      "Fine tuned" ~ "ft"
     ),
     label = scales::label_percent(.1)(rel_delta) %>% 
       str_replace_all("%", "\\\\%"),
@@ -251,3 +251,4 @@ l1o_delta_stratified_latex <- leave_one_out_cleaned %>%
 
 add_group("Experiment 2 - Leave-one-out stratified")
 write_data("Experiment 2 - Leave-one-out stratified", l1o_delta_stratified_latex)
+

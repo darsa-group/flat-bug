@@ -2,7 +2,7 @@ source("helpers/flatbug_init.R")
 library(googlesheets4)
 library(kableExtra)
 
-reference_path <- "<PATH>/references.bib"
+reference_path <- "C:/Users/asger/OneDrive - Aarhus universitet/Documents/PhD/Projekter/Universal Arthropod Localization/references.bib"
 
 parse_field <- function(line) {
   key_content <- str_split(line, " = ", 2) %>% 
@@ -247,3 +247,4 @@ dataset_table_cleaned %>%
   } %>% 
   set_indent() %>% 
   cat
+

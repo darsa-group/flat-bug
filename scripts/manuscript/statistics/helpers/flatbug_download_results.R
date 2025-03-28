@@ -3,6 +3,7 @@ library(RCurl)
 
 if (!dir.exists("data")) dir.create("data")
 
+
 # Compare backbone sizes / Deployment models
 plan(multisession, workers = round(availableCores() / 2))
 
@@ -29,14 +30,14 @@ tibble(
       curlPerform(url = path, writedata = local@ref, noprogress = T)
       close(local)
       return(invisible())
-    }, .progress = T),
+    }, .progress = show_progress()),
     result_full = future_map2(local_full, remote_full, function(local, path) {
       if (file.exists(local)) return(invisible())
       local <- CFILE(local, "wb")
       curlPerform(url = path, writedata = local@ref, noprogress = T)
       close(local)
       return(invisible())
-    }, .progress = T)
+    }, .progress = show_progress())
   )
 
 plan(sequential)
@@ -72,7 +73,7 @@ plan(multisession, workers = round(availableCores() / 2))
     curlPerform(url = r, writedata = f@ref, noprogress = T)
     close(f)
     return(invisible())
-  }, .progress = T) %>% 
+  }, .progress = show_progress()) %>% 
   invisible()
 
 plan(sequential)
@@ -108,7 +109,7 @@ plan(multisession, workers = round(availableCores() / 2))
     curlPerform(url = r, writedata = f@ref, noprogress = T)
     close(f)
     return(invisible())
-  }, .progress = T) %>% 
+  }, .progress = show_progress()) %>% 
   invisible()
 
 plan(sequential)
@@ -172,7 +173,7 @@ pyramid_files %>%
     local_dst_dir=pyramid_dir,
     local_src_dir=file.path("..", "pyramid_visualization"),
     remote_src_dir=str_c(fb_repository, "manuscript", "figures", "pyramid", sep="/"),
-    .progress = "progressr"
+    .progress = if (show_progress()) "progressr" else F
   )
 
 tile_files <- c(
@@ -210,7 +211,7 @@ tile_files %>%
     local_dst_dir = tile_dir,
     local_src_dir = file.path("..", "figure_tiles", "raw_tiles"),
     remote_src_dir = str_c(fb_repository, "manuscript", "tiles", sep="/"),
-    .progress = "progressr"
+    .progress = if (show_progress()) "progressr" else F
   ) 
 
 example_bbox_figure <- "example_bbox_vs_contour.png"
