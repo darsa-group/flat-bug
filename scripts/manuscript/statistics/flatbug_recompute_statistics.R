@@ -44,7 +44,7 @@ recompute_stats <- function(file, size_threshold, boot.n=1000) {
     boot_i = seq(boot.n)
   ) %>% 
     mutate(
-      res = future_map(boot_i, ~calc_stats_(full_data), .progress = F, .options = furrr_options(seed = T))
+      res = future_map(boot_i, ~calc_stats_(full_data), .progress = show_progress(), .options = furrr_options(seed = T))
     ) %>% 
     unnest(res) %>%
     group_by(dataset, short) %>%
@@ -84,7 +84,7 @@ tibble(
     model_size = str_extract(files, "(?<=compare_backbone_sizes_).(?=_full)") %>% 
       str_remove("compare_backbone_sizes_") %>% 
       factor(c("L", "M", "S", "N")),
-    new_data = map(files, ~recompute_stats(.x, size_threshold=32), .progress = "Recomputing compare backbone sizes")
+    new_data = map(files, ~recompute_stats(.x, size_threshold=32), .progress = if (show_progress()) "Recomputing compare backbone sizes" else F)
   ) %>%
   unnest(new_data) %>%
   select(!files) %>%
@@ -101,7 +101,7 @@ tibble(
 ) %>% 
   filter(str_detect(files, "fb_leave_one_out")) %>% 
   mutate(
-    new_data = map(files, ~recompute_stats(.x, size_threshold=32), .progress = "Recomputing leave-one-out")
+    new_data = map(files, ~recompute_stats(.x, size_threshold=32), .progress = if (show_progress()) "Recomputing leave-one-out" else F)
   ) %>% 
   mutate(
     leave_out_dataset = str_extract(files, "fb_leave_one_out_(fine_tune_){0,1}(fb_leave_one_out_){0,1}[^_]+") %>% 
@@ -145,7 +145,7 @@ tibble(
   ) %>% 
   unnest(datasets) %>% 
   mutate(
-    new_data = map(files, ~recompute_stats(.x, size_threshold=32), .progress = "Recomputing leave-two-out")
+    new_data = map(files, ~recompute_stats(.x, size_threshold=32), .progress = if (show_progress()) "Recomputing leave-two-out" else F)
   ) %>% 
   select(!files) %>% 
   unnest(new_data) %>% 

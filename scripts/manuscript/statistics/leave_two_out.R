@@ -194,6 +194,7 @@ twr_weight <- log10(subdataset_count[attr(twr_dist, "Labels")])
 twr_weight <- twr_weight / mean(twr_weight)
 
 l2o_tree_plt <- twr_dist %>%
+  # hclust("mcquitty", members=twr_weight) %>% 
   hclust("average", members=twr_weight) %>% 
   tidygraph::as_tbl_graph() %>% 
   mutate(

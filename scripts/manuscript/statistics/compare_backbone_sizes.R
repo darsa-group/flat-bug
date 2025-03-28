@@ -95,6 +95,9 @@ add_group("Experiment 1 - Backbone-size metrics")
 write_data("Experiment 1 - Backbone-size metrics", backbone_results_latex)
 
 comp_bb_plt <- backbone_size_results %>%
+  mutate(
+    metric = factor(metric, c("F1", "Precision", "Recall"))
+  ) %>% 
   arrange(model_size, metric) %>%
   mutate(
     grp = paste0(model_size, metric) %>% 
@@ -121,6 +124,14 @@ comp_bb_plt <- backbone_size_results %>%
     width = .75,
     position = position_dodge(width = 1),
     key_glyph = draw_key_point
+  ) +
+  geom_segment(
+    aes(
+      y=(2 + 4 - as.numeric(model_size))/4 + 0.03, yend=(3 + 4 - as.numeric(model_size))/4 - 0.03,
+      color=model_size
+    ),
+    linewidth = 1.25
+    # position = position_dodge(width = 1)
   ) +
   geom_label(
     aes(
@@ -159,10 +170,14 @@ comp_bb_plt <- backbone_size_results %>%
     )
   ) +
   theme(
+    # legend.box.background = element_blank(),
+    # legend.frame = element_blank(),
+    # legend.background = element_blank(),
     legend.position = "inside",
     legend.position.inside = c(0.94, 0.8),
     axis.text.y = element_blank(),
     axis.ticks.y = element_blank(),
+    # legend.box.spacing = unit(1.5, "lines"),
     panel.grid.major.x = element_line(color = "gray75", linewidth = 0.25, linetype = "solid"),
     panel.grid.minor.x = element_line(color = "gray75", linewidth = 0.25, linetype = "dashed"),
     plot.margin = margin(0.1, 0.1, 0.1, 0.1, "cm")
@@ -180,10 +195,14 @@ ggsave(
 anno_mat_plt <- magick::image_read("figures/annotation_mosaic.jpg") %>%
   magick::image_sample(2000) %>%
   magick::image_ggplot()
+  # theme(plot.margin = margin(0.1, 0.1, 0.1, 0.1, "cm"))
+  # theme(plot.margin = margin())
 
 pred_mat_plt <- magick::image_read("figures/prediction_mosaic.jpg") %>%
   magick::image_sample(2000) %>%
   magick::image_ggplot()
+  # theme(plot.margin = margin(0.1, 0.1, 0.1, 0.1, "cm"))
+  # theme(plot.margin = margin())
 
 comp_mat_plt <- list(
   A = free(comp_bb_plt),

@@ -1,5 +1,5 @@
-#
-## **<center><ins>Insert Preprint/Paper Reference Here</ins></center>**
+# <code> flatbug </code>
+### **<center><ins>A General Method for Detection and Segmentation of Terrestrial Arthropods in Images</ins></center>**
 
 <p align="center">
     <img src="prediction.jpg" style="width: 75%;">
@@ -41,64 +41,10 @@ pip install -e .
 
 However, as with other packages built with `PyTorch` it is best to ensure that `torch` is installed separately. See [https://pytorch.org/](https://pytorch.org/) for details. We recommend using `torch>=2.3`.
 
-### Usage
-#### CLI
+### CLI Usage
 We provide a number of [CLI scripts[INSERT LINK]](INSERT_LINK) with `flat-bug`. The main one of interest is `fb_predict`, which can be used to run inference on images or videos:
 ```sh
 fb_predict -i <DIR_WITH_IMGS> -o <OUTPUT_DIR> [-w <WEIGHT_PATH>] ...
-```
-
-#### Python
-`flat-bug` also has a very user-friendly Python API, which can be used with only a few lines:
-```py
-from flat_bug.predictor import Predictor
-
-# Load the model
-model = Predictor(model = "flat_bug_L.pt", device="cuda:0", dtype="float16")
-
-# Run inference on an image
-output = model("test_image.jpg")
-
-# Save a visualization of the predictions
-output.plot(outpath="test_result.jpg")
-
-# # or plot with matplotlib
-# from matplotlib import pyplot as plt
-# plt.imshow(output.plot())
-# plt.axis("off")
-# plt.show()
-
-# Fetch the localized instances and segmentation masks
-# as PyTorch tensors for further analysis
-crops = output.crops
-masks = output.crop_masks
-masked_crops = [c * m for c, m in zip(crops, masks)]
-
-## Classify the crops
-# classification = classification_model(<crops | masked_crops>)
-
-# # or plot with matplotlib
-# fig, axs = plt.subplots(2, 6, figsize = (15, 5))
-# for i, ax in enumerate(axs.flatten()):
-#     ax.imshow(masked_crops[i].cpu().permute(1, 2, 0))
-#     ax.axis("off")
-# plt.show()
-
-# Inspect the results as a native Python dictionary
-results = output.json_data
-
-# Save the results
-import os
-
-os.makedirs("test_output")
-output.save(
-    output_directory="test_output", # Mandatory
-    overview=True, # optional
-    crops=True, # optional
-    metadata=True, # optional
-    mask_crops=True, # optional
-    # ... # optional
-)
 ```
 
 ### Tutorials

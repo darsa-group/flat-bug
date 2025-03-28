@@ -43,7 +43,7 @@ fb_instance_split_count <- fb_yolo_clean %>%
     path = str_c(fb_repository, "/fb_yolo/", path)
   ) %>% 
   mutate(
-    n = future_map_int(path, function(x) length(read_lines(URLencode(x))), .progress = T, .options = furrr_options(seed=NULL))
+    n = future_map_int(path, function(x) length(read_lines(URLencode(x))), .progress = show_progress(), .options = furrr_options(seed=NULL))
   ) %>% 
   summarize(
     n = sum(n),

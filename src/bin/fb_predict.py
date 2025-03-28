@@ -74,13 +74,15 @@ def predict(
     logger.debug("OPTIONS:", locals())
 
     # Sanitize paths
-    input = os.path.normpath(input)
+    isVideo = False
+    isERDA = input.startswith("erda://")
+    if not isERDA: 
+        input = os.path.normpath(input)
     output_dir = os.path.normpath(output_dir)
     model_weights = os.path.normpath(model_weights)
     if not config is None:
         config = os.path.normpath(config)
 
-    isERDA = input.startswith("erda://")
     if isERDA:
         from pyremotedata.implicit_mount import IOHandler, RemotePathIterator
         logger.debug("Assuming directory exists on ERDA")
