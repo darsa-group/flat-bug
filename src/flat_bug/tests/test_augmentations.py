@@ -65,8 +65,12 @@ def generate_validation_augmentation_pipeline(hyp):
     )
 
 def mock_verify_image_label(image_path, label_path):
-    args = (image_path, label_path, "unit_test", False, 1, 0, 0)
-    im_file, lb, shape, segments, keypoint, nm_f, nf_f, ne_f, nc_f, msg = verify_image_label(args)
+    try:
+        args = (image_path, label_path, "unit_test", False, 1, 0, 0)
+        im_file, lb, shape, segments, keypoint, nm_f, nf_f, ne_f, nc_f, msg = verify_image_label(args)
+    except ValueError as e:
+        args = (image_path, label_path, "unit_test", False, 1, 0, 0, True)
+        im_file, lb, shape, segments, keypoint, nm_f, nf_f, ne_f, nc_f, msg = verify_image_label(args)
     label = {
         "im_file": im_file,
         "shape": shape,
