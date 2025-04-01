@@ -1,4 +1,24 @@
 #!/usr/bin/env python3
+"""
+``flatbug`` training script. 
+
+The ``flatbug`` training script uses a lightly modified YOLO training interface (https://docs.ultralytics.com/modes/train/), with a few additional parameters.
+
+See `scripts/experiments/best_train/default.yaml` for an example training config.
+
+Usage:
+    ``fb_train [-d DATA_DIR] [-c CONFIG_FILE] [-r]``
+
+
+Options:
+    -h, --help            show this help message and exit
+    -d DATA_DIR, --data-dir DATA_DIR
+                        The directory containing the prepared data (i.e., the output of  `fb_prepare.py`
+    -c CONFIG_FILE, --config-file CONFIG_FILE
+                        A YAML-formatted config file that overrides the default training meta-parameters
+    -r, --resume          resume training
+"""
+
 import argparse
 import os.path
 from pathlib import Path

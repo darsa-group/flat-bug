@@ -1,4 +1,43 @@
 #!/usr/bin/env python3
+"""
+Inference CLI script for ``flatbug``. 
+
+A comprehensive CLI API for ``flatbug`` inference with support for hyperparameter configuration, flexible input parsing, output format specification, and hardware specification.
+
+Usage:
+    ``fb_predict -i INPUT_PATH_OR_DIRECTORY -o OUTPUT_DIRECTORY [OPTIONS]``
+
+Options:
+    -h, --help            show this help message and exit
+    -i INPUT, --input INPUT
+                        A image file or a directory of image files
+    -o OUTPUT_DIR, --output OUTPUT_DIR
+                        The result directory
+    -w MODEL_WEIGHTS, --model-weights MODEL_WEIGHTS
+                        The .pt file
+    -p INPUT_PATTERN, --input-pattern INPUT_PATTERN
+                        The pattern to match the images. Default is '[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$' i.e. jpg/jpeg/png case-insensitive.
+    -n MAX_IMAGES, --max-images MAX_IMAGES
+                        Maximum number of images to process. Default is None. Truncates in alphabetical order.
+    -R, --recursive       Process images nested within subdirectories of the input.
+    -s SCALE_BEFORE, --scale-before SCALE_BEFORE
+                        Downscale the image before detection, but crops from the original image.
+    --single-scale        Use single scale.
+    -g GPU, --gpu GPU     Which device to use for inference. Default is 'cuda:0', i.e. the first GPU.
+    -d DTYPE, --dtype DTYPE
+                        Which dtype to use for inference. Default is 'float16'.
+    -f, --fast            Use fast mode.
+    --config CONFIG       The config file.
+    --no-crops            Do not save the crops.
+    --no-overviews        Do not save the overviews.
+    --no-metadata         Do not save the metadata.
+    --only-overviews      Only save the overviews.
+    --long-format         Use long format for storing results.
+    -S, --no-save         Do not save the results.
+    -C, --no-compiled-coco
+                        Skip the production of a compiled COCO file (for all images).
+    -v, --verbose         Verbose mode.
+"""
 
 import argparse
 import glob

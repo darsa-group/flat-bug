@@ -1,6 +1,3 @@
-flatbug Documentation
-=============================
-
 .. include:: README_sphinx.md
    :parser: myst_parser.sphinx_
 
@@ -10,6 +7,7 @@ Contents
 .. toctree::
    :maxdepth: 2
 
+   cli.rst
    augmentations.rst
    coco_utils.rst
    config.rst

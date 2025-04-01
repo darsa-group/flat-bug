@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+DEPRECATED.
+"""
 
 import argparse
 import glob
