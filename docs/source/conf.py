@@ -29,12 +29,18 @@ exclude_patterns = []
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'furo'
+html_theme_options = {
+    "navigation_depth": 2,
+}
 html_static_path = ["_static"]
 
 # Myst setup
 import os
 import re
 import shutil
+import sys
+
+sys.path.insert(0, os.path.abspath('../src/bin'))
 
 def copy_and_adjust_readme():
     source_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))

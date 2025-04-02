@@ -1,3 +1,32 @@
+"""
+Custom ``flatbug`` evaluation script. Requires prediction to have been run already, and ground truth labels should be supplied in COCO format.
+
+For end-to-end use the script `scripts/eval/end_to_end_eval.sh` (requires ``R`` for summary statistics and figures).
+
+Usage:
+    ``fb_evaluate -p PREDICTIONS -g GROUND_TRUTH -I IMAGE_DIRECTORY -o OUTPUT_DIRECTORY [OPTIONS]``
+
+Options:
+    -h, --help            show this help message and exit
+    -p PREDICTIONS, --predictions PREDICTIONS
+                        Path or pattern to the predictions files
+    -g GROUND_TRUTH, --ground_truth GROUND_TRUTH
+                        Path to the ground truth file
+    -I IMAGE_DIRECTORY, --image_directory IMAGE_DIRECTORY
+                        Path to the image directory
+    -o OUTPUT_DIRECTORY, --output_directory OUTPUT_DIRECTORY
+                        Path to the output directory
+    --config CONFIG       Path to the configuration file
+    -P, --plot            Plot the matches and the IoU matrix
+    -b, --no_boxes        Do not plot the bounding boxes
+    -c, --coco_predictions
+                        Whether the predictions are already in a COCO format (legacy)
+    -s SCALE, --scale SCALE
+                        Scale of the output images. Defaults to 1. Lower is faster.
+    -n N                  Number of images to process. Defaults to -1 (all images)
+    --workers WORKERS     Number of workers to use for the evaluation. Defaults to 8.
+    --combine             Combine the results into a single CSV file
+"""
 
 import argparse
 import json
