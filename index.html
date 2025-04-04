@@ -1,0 +1,506 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="./">
+  <head><meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="genindex.html" /><link rel="search" title="Search" href="search.html" /><link rel="next" title="CLI API" href="cli.html" />
+
+    <!-- Generated with Sphinx 8.2.3 and Furo 2024.08.06 -->
+        <title>flat-bug documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=a746c00c" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=354aac6f" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=302659d7" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f8f8f8;
+  --color-code-foreground: black;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc">
+<label class="overlay sidebar-overlay" for="__navigation">
+  <div class="visually-hidden">Hide navigation sidebar</div>
+</label>
+<label class="overlay toc-overlay" for="__toc">
+  <div class="visually-hidden">Hide table of contents sidebar</div>
+</label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <div class="visually-hidden">Toggle site navigation sidebar</div>
+        <i class="icon"><svg><use href="#svg-menu"></use></svg></i>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="#"><div class="brand">flat-bug  documentation</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle">
+          <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
+        <div class="visually-hidden">Toggle table of contents sidebar</div>
+        <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="#">
+  
+  
+  <span class="sidebar-brand-text">flat-bug  documentation</span>
+  
+</a><form class="sidebar-search-container" method="get" action="search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <ul>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">CLI API</a></li>
+<li class="toctree-l1"><a class="reference internal" href="augmentations.html">Augmentations</a></li>
+<li class="toctree-l1"><a class="reference internal" href="coco_utils.html">Coco utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Configuration</a></li>
+<li class="toctree-l1"><a class="reference internal" href="datasets.html">Datasets</a></li>
+<li class="toctree-l1"><a class="reference internal" href="eval_utils.html">Evaluation utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="geometric.html">Geometry utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nms.html">Non-maximum suppression</a></li>
+<li class="toctree-l1"><a class="reference internal" href="predictor.html">Predictor</a></li>
+<li class="toctree-l1"><a class="reference internal" href="trainers.html">Trainers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="yolo_helpers.html">YOLO helpers</a></li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="_sources/index.rst.txt" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div>
+<div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle">
+              <div class="visually-hidden">Toggle Light / Dark / Auto color theme</div>
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
+            <div class="visually-hidden">Toggle table of contents sidebar</div>
+            <i class="icon"><svg><use href="#svg-toc"></use></svg></i>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="flatbug">
+<h1><code> flatbug </code><a class="headerlink" href="#flatbug" title="Link to this heading">¶</a></h1>
+<section id="a-general-method-for-detection-and-segmentation-of-terrestrial-arthropods-in-images">
+<h2><strong><center><ins>A General Method for Detection and Segmentation of Terrestrial Arthropods in Images</ins></center></strong><a class="headerlink" href="#a-general-method-for-detection-and-segmentation-of-terrestrial-arthropods-in-images" title="Link to this heading">¶</a></h2>
+<p align="center">
+    <img src="_static/prediction.jpg" style="width: 75%;">
+</p>
+<p><a class="reference external" href="https://colab.research.google.com/github/darsa-group/flat-bug/blob/master/docs/flat-bug.ipynb"><img alt="Open In Colab" src="https://colab.research.google.com/assets/colab-badge.svg" /></a></p>
+<p><code class="docutils literal notranslate"><span class="pre">flatbug</span></code> is partly a high-performance pyramid tiling inference wrapper for <a class="reference external" href="https://github.com/ultralytics/ultralytics"><code class="docutils literal notranslate"><span class="pre">YOLOv8</span></code></a> and partly a hybrid instance segmentation dataset of terrestrial arthropods accompanied by an appropriate training schedule for <code class="docutils literal notranslate"><span class="pre">YOLOv8</span></code> segmentation models, built on top of the original <a class="reference external" href="https://docs.ultralytics.com/modes/train/#why-choose-ultralytics-yolo-for-training"><code class="docutils literal notranslate"><span class="pre">YOLOv8</span></code> training schedule</a>.</p>
+<p>The goal of <code class="docutils literal notranslate"><span class="pre">flatbug</span></code> is to provide a single unified model for detection and segmentation of all terrestrial arthropods on arbitrarily large images, especially fine-tuned for the case of top-down images/scans - thus the name <code class="docutils literal notranslate"><span class="pre">&quot;flat&quot;bug</span></code>.</p>
+</section>
+<section id="installation">
+<h2>Installation<a class="headerlink" href="#installation" title="Link to this heading">¶</a></h2>
+<p>Installation via package managers coming later.</p>
+<!-- The latest version of `flatbug` can be installed with any of your favourite package managers such as:
+#### `pip`
+```py
+python -m pip install flat-bug
+```
+#### `anaconda`
+```py
+conda install flat-bug -c conda-forge
+```
+#### `mamba`
+```py
+mamba install flat-bug -c conda-forge
+```
+#### `micromamba`
+```py
+micromamba install flat-bug -c conda-forge
+``` -->
+<section id="source-development">
+<h3>Source/development<a class="headerlink" href="#source-development" title="Link to this heading">¶</a></h3>
+<p>Or a development version can be installed from source by cloning this repository:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>clone<span class="w"> </span>git@github.com:darsa-group/flat-bug.git
+<span class="nb">cd</span><span class="w"> </span>flat-bug
+pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
+</pre></div>
+</div>
+<p>However, as with other packages built with <code class="docutils literal notranslate"><span class="pre">PyTorch</span></code> it is best to ensure that <code class="docutils literal notranslate"><span class="pre">torch</span></code> is installed separately. See <a class="reference external" href="https://pytorch.org/">https://pytorch.org/</a> for details. We recommend using <code class="docutils literal notranslate"><span class="pre">torch&gt;=2.3</span></code>.</p>
+</section>
+</section>
+<section id="cli-usage">
+<h2>CLI Usage<a class="headerlink" href="#cli-usage" title="Link to this heading">¶</a></h2>
+<p>We provide a number of <a class="reference external" href="https://darsa.info/flat-bug/cli.html">CLI scripts</a> with <code class="docutils literal notranslate"><span class="pre">flatbug</span></code>. The main one of interest is <code class="docutils literal notranslate"><span class="pre">fb_predict</span></code>, which can be used to run inference on images or videos:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>fb_predict<span class="w"> </span>-i<span class="w"> </span>&lt;DIR_WITH_IMGS&gt;<span class="w"> </span>-o<span class="w"> </span>&lt;OUTPUT_DIR&gt;<span class="w"> </span><span class="o">[</span>-w<span class="w"> </span>&lt;WEIGHT_PATH&gt;<span class="o">]</span><span class="w"> </span>...
+</pre></div>
+</div>
+</section>
+<section id="tutorials">
+<h2>Tutorials<a class="headerlink" href="#tutorials" title="Link to this heading">¶</a></h2>
+<p>We provide a number of tutorials on general and advanced usage, training, deployment and hyperparameters of <code class="docutils literal notranslate"><span class="pre">flatbug</span></code> in <a class="reference internal" href="#examples/tutorials"><span class="xref myst">examples/tutorials</span></a> or with Google Colab <a class="reference external" href="https://colab.research.google.com/github/darsa-group/flat-bug/blob/master/docs/flat-bug.ipynb"><img alt="Open In Colab" src="https://colab.research.google.com/assets/colab-badge.svg" /></a>.</p>
+</section>
+<section id="documentation">
+<h2>Documentation<a class="headerlink" href="#documentation" title="Link to this heading">¶</a></h2>
+<p>Find our documentation at <a class="reference external" href="https://darsa.info/flat-bug/">https://darsa.info/flat-bug/</a>.</p>
+<!-- fixme: Remember to add this later! -->
+<!-- ### Archive
+#### Models
+
+#### Data
+
+### Contributions
+#### Code
+
+#### Data --></section>
+</section>
+<section id="contents">
+<h1>Contents<a class="headerlink" href="#contents" title="Link to this heading">¶</a></h1>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="cli.html">CLI API</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#fb-predict"><code class="docutils literal notranslate"><span class="pre">fb_predict</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#fb-eval"><code class="docutils literal notranslate"><span class="pre">fb_eval</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="cli.html#fb-train"><code class="docutils literal notranslate"><span class="pre">fb_train</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="augmentations.html">Augmentations</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="augmentations.html#flat_bug.augmentations.FlatBugRandomPerspective"><code class="docutils literal notranslate"><span class="pre">FlatBugRandomPerspective</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="augmentations.html#flat_bug.augmentations.apply_segments"><code class="docutils literal notranslate"><span class="pre">apply_segments()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="augmentations.html#flat_bug.augmentations.low_res_inpaint"><code class="docutils literal notranslate"><span class="pre">low_res_inpaint()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="augmentations.html#flat_bug.augmentations.segment2box"><code class="docutils literal notranslate"><span class="pre">segment2box()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="augmentations.html#flat_bug.augmentations.telea_inpaint_polys"><code class="docutils literal notranslate"><span class="pre">telea_inpaint_polys()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="coco_utils.html">Coco utilities</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="coco_utils.html#flat_bug.coco_utils.annotations_2_contours"><code class="docutils literal notranslate"><span class="pre">annotations_2_contours()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="coco_utils.html#flat_bug.coco_utils.annotations_to_numpy"><code class="docutils literal notranslate"><span class="pre">annotations_to_numpy()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="coco_utils.html#flat_bug.coco_utils.contour_area"><code class="docutils literal notranslate"><span class="pre">contour_area()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="coco_utils.html#flat_bug.coco_utils.contour_bbox"><code class="docutils literal notranslate"><span class="pre">contour_bbox()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="coco_utils.html#flat_bug.coco_utils.fb_to_coco"><code class="docutils literal notranslate"><span class="pre">fb_to_coco()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="coco_utils.html#flat_bug.coco_utils.filter_coco"><code class="docutils literal notranslate"><span class="pre">filter_coco()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="coco_utils.html#flat_bug.coco_utils.format_contour"><code class="docutils literal notranslate"><span class="pre">format_contour()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="coco_utils.html#flat_bug.coco_utils.split_annotations"><code class="docutils literal notranslate"><span class="pre">split_annotations()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="config.html">Configuration</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="config.html#flat_bug.config.check_cfg_types"><code class="docutils literal notranslate"><span class="pre">check_cfg_types()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="config.html#flat_bug.config.check_types"><code class="docutils literal notranslate"><span class="pre">check_types()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="config.html#flat_bug.config.get_type_def"><code class="docutils literal notranslate"><span class="pre">get_type_def()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="config.html#flat_bug.config.read_cfg"><code class="docutils literal notranslate"><span class="pre">read_cfg()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="config.html#flat_bug.config.write_cfg"><code class="docutils literal notranslate"><span class="pre">write_cfg()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="datasets.html">Datasets</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="datasets.html#flat_bug.datasets.FlatBugYOLODataset"><code class="docutils literal notranslate"><span class="pre">FlatBugYOLODataset</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="datasets.html#flat_bug.datasets.FlatBugYOLOValidationDataset"><code class="docutils literal notranslate"><span class="pre">FlatBugYOLOValidationDataset</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="datasets.html#flat_bug.datasets.calculate_image_weights"><code class="docutils literal notranslate"><span class="pre">calculate_image_weights()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="datasets.html#flat_bug.datasets.generate_indices"><code class="docutils literal notranslate"><span class="pre">generate_indices()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="datasets.html#flat_bug.datasets.reweight"><code class="docutils literal notranslate"><span class="pre">reweight()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="datasets.html#flat_bug.datasets.subset"><code class="docutils literal notranslate"><span class="pre">subset()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="eval_utils.html">Evaluation utilities</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.bbox_intersect"><code class="docutils literal notranslate"><span class="pre">bbox_intersect()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.bbox_intersect_area"><code class="docutils literal notranslate"><span class="pre">bbox_intersect_area()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.best_confidence_threshold"><code class="docutils literal notranslate"><span class="pre">best_confidence_threshold()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.compare_groups"><code class="docutils literal notranslate"><span class="pre">compare_groups()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.contour_intersection"><code class="docutils literal notranslate"><span class="pre">contour_intersection()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.equal_spaced_cuts"><code class="docutils literal notranslate"><span class="pre">equal_spaced_cuts()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.f1_score"><code class="docutils literal notranslate"><span class="pre">f1_score()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.format_cell"><code class="docutils literal notranslate"><span class="pre">format_cell()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.format_row"><code class="docutils literal notranslate"><span class="pre">format_row()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.generate_block"><code class="docutils literal notranslate"><span class="pre">generate_block()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.generate_bootstraps"><code class="docutils literal notranslate"><span class="pre">generate_bootstraps()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.match_geoms"><code class="docutils literal notranslate"><span class="pre">match_geoms()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.optimal_threshold_f1"><code class="docutils literal notranslate"><span class="pre">optimal_threshold_f1()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.pairwise_contour_intersection"><code class="docutils literal notranslate"><span class="pre">pairwise_contour_intersection()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.plot_heatmap"><code class="docutils literal notranslate"><span class="pre">plot_heatmap()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.plot_matches"><code class="docutils literal notranslate"><span class="pre">plot_matches()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="eval_utils.html#flat_bug.eval_utils.pretty_print_csv"><code class="docutils literal notranslate"><span class="pre">pretty_print_csv()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="geometric.html">Geometry utilities</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="geometric.html#flat_bug.geometric.chw2hwc_uint8"><code class="docutils literal notranslate"><span class="pre">chw2hwc_uint8()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="geometric.html#flat_bug.geometric.contours_to_masks"><code class="docutils literal notranslate"><span class="pre">contours_to_masks()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="geometric.html#flat_bug.geometric.create_contour_mask"><code class="docutils literal notranslate"><span class="pre">create_contour_mask()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="geometric.html#flat_bug.geometric.equal_allocate_overlaps"><code class="docutils literal notranslate"><span class="pre">equal_allocate_overlaps()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="geometric.html#flat_bug.geometric.linear_interpolate"><code class="docutils literal notranslate"><span class="pre">linear_interpolate()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="geometric.html#flat_bug.geometric.poly_normals"><code class="docutils literal notranslate"><span class="pre">poly_normals()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="geometric.html#flat_bug.geometric.resize_mask"><code class="docutils literal notranslate"><span class="pre">resize_mask()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="geometric.html#flat_bug.geometric.simplify_contour"><code class="docutils literal notranslate"><span class="pre">simplify_contour()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="nms.html">Non-maximum suppression</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="nms.html#flat_bug.nms.base_nms_"><code class="docutils literal notranslate"><span class="pre">base_nms_()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="nms.html#flat_bug.nms.detect_duplicate_boxes"><code class="docutils literal notranslate"><span class="pre">detect_duplicate_boxes()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="nms.html#flat_bug.nms.fancy_nms"><code class="docutils literal notranslate"><span class="pre">fancy_nms()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="nms.html#flat_bug.nms.iou_boxes"><code class="docutils literal notranslate"><span class="pre">iou_boxes()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="nms.html#flat_bug.nms.iou_masks"><code class="docutils literal notranslate"><span class="pre">iou_masks()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="nms.html#flat_bug.nms.iou_polygons"><code class="docutils literal notranslate"><span class="pre">iou_polygons()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="nms.html#flat_bug.nms.nms_boxes"><code class="docutils literal notranslate"><span class="pre">nms_boxes()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="nms.html#flat_bug.nms.nms_masks"><code class="docutils literal notranslate"><span class="pre">nms_masks()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="nms.html#flat_bug.nms.nms_polygons"><code class="docutils literal notranslate"><span class="pre">nms_polygons()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="nms.html#flat_bug.nms.nms_polygons_"><code class="docutils literal notranslate"><span class="pre">nms_polygons_()</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="predictor.html">Predictor</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="predictor.html#tensorpredictions"><code class="xref py py-class docutils literal notranslate"><span class="pre">TensorPredictions</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="predictor.html#id1"><code class="xref py py-class docutils literal notranslate"><span class="pre">Predictor</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="trainers.html">Trainers</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="trainers.html#flat_bug.trainers.FlatBugSegmentationTrainer"><code class="docutils literal notranslate"><span class="pre">FlatBugSegmentationTrainer</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="yolo_helpers.html">YOLO helpers</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="yolo_helpers.html#flat_bug.yolo_helpers.ResultsWithTiles"><code class="docutils literal notranslate"><span class="pre">ResultsWithTiles</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="yolo_helpers.html#flat_bug.yolo_helpers.clip_boxes"><code class="docutils literal notranslate"><span class="pre">clip_boxes()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="yolo_helpers.html#flat_bug.yolo_helpers.crop_mask"><code class="docutils literal notranslate"><span class="pre">crop_mask()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="yolo_helpers.html#flat_bug.yolo_helpers.expand_bottom_right"><code class="docutils literal notranslate"><span class="pre">expand_bottom_right()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="yolo_helpers.html#flat_bug.yolo_helpers.merge_tile_results"><code class="docutils literal notranslate"><span class="pre">merge_tile_results()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="yolo_helpers.html#flat_bug.yolo_helpers.postprocess"><code class="docutils literal notranslate"><span class="pre">postprocess()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="yolo_helpers.html#flat_bug.yolo_helpers.process_mask"><code class="docutils literal notranslate"><span class="pre">process_mask()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="yolo_helpers.html#flat_bug.yolo_helpers.scale_boxes"><code class="docutils literal notranslate"><span class="pre">scale_boxes()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="yolo_helpers.html#flat_bug.yolo_helpers.stack_masks"><code class="docutils literal notranslate"><span class="pre">stack_masks()</span></code></a></li>
+</ul>
+</li>
+</ul>
+</div>
+</section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="cli.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">CLI API</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024, Asger Svenning, Quentin Geissmann
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer">
+      
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            On this page
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#"><code> flatbug </code></a><ul>
+<li><a class="reference internal" href="#a-general-method-for-detection-and-segmentation-of-terrestrial-arthropods-in-images"><strong><center><ins>A General Method for Detection and Segmentation of Terrestrial Arthropods in Images</ins></center></strong></a></li>
+<li><a class="reference internal" href="#installation">Installation</a><ul>
+<li><a class="reference internal" href="#source-development">Source/development</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#cli-usage">CLI Usage</a></li>
+<li><a class="reference internal" href="#tutorials">Tutorials</a></li>
+<li><a class="reference internal" href="#documentation">Documentation</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#contents">Contents</a></li>
+</ul>
+
+          </div>
+        </div>
+      </div>
+      
+      
+    </aside>
+  </div>
+</div><script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="_static/scripts/furo.js?v=5fa4622c"></script>
+    </body>
+</html>
