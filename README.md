@@ -49,6 +49,9 @@ fb_predict -i <DIR_WITH_IMGS> -o <OUTPUT_DIR> [-w <WEIGHT_PATH>] ...
 ### Tutorials
 We provide a number of tutorials on general and advanced usage, training, deployment and hyperparameters of `flatbug` in [examples/tutorials](examples/tutorials) or with Google Colab [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/darsa-group/flat-bug/blob/master/docs/flat-bug.ipynb).
 
+### Documentation
+Find our documentation at [https://darsa.info/flat-bug/](https://darsa.info/flat-bug/).
+
 <!-- fixme: Remember to add this later! -->
 <!-- ### Archive
 #### Models
