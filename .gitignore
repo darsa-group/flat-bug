@@ -179,7 +179,11 @@ s3/
 /prototypes/
 /slurm_logs/
 scripts/experiments/results/
+scripts/manuscript/pyramid_visualization/*.png
+scripts/manuscript/*.png
+scripts/manuscript/statistics/figures
 scripts/manuscript/statistics/data
+scripts/manuscript/statistics/tiles
 scripts/manuscript/statistics/combined_results.csv
 scripts/manuscript/statistics/*.tex
 
