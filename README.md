@@ -35,14 +35,13 @@ Or a development version can be installed from source by cloning this repository
 ```sh
 git clone git@github.com:darsa-group/flat-bug.git
 cd flat-bug
-git checkout develop
 pip install -e .
 ```
 
 However, as with other packages built with `PyTorch` it is best to ensure that `torch` is installed separately. See [https://pytorch.org/](https://pytorch.org/) for details. We recommend using `torch>=2.3`.
 
 ### CLI Usage
-We provide a number of [CLI scripts[INSERT LINK]](INSERT_LINK) with `flatbug`. The main one of interest is `fb_predict`, which can be used to run inference on images or videos:
+We provide a number of [CLI scripts](https://darsa.info/flat-bug/cli.html) with `flatbug`. The main one of interest is `fb_predict`, which can be used to run inference on images or videos:
 ```sh
 fb_predict -i <DIR_WITH_IMGS> -o <OUTPUT_DIR> [-w <WEIGHT_PATH>] ...
 ```
