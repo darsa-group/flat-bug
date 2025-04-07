@@ -291,7 +291,7 @@ def predict(
                     identifier = UUID, #str(uuid.uuid4()),
                 )
                 if not result_directory is None:
-                    json_files = [f for f in glob.glob(os.path.join(glob.escape(result_directory), "*.json"))]
+                    json_files = [f for f in glob.glob(os.path.join(glob.escape(metadata if isinstance(metadata, str) else result_directory), f"*{os.path.splitext(os.path.basename(f))[0]}*.json"))]
                     assert len(json_files) == 1
                     all_json_results.append(json_files[0])
                 if isVideo and overviews:

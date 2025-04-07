@@ -1077,9 +1077,6 @@ class TensorPredictions:
         if prediction_directory_is_used:
             if not os.path.exists(prediction_directory):
                 os.makedirs(prediction_directory)
-        else:
-            # If the prediction directory is not used set it to None
-            return None
 
         # Save overview
         if overview:
@@ -1129,7 +1126,7 @@ class TensorPredictions:
             # Serialize the data to the metadata path
             self.serialize(outpath=metadata_path, identifier=identifier)
 
-        return prediction_directory
+        return prediction_directory if prediction_directory_is_used else None
 
 def _process_batch(
             image : torch.Tensor, 
