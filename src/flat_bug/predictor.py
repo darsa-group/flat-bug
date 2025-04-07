@@ -586,7 +586,8 @@ class TensorPredictions:
         params.pop("self", None)
         if outpath not in [None, ""] and outpath.lower().endswith(".svg"):
             retval = self._plot_svg(**params)
-        retval = self._plot_image(**params)
+        else:
+            retval = self._plot_image(**params)
         if retval is None:
             return outpath
         return retval
