@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+r"""
 Inference CLI script for ``flatbug``. 
 
 A comprehensive CLI API for ``flatbug`` inference with support for hyperparameter configuration, flexible input parsing, output format specification, and hardware specification.

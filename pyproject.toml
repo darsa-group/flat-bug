@@ -19,7 +19,7 @@ classifiers = [
 dependencies = [
     "torch>=2.2.0",
     "torchvision>=0.17.0",
-    "ultralytics>=8.2.16",
+    "ultralytics>=8.2.16,<=8.3.124",
     "shapely>=2.0.2",
     "scikit-optimize>=0.10.1"
 ]
