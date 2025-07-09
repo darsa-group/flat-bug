@@ -1,3 +1,4 @@
+from argparse import Namespace
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -132,7 +133,7 @@ def merge_tile_results(
         raise NotImplementedError("'Probs' not implemented yet")
     if not all([r.keypoints is None for r in results]):
         raise NotImplementedError("'Keypoints' not implemented yet")
-    return ResultsWithTiles(tiles=tile_indices, orig_img=orig_img, path=path, names=names, boxes=boxes, masks=masks, polygons=polygons, probs=None, keypoints=None)
+    return ResultsWithTiles(tiles=tile_indices, orig_img=Namespace(shape=orig_img.shape), path=path, names=names, boxes=boxes, masks=masks, polygons=polygons, probs=None, keypoints=None)
 
 def stack_masks(
         masks : List["Masks"], 
@@ -417,5 +418,5 @@ def postprocess(
         boxes = boxes[~too_small]
         masks = masks[~too_small]
         pred[:, :4] = boxes
-        results.append({"orig_img" : imgs[i].clone().permute(1,2,0), "path" : "", "names" : ["insect"], "boxes" : pred[:, :6], "masks" : masks})
+        results.append({"orig_img" : Namespace(shape=imgs[i].permute(1,2,0).shape), "path" : "", "names" : ["insect"], "boxes" : pred[:, :6], "masks" : masks})
     return results
