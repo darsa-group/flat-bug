@@ -1,11 +1,20 @@
 # <code> flatbug </code>
-### **<center><ins>A General Method for Detection and Segmentation of Terrestrial Arthropods in Images</ins></center>**
 
-<p align="center">
+<div align="center">
+    <h3 class="heading-element" dir="auto"><ins>A General Method for Detection and Segmentation of Terrestrial Arthropods in Images</ins></h3>
     <img src="prediction.jpg" style="width: 75%;">
-</p>
+</div>
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/darsa-group/flat-bug/blob/master/docs/flat-bug.ipynb)
+[![](https://img.shields.io/badge/bioRxiv-10.1101%2F2025.04.08.647223-B52838?style=flat&logo=doi&logoColor=white&labelColor=gray)](https://doi.org/10.1101/2025.04.08.647223)
+[![](https://img.shields.io/badge/Zenodo-10.5281/zenodo.14761446-0377cd?style=flat&logo=doi&logoColor=white&labelColor=gray)](https://doi.org/10.5281/zenodo.14761446)
+
+<div align="center">
+    <table><tr>
+        <td><strong> Find and cite the <a href="https://www.biorxiv.org/content/10.1101/2025.04.08.647223v1">flatbug preprint on bioRxiv</a></strong></td>
+        <td><strong> Send us new data through our <a href="https://forms.gle/hQe2dzLs4tHcCarEA">data contribution form<a>. </strong></td>
+    </tr></table>
+</div>
 
 `flatbug` is partly a high-performance pyramid tiling inference wrapper for [`YOLOv8`](https://github.com/ultralytics/ultralytics) and partly a hybrid instance segmentation dataset of terrestrial arthropods accompanied by an appropriate training schedule for `YOLOv8` segmentation models, built on top of the original [`YOLOv8` training schedule](https://docs.ultralytics.com/modes/train/#why-choose-ultralytics-yolo-for-training). 
 

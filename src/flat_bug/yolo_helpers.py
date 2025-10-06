@@ -385,9 +385,12 @@ def postprocess(
             pred = pred[pred[:, 4] > min_confidence]
         boxes = scale_boxes((tile_size, tile_size), pred[:, :4], imgs[i].shape[-2:], padding=False)
         # Remove predictions outside the valid size range
-        if valid_size_range is not None and valid_size_range[0] > 0 and valid_size_range[1] > 0 and valid_size_range[1] < tile_size:
-            valid_size = ((boxes[:, 2:] - boxes[:, :2]).log().sum(dim=1) / 2).exp()
-            valid = (valid_size >= valid_size_range[0]) & (valid_size <= valid_size_range[1])
+        if valid_size_range is not None:
+            if valid_size_range[0] >= tile_size and valid_size_range[1] < 0:
+                valid = boxes.new_zeros((len(pred),), dtype=torch.bool)
+            else:
+                valid_size = ((boxes[:, 2:] - boxes[:, :2]).log().sum(dim=1) / 2).exp()
+                valid = (valid_size >= valid_size_range[0]) & (valid_size <= valid_size_range[1])
             pred = pred[valid]
             boxes = boxes[valid]
         # Remove predictions too close to the margin

@@ -1063,7 +1063,7 @@ class TensorPredictions:
                 If the standard location is not used at all, the directory is not created and None is returned instead.
         """
         if not os.path.exists(output_directory):
-            raise ValueError(f"Output directory {output_directory} does not exist")
+            os.makedirs(output_directory)
 
         if basename is None:
             if self.image_path is None:
