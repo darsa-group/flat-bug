@@ -1,8 +1,11 @@
 import json
 import argparse
 import os
+
+import cv2
 import cv2 as cv
 import numpy as np
+from torchgen.gen_functionalization_type import return_from_mutable_noop_redispatch
 
 
 # fixme, resume should continue on the same "run folder"
@@ -23,103 +26,94 @@ def main():
 
 # def best_new_contour(cnt):
 
-def best_yolo_contour(pts, roi_padded, conf_thresh=0.25):
-    """
-    Choose the best YOLOv8 polygon (on roi_padded) by IoU against `pts` (N,2).
-    Uses polygon IoU via shapely if available; otherwise falls back to mask IoU.
-    Returns an (M,2) int32 array of the best polygon in ROI coordinates.
-    """
 
-    # --- get global YOLOv8 model ---
 
-    H, W = roi_padded.shape[:2]
-    pts = np.asarray(pts, dtype=np.float32)
-    if pts.ndim != 2 or pts.shape[1] != 2 or len(pts) < 3:
-        return pts.astype(np.int32)
+def _iou_from_masks(a, b):
+    inter = np.logical_and(a, b).sum()
+    union = np.logical_or(a, b).sum()
+    return float(inter) / float(union) if union > 0 else 0.0
 
-    # --- try shapely for polygon IoU ---
-    try:
-        from shapely.geometry import Polygon
-        from shapely.errors import TopologicalError
-        use_shapely = True
-    except Exception:
-        use_shapely = False
+def yolo_ensemble_contour(image_bgr, cnt, conf_threshold=0.25, iou_threshold=0.1, mask_threshold=1):
 
-    # helper: polygon IoU with shapely
-    def _poly_iou_shapely(a_xy, b_xy):
-        try:
-            pa = Polygon(a_xy).buffer(0)  # buffer(0) fixes minor self-intersections
-            pb = Polygon(b_xy).buffer(0)
-            if not pa.is_valid or not pb.is_valid:
-                return 0.0
-            inter = pa.intersection(pb).area
-            union = pa.union(pb).area
-            return float(inter / union) if union > 0 else 0.0
-        except TopologicalError:
-            return 0.0
 
-    # fallback: mask IoU if shapely not available
-    def _poly_iou_mask(a_xy, b_xy):
-        am = np.zeros((H, W), dtype=np.uint8)
-        bm = np.zeros((H, W), dtype=np.uint8)
-        a_int = np.round(a_xy).astype(np.int32)
-        b_int = np.round(b_xy).astype(np.int32)
-        a_int[:, 0] = np.clip(a_int[:, 0], 0, W - 1)
-        a_int[:, 1] = np.clip(a_int[:, 1], 0, H - 1)
-        b_int[:, 0] = np.clip(b_int[:, 0], 0, W - 1)
-        b_int[:, 1] = np.clip(b_int[:, 1], 0, H - 1)
-        cv.fillPoly(am, [a_int], 1)
-        cv.fillPoly(bm, [b_int], 1)
-        inter = np.logical_and(am, bm).sum()
-        union = np.logical_or(am, bm).sum()
-        return float(inter / union) if union > 0 else 0.0
+    # get global YOLOv8 model
 
-    # --- run YOLOv8 ---
-    try:
-        res = yolo(roi_padded, verbose=False)[0]
-    except Exception:
-        return pts.astype(np.int32)
+    H, W = image_bgr.shape[:2]
+    accum = np.zeros((H, W), dtype=np.float32)
+    original_mask = np.zeros_like(accum).astype(np.uint8)
+    cv.fillPoly(original_mask, [cnt.astype(np.int32)], 1)
+    n=4
+    for i in range(n):
+        print(i)
+        if i ==0:
+            image_in = np.copy(image_bgr)
+        elif i == 1:
+            image_in =  cv.rotate(image_bgr, cv.ROTATE_90_CLOCKWISE)
+        elif i == 2:
+            image_in = cv.flip(image_bgr, 0)
+        elif i == 3:
+            image_in = cv.flip(cv.rotate(image_bgr, cv.ROTATE_90_CLOCKWISE), 0)
+        else:
+            raise ValueError("aug_idx must be in {0,1,2,3}")
 
-    # no masks predicted
-    if not hasattr(res, "masks") or res.masks is None or getattr(res.masks, "xy", None) is None:
-        return pts.astype(np.int32)
+        # image_in =cv.medianBlur(image_bgr,i*2+1)
+        res = yolo(image_in, verbose=False)[0]
 
-    # confidences (aligned with masks)
-    try:
+        # no masks predicted this run
+        if not hasattr(res, "masks") or res.masks is None or getattr(res.masks, "data", None) is None:
+            continue
+
         confs = res.boxes.conf.detach().cpu().numpy()
-    except Exception:
-        confs = np.ones(len(res.masks.xy), dtype=np.float32)
+        masks_t = res.masks.data  # torch.Tensor [num, h, w]
+        num_masks = masks_t.shape[0]
 
-    # choose IoU function
-    iou_fn = _poly_iou_shapely if use_shapely else _poly_iou_mask
+        valid_masks = []
+        mask_areas = []
 
-    best_iou = -1.0
-    best_poly = None
+        for j in range(num_masks):
+            if confs is not None and j < len(confs) and confs[j] < conf_threshold:
+                continue
 
-    # ground-truth polygon (float)
-    gt = pts
+            m = masks_t[j].detach().cpu().numpy().astype(np.float32)  # float mask (h, w) in [0,1]
 
-    for i, poly in enumerate(res.masks.xy):
-        if i < len(confs) and confs[i] < conf_thresh:
+            iou = _iou_from_masks(m, original_mask)
+            print(j, iou)
+            if iou < iou_threshold :
+                continue
+            valid_masks.append(m)
+            mask_areas.append(np.sum(m))
+
+        if len(mask_areas) == 0:
             continue
-        if poly is None or len(poly) < 3:
-            continue
 
-        poly = np.asarray(poly, dtype=np.float32)
+        m = valid_masks[np.argmax(mask_areas)]
 
-        # clip to image bounds to be safe (also helps mask fallback)
-        poly[:, 0] = np.clip(poly[:, 0], 0, W - 1)
-        poly[:, 1] = np.clip(poly[:, 1], 0, H - 1)
+        if i == 0:
+            m = m
+        elif i == 1:
+            m = cv.rotate(m, cv.ROTATE_90_COUNTERCLOCKWISE)
+        elif i == 2:
+            m = cv.flip(m, 0)
+        elif i == 3:
+            m = cv.rotate(cv.flip(m,0), cv.ROTATE_90_COUNTERCLOCKWISE)
+        else:
+            raise ValueError("aug_idx must be in {0,1,2,3}")
+        print (i,m.shape)
+        accum += m
 
-        iou = iou_fn(gt, poly)
-        if iou > best_iou:
-            best_iou = iou
-            best_poly = poly
+    frac = accum / float(n)
+    cv2.imshow("test2", frac)
+    final_mask = (frac >= mask_threshold).astype(np.uint8) * 255
+    if np.count_nonzero(final_mask) == 0:
+        return cnt
+    # find largest contour
+    cnts, _ = cv.findContours(final_mask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+    if not cnts:
+        return None
 
-    if best_poly is None or best_iou <= 0.0:
-        return pts.astype(np.int32)
-
-    return np.round(best_poly).astype(np.int32)
+    best = max(cnts, key=cv.contourArea)  # largest by area
+    best = cv.approxPolyDP(best, 0.0005 * cv.arcLength(best, True), True)
+    return best
 
 
 def refine_instance(im, box, cnt, cls):
@@ -129,8 +123,8 @@ def refine_instance(im, box, cnt, cls):
     # --- 1️⃣ Expand box by 10% ---
     box_w = x2 - x1
     box_h = y2 - y1
-    expand_x = int(0.1 * box_w)
-    expand_y = int(0.1 * box_h)
+    expand_x = int(0.2 * box_w)
+    expand_y = int(0.2 * box_h)
 
     x1_exp, y1_exp = x1 - expand_x, y1 - expand_y
     x2_exp, y2_exp = x2 + expand_x, y2 + expand_y
@@ -189,7 +183,7 @@ def refine_instance(im, box, cnt, cls):
 
     pts = np.array(cnt_final, dtype=np.int32).reshape(-1, 2)
 
-    refined_candidate = best_yolo_contour(pts, roi_padded)
+    refined_candidate = yolo_ensemble_contour( roi_padded, pts)
 
     cv.polylines(roi_padded, [pts], isClosed=True, color=(0, 0, 255), thickness=2)
     cv.polylines(roi_padded, [refined_candidate], isClosed=True, color=(255, 0, 0), thickness=2)
@@ -220,6 +214,6 @@ if __name__ == "__main__":
     from ultralytics import YOLO
     from ultralytics.engine.results import Results
     model_file = "flat_bug_S.pt"
-    result_file = "data/metadata_mask-refiner-test_UUID_ChangeThisTEMPORARY.json"
+    result_file = "data/metadata_mask-refiner-test3_UUID_ChangeThisTEMPORARY.json"
     yolo = YOLO(model_file, "segment", verbose=True)
     refine_file(result_file)
