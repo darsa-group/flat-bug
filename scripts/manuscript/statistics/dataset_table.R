@@ -1,6 +1,8 @@
 source("helpers/flatbug_init.R")
-library(googlesheets4)
-library(kableExtra)
+suppressPackageStartupMessages({
+  library(googlesheets4)
+  library(kableExtra)
+})
 
 reference_path <- "<PATH>/references.bib"
 

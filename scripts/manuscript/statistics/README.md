@@ -24,8 +24,6 @@ Run `source("full_analysis.R")`.
 There are number of dependencies necessary to run the analyses, most of which are
 part of the tidyverse ecosystem. 
 
-Finding R package dependencies ... Done!
-
 ### Install
 ```r
 install.packages(
@@ -45,8 +43,11 @@ install.packages(
     "ggplot2",
     "ggpubr",
     "ggraph",
+    "googlesheets4",
     "grid",
     "Hmisc",
+    "kableExtra",
+    "latex2exp",
     "magick",
     "magrittr",
     "memoise",
@@ -65,35 +66,38 @@ install.packages(
 
 ### Dependency list
 ```txt
-      abind | 1.4.8
-        ape | 5.8
-        cli | 3.6.3
-colorblindr | 0.1.0
- colorspace | 2.1.1
-      coxed | 0.3.3
- data.table | 1.15.4
-  extrafont | 0.19
-    forcats | 1.0.0
-      furrr | 0.3.1
-     future | 1.33.2
-    ggimage | 0.3.3
-    ggplot2 | 3.5.1
-     ggpubr | 0.6.0
-     ggraph | 2.2.1
-       grid | 4.4.1
-      Hmisc | 5.1.3
-     magick | 2.8.3
-   magrittr | 2.0.3
-    memoise | 2.0.1
-       mgcv | 1.9.1
-  patchwork | 1.3.0
-  progressr | 0.15.1
-   quantreg | 5.98
-      RCurl | 1.98.1.16
-     scales | 1.3.0
-    stringr | 1.5.1
-  tidygraph | 1.3.1
-  tidyverse | 2.0.0
+        abind | 1.4.8
+          ape | 5.8.1
+          cli | 3.6.5
+  colorblindr | 0.1.0
+   colorspace | 2.1.1
+        coxed | 0.3.7
+   data.table | 1.17.8
+    extrafont | 0.19
+      forcats | 1.0.0
+        furrr | 0.3.1
+       future | 1.67.0
+      ggimage | 0.3.4
+      ggplot2 | 4.0.1
+       ggpubr | 0.6.1
+       ggraph | 2.2.2
+googlesheets4 | 1.1.1
+         grid | 4.5.1
+        Hmisc | 5.2.4
+   kableExtra | 1.4.0
+    latex2exp | 0.9.6
+       magick | 2.9.0
+     magrittr | 2.0.3
+      memoise | 2.0.1
+         mgcv | 1.9.3
+    patchwork | 1.3.2
+    progressr | 0.15.1
+     quantreg | 6.1
+        RCurl | 1.98.1.17
+       scales | 1.4.0
+      stringr | 1.5.1
+    tidygraph | 1.3.1
+    tidyverse | 2.0.0.9000
 ```
 
 ### Recreate README dependency list

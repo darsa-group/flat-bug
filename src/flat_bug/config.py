@@ -11,13 +11,14 @@ yaml.add_representer(OrderedDict, lambda dumper, data: dumper.represent_dict(dat
 
 CFG_PARAMS = [
     "SCORE_THRESHOLD",
-    "IOU_THRESHOLD",
+    "OVERLAP_THRESHOLD",
     "MINIMUM_TILE_OVERLAP",
     "EDGE_CASE_MARGIN",
     "MIN_MAX_OBJ_SIZE",
     "MAX_MASK_SIZE",
     "PREFER_POLYGONS",
     "EXPERIMENTAL_NMS_OPTIMIZATION",
+    "OVERLAP_METRIC",
     "TIME",
     "TILE_SIZE",
     "BATCH_SIZE"
@@ -25,13 +26,14 @@ CFG_PARAMS = [
 
 CFG_DESCRIPTION = {
     "SCORE_THRESHOLD": "Minimum score for a prediction to be considered.",
-    "IOU_THRESHOLD": "Minimum IOU for a prediction to be considered a duplicate.",
+    "OVERLAP_THRESHOLD": "Minimum overlap (e.g. IOU) for a prediction to be considered a duplicate.",
     "MINIMUM_TILE_OVERLAP": "Minimum overlap between tiles when splitting the image.",
     "EDGE_CASE_MARGIN": "Margin for edge cases. How far from the edge of the image a prediction can be.",
     "MIN_MAX_OBJ_SIZE": "Minimum and maximum size of a bounding box. Size is measured as the square root of the area, i.e. the side-length if the bounding box was a square.",
     "MAX_MASK_SIZE": "Loss of precision may occur if the mask is larger than this, but all shapes are possible. No effect if PREFER_POLYGONS is enabled.",
     "PREFER_POLYGONS": "Convert masks to polygons as soon as possible, and only use the polygons for further processing - no loss of precision, but only single polygons without holes can be represented, performance impact may depend on hardware and use-case.",
     "EXPERIMENTAL_NMS_OPTIMIZATION": "Experimental optimization for NMS. Improves performance significantly when there are many predictions.",
+    "OVERLAP_METRIC": "Metric to use for NMS. One of 'IOU' or 'IOS', more might be added in the future.",
     "TIME": "Enable to print time taken for each step. Can incur a performance penalty.",
     "TILE_SIZE": "Fixed by the model architecture - do not change unless you know what you are doing.",
     "BATCH_SIZE": "Used for model initialization and batched tile processing."
@@ -39,13 +41,14 @@ CFG_DESCRIPTION = {
 
 DEFAULT_CFG = {
     "SCORE_THRESHOLD": 0.2,
-    "IOU_THRESHOLD": 0.2,
+    "OVERLAP_THRESHOLD": 0.2,
     "MINIMUM_TILE_OVERLAP": 384,
     "EDGE_CASE_MARGIN": 16,
     "MIN_MAX_OBJ_SIZE": (32, 10**8),
     "MAX_MASK_SIZE": 1024,
     "PREFER_POLYGONS": True,
     "EXPERIMENTAL_NMS_OPTIMIZATION": True,
+    "OVERLAP_METRIC" : "IoU",
     "TIME": False,
     "TILE_SIZE": 1024,
     "BATCH_SIZE": 16
@@ -53,13 +56,14 @@ DEFAULT_CFG = {
 
 LEGACY_CFG = {
     "SCORE_THRESHOLD": 0.5,
-    "IOU_THRESHOLD": 0.5,
+    "OVERLAP_THRESHOLD": 0.5,
     "MINIMUM_TILE_OVERLAP": 256,
     "EDGE_CASE_MARGIN": 128,
     "MIN_MAX_OBJ_SIZE": (16, 1024),
     "MAX_MASK_SIZE": 1024,
     "PREFER_POLYGONS": True,
     "EXPERIMENTAL_NMS_OPTIMIZATION": True,
+    "OVERLAP_METRIC" : "IoU",
     "TIME": False,
     "TILE_SIZE": 1024,
     "BATCH_SIZE": 16

@@ -252,3 +252,97 @@ l1o_delta_stratified_latex <- leave_one_out_cleaned %>%
 add_group("Experiment 2 - Leave-one-out stratified")
 write_data("Experiment 2 - Leave-one-out stratified", l1o_delta_stratified_latex)
 
+# Table
+percent_max_to_bold_min_to_italic <- function(x, exclude=NULL) {
+  if (any(is.na(x))) return(as.character(x))
+  if (is.null(exclude)) {
+    ma <- which(x == max(x))
+    mi <- which(x == min(x))
+  } else {
+    em <- if (!is.logical(exclude)) !(seq(length(x)) %in% exclude) else exclude
+    ma <- which(x == max(x[em]))
+    mi <- which(x == min(x[em]))
+  }
+  x <- scales::percent_format(.1)(x)
+  x[ma] <- paste0("\\textbf{", x[ma], "}")
+  x[mi] <- paste0("\\textit{", x[mi], "}")
+  x
+}
+
+section_reference <- "\\sref{sec:res_exp2}"
+
+leave_one_out_latex <- leave_one_out_cleaned %>% 
+  select(short, type, metric, rel_delta) %>% 
+  transmute(
+    short,
+    column = paste0(type, "_$\\delta_{\\mathrm{", metric, "}}$"),
+    rel_delta
+  ) %>% 
+  pivot_wider(
+    id_cols = short,
+    names_from = column,
+    values_from = rel_delta
+  ) %>% 
+  mutate(
+    across(
+      !short, 
+      ~ percent_max_to_bold_min_to_italic(.x, short != "CAO") %>% 
+        str_replace("%", "\\\\%")
+    )
+  ) %>% 
+  arrange(short) %>% 
+  mutate(
+    short = str_replace(short, "CAO", "*CAO")
+  ) %>% 
+  kableExtra::kable(
+    "latex",
+    col.names = c("", str_extract(colnames(.)[2:ncol(.)], "^[^$]+_(.+)$", group=1)),
+    align = "r",
+    escape = F,
+    booktabs = T,
+    caption = c(
+      "Relative change, $\\delta$, in precision, recall and F1 on each subdataset",
+      "for models in the \\nquote{{leave-one-out}} and \\nquote{{fine-tuned}}",
+      "scenarios of {section_reference} as compared to a comparable baseline",
+      "model trained on all datasets."
+    ) %>%
+      paste(collapse = " ") %>% 
+      str_glue
+  ) %>% 
+  kableExtra::add_header_above(
+    c(" " = 1, "Leave-one-out" = 3, "Fine-tuned" = 3)
+  ) %>% 
+  kableExtra::column_spec(
+    2:7,
+    width = "1.75cm"
+  ) %>%
+  kableExtra::add_footnote(
+    c(
+      "The subdataset CAO\\autocite{wuDatasetAntColonies2022} is excluded from",
+      "column-wise minimum (cursive) and maximum (bold) formatting because both",
+      "the baseline, leave-one-out, and fine-tuned models essentially perform",
+      "perfectly on this dataset."
+    ) %>% 
+      paste0(collapse = " "),
+    "symbol",
+    T,
+    escape = F
+  ) %>% 
+  str_split_1("\n") %>% 
+  {
+    .[1] <- paste0(.[1], "[htb]")
+    .[2] <- "\\centering"
+    .
+  } %>% 
+  {
+    reord <- .[!str_detect(., "caption\\{")]
+    e3pt <- which(str_detect(reord, "end\\{threeparttable\\}")) + 1
+    c(reord[1:(e3pt-1)], .[str_detect(., "caption\\{")], reord[e3pt:length(reord)])
+  } %>% 
+  {
+    c(.[1:(length(.)-1)], "\\label{tab:leave_one_out_tab}", .[length(.)])
+  } %>% 
+  paste0(collapse = "\n")
+
+add_group("Experiment 2 - Leave-one-out table")
+write_data("Experiment 2 - Leave-one-out table", latex_env2macro(leave_one_out_latex, "LeaveOneOutTable"))

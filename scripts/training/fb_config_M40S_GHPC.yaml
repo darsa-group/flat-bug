@@ -1,0 +1,11 @@
+batch: 8
+model: "yolov8m-seg.pt"
+epochs: 500
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 16
+fb_max_instances: 9999
+fb_max_images: -1

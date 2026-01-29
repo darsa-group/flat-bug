@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from ultralytics.engine.results import Masks, Results
 
 from flat_bug.geometric import find_contours, resize_mask
-from flat_bug.nms import fancy_nms, iou_boxes, nms_boxes, nms_masks
+from flat_bug.nms import fancy_nms, get_overlap_fn, nms_boxes, nms_masks
 
 
 class ResultsWithTiles(Results):
@@ -333,7 +333,8 @@ def postprocess(
         imgs : List[torch.Tensor], 
         max_det : int=300, 
         min_confidence : float=0, 
-        iou_threshold : float=0.1, 
+        overlap_threshold : float=0.1,
+        overlap_metric : str="IoU", 
         nms : int=0, 
         valid_size_range : Optional[Union[Tuple[int, int], List[int]]]=None, 
         edge_margin : Optional[int]=None
@@ -346,7 +347,8 @@ def postprocess(
         imgs (`List[torch.Tensor]`): A list of images that were passed to the model.
         max_det (`int`, optional): The maximum number of detections to return. Defaults to 300.
         min_confidence (`float`, optional): The minimum confidence of the predictions to return. Defaults to 0.
-        iou_threshold (`float`, optional): The IoU threshold for non-maximum suppression. Defaults to 0.1.
+        overlap_threshold (`float`, optional): The overlap (e.g. IoU) threshold for non-maximum suppression. Defaults to 0.1.
+        overlap_metric (`str`): Overlap metric to use for NMS. Default is "IoU".
         nms (`int`, optional): The type of non-maximum suppression to use. Defaults to 0. 0 is no NMS, 1 is standard NMS, 2 is fancy NMS and 3 is mask NMS.
         valid_size_range (`tuple`, optional): The range of valid sizes for the bounding boxes in pixels. Defaults to None (no valid size range).
         edge_margin (`int`, optional): The minimum gap between the edge of the image and the bounding box in pixels for a prediction to be considered valid. Defaults to None (no edge margin).
@@ -401,12 +403,12 @@ def postprocess(
         # Deduplicate predictions
         if nms != 0:
             if nms == 1:
-                nms_ind = nms_boxes(boxes, pred[:, 4], iou_threshold=iou_threshold)
+                nms_ind = nms_boxes(boxes, pred[:, 4], overlap_threshold=overlap_threshold, overlap_fn=overlap_metric)
             elif nms == 2:
-                nms_ind = fancy_nms(boxes, iou_boxes, pred[:, 4], iou_threshold=iou_threshold, return_indices=True)
+                nms_ind = fancy_nms(boxes, get_overlap_fn("box", overlap_metric), pred[:, 4], overlap_threshold=overlap_threshold, return_indices=True)
             elif nms == 3:
                 masks = process_mask(protos[min(i, len(protos)-1)], pred[:, -32:], boxes, imgs[i].shape[-2:], False) # pred[:, -32:] - not sure this is correct for more than one class
-                nms_ind = nms_masks(masks, pred[:, 4], iou_threshold=iou_threshold, return_indices=True, boxes=boxes / 4, group_first=False)
+                nms_ind = nms_masks(masks, pred[:, 4], overlap_threshold=overlap_threshold, overlap_fn=overlap_metric, return_indices=True, boxes=boxes / 4, group_first=False)
                 # group_first is True, because nms_masks has vectorized IoU, 
                 # meaning that the overhead of doing connected-component clustering is larger than the time-loss from redundant IoU calculations
                 masks = masks[nms_ind]

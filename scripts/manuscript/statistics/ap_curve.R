@@ -95,6 +95,8 @@ AP_results <- AP_curve %>%
     AP50_95 = mean(AP[between(IoU, 0.5, 0.95)])
   )
 
+write_csv(AP_results, "data/AP_results.csv")
+
 PR_plt <- PR_curve %>% 
   left_join(
     AP_results %>% 

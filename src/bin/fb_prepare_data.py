@@ -174,20 +174,33 @@ def main():
             os.makedirs(os.path.join(tmp_dir, OUT_COCO_CONVERTER_IMAGES, "train"), exist_ok=True)
             os.makedirs(os.path.join(tmp_dir, OUT_COCO_CONVERTER_IMAGES, "val"), exist_ok=True)
 
-            images = {os.path.basename(f) for f in sorted(glob.glob(os.path.join(source_dir, "*.jpg")))}
+            images = {
+                os.path.basename(f)
+                for ext in ("jpg", "jpeg", "JPG", "JPEG")
+                for f in glob.glob(os.path.join(source_dir, f"*.{ext}"))
+            }
 
-            assert len(images) > 0
+            assert len(images) > 0, f"N images in {source_dir}"
 
             validation_files = {}
             training_files = {}
             for f in sorted(glob.glob(os.path.join(tmp_dir,OUT_COCO_CONVERTER, "*.txt"))):
                 basename_sans_ext = os.path.splitext(os.path.basename(f))[0]
-                expected_image_basename = basename_sans_ext + ".jpg"
-                if expected_image_basename not in images:
-                    logging.warning("Missing image: " + expected_image_basename)
+
+                image_matches = [i for i in images if basename_sans_ext == os.path.splitext(os.path.basename(i))[0]]
+                n_matches = len(image_matches)
+                if n_matches == 0:
+                    logging.warning("Missing image: " + f)
                     os.remove(f)
                     continue
-                im_path = os.path.join(source_dir, expected_image_basename)
+                elif n_matches > 1:
+                    logging.warning("More than one match for: " + f)
+                    os.remove(f)
+                    continue
+
+                im_basename = os.path.basename(image_matches[0])
+
+                im_path = os.path.join(source_dir, im_basename)
                 assert os.path.isfile(im_path)
 
                 with open(im_path, 'rb') as file_obj:
@@ -198,11 +211,11 @@ def main():
                 p = int(file_hash[0:4], 16) / int("ffff", 16)
                 if p < option_dict["validation_proportion"]:
                     subset = "val/"
-                    validation_files[expected_image_basename] = new_bn_se + ".jpg"
+                    validation_files[im_basename] = new_bn_se + ".jpg"
                 else:
                     subset = "train/"
-                    training_files[expected_image_basename] = new_bn_se + ".jpg"
-                logging.info(f"{expected_image_basename} -> {subset}")
+                    training_files[im_basename] = new_bn_se + ".jpg"
+                logging.info(f"{im_basename} -> {subset}")
 
                 shutil.move(f, os.path.join(tmp_dir, OUT_COCO_CONVERTER, os.path.join(subset, new_bn_se + ".txt")))
                 shutil.copy(im_path, os.path.join(tmp_dir, OUT_COCO_CONVERTER_IMAGES, subset, new_bn_se + ".jpg"))

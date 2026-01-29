@@ -203,3 +203,6 @@ pyvenv.cfg
 *.Rproj.user
 *.Rproj
 *.Rhistory
+
+.vscode
+*secrets*

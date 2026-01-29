@@ -4,7 +4,7 @@
 do_recompute <- FALSE 
 
 # Do not run any scripts 
-dry_run      <- FALSE 
+dry_run      <- FALSE
 
 #######################################################
 library(progressr)
@@ -25,7 +25,7 @@ reset_dev <- function() {
 }
 
 main <- function() {
-  pb <- progressr::progressor(steps = 8 + do_recompute, auto_finish = F)
+  pb <- progressr::progressor(steps = 10 + do_recompute, auto_finish = F)
   
   pb("Setting up environment...", amount=0)
   options(full_analysis_running = T)
@@ -63,12 +63,20 @@ main <- function() {
   execute_script("leave_two_out.R", !dry_run)
   pb()
   
-  pb("Creating appendix figures (1/2)...", amount=0)
+  pb("Creating appendix figures (1/4)...", amount=0)
   execute_script("justify_cutoff32.R", !dry_run)
   pb()
   
-  pb("Creating appendix figures (2/2)...", amount=0)
+  pb("Creating appendix figures (2/4)...", amount=0)
   execute_script("ap_curve.R", !dry_run)
+  pb()
+  
+  pb("Creating appendix figures (3/4)...", amount=0)
+  execute_script("confidence_iou_relationship.R", !dry_run)
+  pb()
+  
+  pb("Creating appendix figures (4/4)...", amount=0)
+  execute_script("semantic_f1.R", !dry_run)
   pb()
   
   reset_dev()
@@ -79,4 +87,3 @@ main <- function() {
 }
 
 main()
-

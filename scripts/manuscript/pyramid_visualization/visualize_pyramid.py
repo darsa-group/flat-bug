@@ -247,7 +247,7 @@ if __name__ == "__main__":
         # --- Left panel ---
         # Place its axes so that its right edge is at x=0.5.
         axl = fig.add_axes([0.5 - (left_data_width + 25) * conv_x, bottom, (left_data_width + 25) * conv_x, row_norm_height])
-        axl.imshow(scaled_image.cpu().permute(1, 2, 0).float())
+        axl.imshow(scaled_image.cpu().permute(1, 2, 0).float().flip(0))
         axl.set_xlim(-5, dx + 30)
         axl.set_ylim(-5, dy + 5)
         axl.set_xlabel(f'{dx}px')

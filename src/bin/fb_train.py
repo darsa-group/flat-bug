@@ -46,6 +46,7 @@ def main():
         # "optimizer": 'SGD',
         # "lr0": 0.01,
         # "lrf": 0.005,
+        "name": None,
         "workers": 4,
         "fb_max_instances": 150,
         "fb_max_images": -1,
@@ -62,6 +63,7 @@ def main():
     args_parse.add_argument("-c", "--config-file", dest="config_file",
                             help="A YAML-formatted config file that overrides the default training meta-parameters",
                             default=None)
+
     args_parse.add_argument("-r", "--resume", dest="resume",
                             help="resume training",
                             action='store_true')
@@ -84,7 +86,8 @@ def main():
             pass
 
         cli_overrides[key] = value
-        
+    print(cli_overrides)
+
     option_dict = vars(args)
 
     option_dict["data_dir"] = os.path.abspath(os.path.normpath(option_dict["data_dir"]))

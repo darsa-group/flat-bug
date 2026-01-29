@@ -99,16 +99,16 @@ l2o_delta <- function(cube, control, what, normalize=T) {
 }
 
 # # EDA plots
-# lapply(dimnames(leave_two_out_cube_F1)[[2]], function(x) l2o_delta(leave_two_out_cube_F1, leave_two_out_control_F1, x)) %>% 
-#   abind::abind(along = 0) %>% 
+# lapply(dimnames(leave_two_out_cube_F1)[[2]], function(x) l2o_delta(leave_two_out_cube_F1, leave_two_out_control_F1, x)) %>%
+#   abind::abind(along = 0) %>%
 #   {
 #     dimnames(.)[[1]] <- dimnames(.)[[2]]
 #     .
-#   } %>% 
-#   apply(1, identity, simplify = F) %>% 
-#   {map2(., names(.), function(x, n) plot_matrix(x, limits = c(-1, 1), title = n, text = T))} %>% 
+#   } %>%
+#   apply(1, identity, simplify = F) %>%
+#   {map2(., names(.), function(x, n) plot_matrix(x, limits = c(-1, 1), title = n, text = T))} %>%
 #   patchwork::wrap_plots(guides = "collect", axes = "collect", axis_titles = "collect")
-
+#
 # Normalize (see paper on \delta vs \Delta) and extract relevant row
 # Matrix, M, contains for each row the difference in normalized F1 between case 
 # ij and jj against ii, where i and j correspond to different datasets left out.
@@ -160,8 +160,33 @@ focal_subdatasets_latex <- tibble(
 add_group("Experiment 3 - Subdatasets")
 write_data("Experiment 3 - Subdatasets", focal_subdatasets_latex)
 
-library(tidygraph)
-library(ggraph)
+suppressPackageStartupMessages({
+  library(tidygraph)
+  library(ggraph)
+})
+
+# owr = one-way redundance
+owr_dist <- focal_matrix_F1
+
+l1o_mat_plt <- owr_dist %>% 
+  as.matrix %>% 
+  plot_matrix(text=T) +
+  labs(fill = latex2exp::TeX("One-Way Redundancy ($\\rho^1$)")) +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(vjust = 1),
+    legend.key.width = unit(5, "lines")
+  )
+
+ggsave(
+  "figures/leave_one_out_matrix.pdf",
+  l1o_mat_plt,
+  device = cairo_pdf,
+  width = 4, height = 4,
+  scale = 3,
+  antialias = "subpixel"
+)
+
 
 # twr = two-way redundancy
 twr_dist <- focal_matrix_F1 %>%
@@ -171,8 +196,8 @@ twr_dist <- focal_matrix_F1 %>%
 
 l2o_mat_plt <- twr_dist %>% 
   as.matrix %>% 
-  plot_matrix() +
-  labs(fill = "Two-Way Redundancy") +
+  plot_matrix(text=T) +
+  labs(fill = latex2exp::TeX("Two-Way Redundancy ($\\rho^2$)")) +
   theme(
     legend.position = "bottom",
     legend.title = element_text(vjust = 1),

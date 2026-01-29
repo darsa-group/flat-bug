@@ -1,5 +1,7 @@
-library(furrr)
-library(RCurl)
+suppressPackageStartupMessages({
+  library(furrr)
+  library(RCurl)
+})
 
 if (!dir.exists("data")) dir.create("data")
 

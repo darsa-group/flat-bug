@@ -79,7 +79,7 @@ def main():
         config = DEFAULT_CFG
     min_size = config["MIN_MAX_OBJ_SIZE"][0]
     confidence_threshold = config["SCORE_THRESHOLD"]
-    iou_match_threshold = config["IOU_THRESHOLD"]
+    iou_match_threshold = config["OVERLAP_THRESHOLD"]
 
     if args.coco_predictions:
         pred_coco = load_json(args.predictions)

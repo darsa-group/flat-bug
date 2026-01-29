@@ -1,4 +1,6 @@
-library(furrr)
+suppressPackageStartupMessages({
+  library(furrr)
+})
 
 recompute_stats <- function(file, size_threshold, boot.n=1000) {
   full_data <- data.table::fread(file) %>% 

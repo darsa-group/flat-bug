@@ -53,6 +53,8 @@ backbone_size_results <- compare_sizes_data %>%
   select(!quantile) %>% 
   pivot_wider(id_cols = c(model_size, metric), names_from = qname, values_from = value)
 
+write_csv(backbone_size_results, "data/backbone_size_results.csv")
+
 backbone_results_latex <- backbone_size_results %>% 
   pivot_longer(!c(model_size, metric), names_to = "qtd") %>% 
   mutate(

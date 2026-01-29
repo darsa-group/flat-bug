@@ -32,7 +32,7 @@ PARAMETER_RANGES = {
     "MIN_OBJ_SIZE": (0, 64),
     "MINIMUM_TILE_OVERLAP": (0, 512),
     "EDGE_CASE_MARGIN": (0, 192),
-    "IOU_THRESHOLD": (0.01, 0.9)
+    "OVERLAP_THRESHOLD": (0.01, 0.9)
 }
 
 # Class for scaling and unscaling the parameters - ensures that the parameters visible to the optimizer have equal dynamic ranges [0, 1]

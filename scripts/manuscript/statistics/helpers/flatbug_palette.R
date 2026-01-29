@@ -70,6 +70,9 @@ fb_gen_d <- function(palette = "main", direction = 1, lighten = 0) {
 fb_gen_c <- function(palette = "Brown", direction = 1, ...) {
   pal_name <- match.arg(palette, fb_c_palettes)
   pal <- fb_palettes[[pal_name]]
+  if (direction == -1) {
+    pal <- rev(pal)
+  }
   colorRampPalette(pal, ...)
 }
 

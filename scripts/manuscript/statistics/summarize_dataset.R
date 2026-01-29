@@ -35,24 +35,34 @@ fb_image_split_count <- fb_yolo_clean %>%
   mutate(total = train + val)
 
 # Count instances
-library(furrr)
-plan(multisession, workers=max(1, future::availableCores() - 2))
-fb_instance_split_count <- fb_yolo_clean %>% 
-  filter(type == "labels" & ext == "txt")  %>%
-  mutate(
-    path = str_c(fb_repository, "/fb_yolo/", path)
-  ) %>% 
-  mutate(
-    n = future_map_int(path, function(x) length(read_lines(URLencode(x))), .progress = show_progress(), .options = furrr_options(seed=NULL))
-  ) %>% 
-  summarize(
-    n = sum(n),
-    .by = "split"
-  ) %>% 
-  pivot_wider(names_from = split, values_from = n) %>% 
-  mutate(total = train + val)
-plan(sequential)
-
+if (file.exists("data/fb_instance_split_count.rds")) {
+  tryCatch({
+    fb_instance_split_count <- read_rds("data/fb_instance_split_count.rds")
+  }, error = invisible, finally = invisible)
+}
+if (!exists("fb_instance_split_count")) {
+  suppressPackageStartupMessages({
+    library(furrr)
+  })
+  plan(multisession, workers=max(1, future::availableCores() - 2))
+  fb_instance_split_count <- fb_yolo_clean %>% 
+    filter(type == "labels" & ext == "txt")  %>%
+    mutate(
+      path = str_c(fb_repository, "/fb_yolo/", path)
+    ) %>% 
+    mutate(
+      n = future_map_int(path, function(x) length(read_lines(URLencode(x))), .progress = show_progress(), .options = furrr_options(seed=NULL))
+    ) %>% 
+    summarize(
+      n = sum(n),
+      .by = "split"
+    ) %>% 
+    pivot_wider(names_from = split, values_from = n) %>% 
+    mutate(total = train + val)
+  plan(sequential)
+  write_rds(fb_instance_split_count, "data/fb_instance_split_count.rds")
+}
+  
 dataset_summary_latex <- "\\pgfkeys{
     /dataset/.cd,
     images/.initial={{total_images}},
