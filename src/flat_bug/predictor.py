@@ -1219,7 +1219,7 @@ class TensorPredictions:
             # Check if the metadata path is overwritten and make sure the directory exists and is a directory
             metadata_directory = metadata if isinstance(metadata, str) else prediction_directory
             os.makedirs(metadata_directory, exist_ok=True)
-            assert os.path.isdir(crop_directory), RuntimeError(f"Invalid path for metadata: {metadata_directory}")
+            assert os.path.isdir(metadata_directory), RuntimeError(f"Invalid path for metadata: {metadata_directory}")
             # The metadata path is then constructed as a .json file in the metadata directory with the name metadata_{base_name}_id_{identifier}.<EXT>
             metadata_path = os.path.join(metadata_directory, f'metadata_{basename}_UUID_{identifier}')
             # Serialize the data to the metadata path (we don't do this as a future since it is fast, and then we don't need to copy data)
