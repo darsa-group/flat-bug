@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-r"""
-Inference CLI script for ``flatbug``. 
+r"""Inference CLI script for ``flatbug``.
 
-A comprehensive CLI API for ``flatbug`` inference with support for hyperparameter configuration, flexible input parsing, output format specification, and hardware specification.
+A comprehensive CLI API for ``flatbug`` inference with support for hyperparameter configuration, 
+flexible input parsing, output format specification, and hardware specification.
 
 Usage:
     ``fb_predict -i INPUT_PATH_OR_DIRECTORY -o OUTPUT_DIRECTORY [OPTIONS]``
@@ -16,7 +16,8 @@ Options:
     -w MODEL_WEIGHTS, --model-weights MODEL_WEIGHTS
                         The .pt file
     -p INPUT_PATTERN, --input-pattern INPUT_PATTERN
-                        The pattern to match the images. Default is '[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$' i.e. jpg/jpeg/png case-insensitive.
+                        The pattern to match the images. 
+                        Default is '[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$' i.e. jpg/jpeg/png case-insensitive.
     -n MAX_IMAGES, --max-images MAX_IMAGES
                         Maximum number of images to process. Default is None. Truncates in alphabetical order.
     -R, --recursive       Process images nested within subdirectories of the input.
@@ -44,7 +45,6 @@ import glob
 import os
 import re
 import uuid
-from typing import Optional
 
 import torch
 from tqdm import tqdm
@@ -54,6 +54,9 @@ from flat_bug.coco_utils import fb_to_coco
 from flat_bug.config import DEFAULT_CFG, read_cfg
 from flat_bug.predictor import Predictor
 from flat_bug.predictor import _executor as prediction_executor
+
+# TODO: fixme
+# ruff: disable[D103]
 
 
 def cli_args():
@@ -65,35 +68,87 @@ def cli_args():
         formatter_class=argparse.RawTextHelpFormatter
     )
 
-    args_parse.add_argument("-i", "--input", type=str, dest="input", required=True,
-                            help="A image file or a directory of image files")
-    args_parse.add_argument("-o", "--output", type=str, dest="output_dir", required=True,
-                        help="The result directory")
-    args_parse.add_argument("-w", "--model-weights", type=str, dest="model_weights", default="flat_bug_M.pt",
-                            help="The .pt file")
-    args_parse.add_argument("-p", "--input-pattern", type=str, dest="input_pattern", default=r"[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$",
-                            help=r"The pattern to match the images. Default is '[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$' i.e. jpg/jpeg/png case-insensitive.")
-    args_parse.add_argument("-n", "--max-images", type=int, dest="max_images", default=None,
-                            help="Maximum number of images to process. Default is None. Truncates in alphabetical order.")
-    args_parse.add_argument("-R", "--recursive", action="store_true", 
-                            help="Process images nested within subdirectories of the input.")
-    args_parse.add_argument("-s", "--scale-before", type=float, dest="scale_before", default=1.0,
-                            help="Downscale the image before detection, but crops from the original image.")
-    args_parse.add_argument("--single-scale", action="store_true", help="Use single scale.")
-    args_parse.add_argument("-M", "--nms_metric", type=str, default=None, help="Overlap metric to use for NMS, if specified this will override the config. Default is 'IoU', currently only 'IoS' is also available.")
-    args_parse.add_argument("-g", "--device", "--gpu", type=str, default="auto", help="Which device to use for inference.")
-    args_parse.add_argument("-d", "--dtype", type=str, default=None, help="Which dtype to use for inference. Default is 'float16' for CUDA and 'float32' for CPU.")
-    args_parse.add_argument("-f", "--fast", action="store_true", help="Use fast mode.")
-    args_parse.add_argument("--config", type=str, default=None, help="The config file.")
-    args_parse.add_argument("--id", type=str, default=None, required=False, help="Identifier (ID) for prediction run.")
-    args_parse.add_argument("--no-crops", action="store_true", help="Do not save the crops.")
-    args_parse.add_argument("--no-overviews", action="store_true", help="Do not save the overviews.")
-    args_parse.add_argument("--no-metadata", action="store_true", help="Do not save the metadata.")
-    args_parse.add_argument("--only-overviews", action="store_true", help="Only save the overviews.")
-    args_parse.add_argument("--long-format", action="store_true", help="Use long format for storing results.")
-    args_parse.add_argument("-S", "--no-save", action="store_true", help="Do not save the results.")
-    args_parse.add_argument("-C", "--no-compiled-coco", action="store_true", help="Skip the production of a compiled COCO file (for all images).")
-    args_parse.add_argument("-v", "--verbose", action="store_true", help="Verbose mode.")
+    args_parse.add_argument(
+        "-i", "--input", type=str, dest="input", required=True,
+        help="A image file or a directory of image files"
+    )
+    args_parse.add_argument(
+        "-o", "--output", type=str, dest="output_dir", required=True,
+        help="The result directory"
+    )
+    args_parse.add_argument(
+        "-w", "--model-weights", type=str, dest="model_weights", default="flat_bug_M.pt",
+        help="The .pt file"
+    )
+    args_parse.add_argument(
+        "-p", "--input-pattern", type=str, dest="input_pattern", default=r"[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$",
+        help=(
+            "The pattern to match the images. "
+            r"Default is '[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$' i.e. jpg/jpeg/png case-insensitive."
+    ))
+    args_parse.add_argument(
+        "-n", "--max-images", type=int, dest="max_images", default=None,
+        help="Maximum number of images to process. Default is None. Truncates in alphabetical order."
+    )
+    args_parse.add_argument(
+        "-R", "--recursive", action="store_true", 
+        help="Process images nested within subdirectories of the input."
+    )
+    args_parse.add_argument(
+        "-s", "--scale-before", type=float, dest="scale_before", default=1.0,
+        help="Downscale the image before detection, but crops from the original image."
+    )
+    args_parse.add_argument(
+        "--single-scale", action="store_true", help="Use single scale."
+    )
+    args_parse.add_argument(
+        "-M", "--nms_metric", type=str, default=None,
+        help=(
+            "Overlap metric to use for NMS, if specified this will override the config. "
+            "Default is 'IoU', currently only 'IoS' is also available."
+    ))
+    args_parse.add_argument(
+        "-g", "--device", "--gpu", type=str, default="auto", 
+        help="Which device to use for inference."
+    )
+    args_parse.add_argument(
+        "-d", "--dtype", type=str, default=None,
+        help="Which dtype to use for inference. Default is 'float16' for CUDA and 'float32' for CPU."
+    )
+    args_parse.add_argument(
+        "-f", "--fast", action="store_true", help="Use fast mode."
+    )
+    args_parse.add_argument(
+        "--config", type=str, default=None, help="The config file."
+    )
+    args_parse.add_argument(
+        "--id", type=str, default=None, required=False, help="Identifier (ID) for prediction run."
+    )
+    args_parse.add_argument(
+        "--no-crops", action="store_true", help="Do not save the crops."
+    )
+    args_parse.add_argument(
+        "--no-overviews", action="store_true", help="Do not save the overviews."
+    )
+    args_parse.add_argument(
+        "--no-metadata", action="store_true", help="Do not save the metadata."
+    )
+    args_parse.add_argument(
+        "--only-overviews", action="store_true", help="Only save the overviews."
+    )
+    args_parse.add_argument(
+        "--long-format", action="store_true", help="Use long format for storing results."
+    )
+    args_parse.add_argument(
+        "-S", "--no-save", action="store_true", help="Do not save the results."
+    )
+    args_parse.add_argument(
+        "-C", "--no-compiled-coco", action="store_true",
+        help="Skip the production of a compiled COCO file (for all images)."
+    )
+    args_parse.add_argument(
+        "-v", "--verbose", action="store_true", help="Verbose mode."
+    )
     
     args = args_parse.parse_args()
     return vars(args)
@@ -103,7 +158,7 @@ def predict(
         output_dir : str,
         model_weights : str,
         input_pattern : str=r"[^/]*\.([jJ][pP][eE]{0,1}[gG]|[pP][nN][gG])$",
-        max_images : Optional[int]=None,
+        max_images : int | None=None,
         recursive : bool=False,
         scale_before : float=1.0,
         single_scale : bool=False,
@@ -111,8 +166,8 @@ def predict(
         device : str="auto",
         dtype : str=None,
         fast : bool=False,
-        config : Optional[str]=None,
-        id : Optional[str]=None,
+        config : str | None=None,
+        id : str | None=None,
         no_crops : bool=False,
         no_overviews : bool=False,
         no_metadata : bool=False,
@@ -201,7 +256,11 @@ def predict(
         overviews = False
     elif only_overviews:
         if long_format:
-            raise ValueError("Cannot set both --only-overviews and --long-format. --only-overviews already saves in long format (although not the same file structure as --long-format).")
+            raise ValueError(
+                "Cannot set both --only-overviews and --long-format. "
+                "--only-overviews already saves in long format "
+                "(although not the same file structure as --long-format)."
+            )
         overviews = output_dir
         crops = False
         metadata = False
@@ -236,22 +295,40 @@ def predict(
         # Check for local file index
         local_file_index = os.path.join(os.getcwd(), output_dir, f"{input.replace(os.sep, '_')}_file_index.txt")
         if os.path.isfile(local_file_index):
-            with open(local_file_index, "r") as file:
+            with open(local_file_index) as file:
                 file_index = [line.strip() for line in file.readlines()]
             io.cache["file_index"] = file_index
 
         file_iter = RemotePathIterator(
             io_handler = io,
             # These are basically network-performance parameters
-            batch_size = 64, # How many files to download at once (larger is faster, but more memory intensive)
-            batch_parallel = 10, # How many files are downloaded in parallel in during each batch (10 seems to be optimal for my connection, this is probably dependent on the amount of cores on the server)
-            max_queued_batches = 3, # This relates to how much pre-fetching is done, i.e. how many batches are queued before the download is paused. This can be as large as you want, the larger the less stuttering you will have, but requires more local *disk* (NOT RAM) space
-            n_local_files = 100 * 3 * 2, # This is parameter basically does the same as the one above, but it really needs to larger than batch_size * max_queued_batches, otherwise files will be deleted before they are used (This *will* result in an error). This parameter should probably be removed from the `pyRemoteData` package...
-            clear_local = False, # Are local files temporary? I.e. should they be deleted after use? TODO: This should also cause the previous argument to be ignored, and **never** delete files before internally
+            # How many files to download at once (larger is faster, but more memory intensive)
+            batch_size = 64,
+            # How many files are downloaded in parallel in during each batch (10 seems to be optimal for my connection, 
+            # this is probably dependent on the amount of cores on the server)
+            batch_parallel = 10,
+            # This relates to how much pre-fetching is done, i.e. how many batches are queued before the download is paused.
+            # This can be as large as you want, the larger the less stuttering you will have, but requires more local *disk* (NOT RAM) space
+            max_queued_batches = 3,
+            # This is parameter basically does the same as the one above, 
+            # but it really needs to larger than batch_size * max_queued_batches, 
+            # otherwise files will be deleted before they are used (This *will* result in an error). 
+            # This parameter should probably be removed from the `pyRemoteData` package...
+            n_local_files = 100 * 3 * 2,
+            # Are local files temporary? I.e. should they be deleted after use?
+            # TODO: This should also cause the previous argument to be ignored, and **never** delete files before internally
+            clear_local = False,
             # These parameters are all related to file-indexing and filtering on the remote server
-            override = False, # Should the file-index be re-generated? (has to be False if store is False - otherwise an error will be thrown)
-            store = False, # This is important if we do not want to add files to the remote server (i.e. we only want to read them), if this is True, then the function will "cache" the file list in the directory in a file in the remote directory called "file_index.txt"
-            pattern = input_pattern # r"^[^\/\.]+(\.jpg$|\.png$|\.jpeg$|\.JPG$|\.PNG$|\.JPEG)$", # TODO: Currently as a hack, we skip files in subdirectories i.e. files with a '/' in their name, this is not ideal, as they are still read from the remote server
+            # Should the file-index be re-generated? (has to be False if store is False - otherwise an error will be thrown)
+            override = False,
+            # This is important if we do not want to add files to the remote server (i.e. we only want to read them), 
+            # if this is True, then the function will "cache" the file list in 
+            # the directory in a file in the remote directory called ".file_index.txt"
+            store = False,
+            # r"^[^\/\.]+(\.jpg$|\.png$|\.jpeg$|\.JPG$|\.PNG$|\.JPEG)$",
+            # # TODO: Currently as a hack, we skip files in subdirectories 
+            # i.e. files with a '/' in their name, this is not ideal, as they are still read from the remote server
+            pattern = input_pattern
         )
     elif isVideo:
         import tempfile

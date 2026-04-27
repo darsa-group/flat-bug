@@ -2,7 +2,6 @@ import glob
 import json
 import math
 import os
-from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -32,7 +31,7 @@ OUR_MOSAIC = os.path.join(THIS_DIR, "mosaic")
 
 ## HELPERS
 
-def match_examples(files : List[str], *filters):
+def match_examples(files : list[str], *filters):
     matches = []
     for this_filters in zip(*filters):
         for file in files:
@@ -40,7 +39,7 @@ def match_examples(files : List[str], *filters):
                 matches.append(file)
     return matches
 
-def annotations_to_tensor_predictions(annotations : List[np.ndarray], offset : Tuple[int, int], image : torch.tensor, path : str) -> TensorPredictions:
+def annotations_to_tensor_predictions(annotations : list[np.ndarray], offset : tuple[int, int], image : torch.tensor, path : str) -> TensorPredictions:
     c, h, w = image.shape
     if h != w:
         raise NotImplementedError("Plotting annotations is only implemented for square images. TODO: implement this.")
@@ -85,7 +84,7 @@ def annotations_to_tensor_predictions(annotations : List[np.ndarray], offset : T
     tensor_predictions.image = image
     return tensor_predictions
 
-def create_mosaic(ims : List[np.ndarray], spacing : int = 100, labels : Optional[List[str]]=None):
+def create_mosaic(ims : list[np.ndarray], spacing : int = 100, labels : list[str] | None=None):
     n = len(ims)
     h, w, _ = ims[0].shape
 
@@ -140,7 +139,7 @@ if __name__ == "__main__":
     model = Predictor("flat_bug_L.pt", device=device, dtype=torch.float16)
 
     example_df = pd.read_csv(os.path.join(THIS_DIR, "clean_flatbug_datasets.csv"))
-    with open(ANNOTATION_COCO, "r") as f:
+    with open(ANNOTATION_COCO) as f:
         annotations = split_annotations(json.load(f))
 
     example_df["raw_file_path"] = match_examples(

@@ -1,7 +1,3 @@
-[build-system]
-requires = ["setuptools>=68.2.2"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "flat-bug"
 version = "1.0.0"
@@ -14,6 +10,10 @@ readme = "README.md"
 requires-python = ">=3.11"
 classifiers = [
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
 ]
 dependencies = [
@@ -35,9 +35,8 @@ cloud_datasets = [
     "cvat_sdk>=2.47"
 ]
 jupyter = [
-    "jupyter>=1.0.0"
+    "jupyter>=1.0.0",
 ]
-
 
 [project.urls]
 "Homepage" = "https://github.com/darsa-group/flat-bug"
@@ -50,3 +49,29 @@ fb_evaluate = "bin.fb_eval:main"
 fb_tune = "bin.fb_tune:main"
 fb_prepare_data = "bin.fb_prepare_data:main"
 fb_clone_data = "bin.fb_clone_data:main"
+
+[dependency-groups]
+dev = [
+    "flat-bug[notebook,erda,cloud_datasets]",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 140
+extend-exclude = [
+    "utils",
+    "scripts",
+    "src/bin/fb_tune.py",
+    "examples",
+    "docs"
+]
+
+
+[tool.ruff.lint]
+# E: pycodestyle, F: Pyflakes, UP: pyupgrade, I: isort (sorts imports cleanly)
+select = ["E", "F", "UP", "I", "D"]
+ignore = ["D105"]
+
+[build-system]
+requires = ["uv_build>=0.10.7,<0.11.0"]
+build-backend = "uv_build"

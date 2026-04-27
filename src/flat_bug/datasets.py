@@ -1,9 +1,10 @@
+"""Modified YOLO dataset used for training flatbug."""
 import os
 import re
 import stat
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Self, Tuple, Union
+from typing import cast
 
 import cv2
 import numpy as np
@@ -13,64 +14,63 @@ from ultralytics.data.augment import Compose, Format, RandomFlip, RandomHSV
 from ultralytics.data.dataset import LOGGER
 from ultralytics.utils import IterableSimpleNamespace
 
-from flat_bug.augmentations import (CenterCrop, FixInstances,
-                                    FlatBugRandomPerspective, RandomColorInv,
-                                    RandomCrop)
+from flat_bug.augmentations import CenterCrop, FixInstances, FlatBugRandomPerspective, RandomColorInv, RandomCrop
 
 HELP_URL = 'See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
 IMG_FORMATS = 'bmp', 'dng', 'jpeg', 'jpg', 'mpo', 'png', 'tif', 'tiff', 'webp', 'pfm'  # include image suffixes
 
-def get_area(image_path):
+def get_area(image_path):  # noqa: D103
     with Image.open(image_path) as image:
         return image.size[0] * image.size[1]
 
-def calculate_image_weights(image_paths : List[str]) -> List[float]:
-    """
-    Calculate normalized weights for each image based on the file sizes,
-    normalized by the minimum file size, so that the values are between 1 and infinity.
+def calculate_image_weights(image_paths : list[str]) -> list[float]:
+    """Calculate normalized weights for each image based on the file sizes.
+
+    Normalized by the minimum file size, so that the values are between 1 and infinity.
     
     Args:
-        image_paths (`List[str]`): List of image file paths.
+        image_paths: List of image file paths.
     
     Returns:
-        out (`List[float]`): normalized weights for each image.
+        normalized weights for each image.
+
     """
     file_sizes = [get_area(path) + 1 for path in image_paths]
     min_size = min(file_sizes)
     return [(size / min_size) for size in file_sizes]
 
 def reweight(
-        weights : List[float], 
-        target_sum : Union[float, int]
-    ) -> List[float]:
-    """
-    Reweights the provided list of weights so that their sum equals the target sum.
+        weights : list[float], 
+        target_sum : float | int
+    ) -> list[float]:
+    """Reweights the provided list of weights so that their sum equals the target sum.
     
     Args:
-        weights (`List[float]`): List of weights to reweight.
-        target_sum (`Union[float, int]`): Desired sum of the weights.
+        weights: List of weights to reweight.
+        target_sum: Desired sum of the weights.
     
     Returns:
-        out (`List[float]`): Reweighted weights.
+        Reweighted weights.
+
     """
     sum_weights = sum(weights)
     return [max(round(w * target_sum / sum_weights), 1) for w in weights]
 
 def generate_indices(
-        weights : List[float], 
-        target_size : Optional[int]=None
-    ) -> List[int]:
-    """
-    Deterministically generates a list of indices based on the provided weights to oversample the items.
+        weights : list[float], 
+        target_size : int | None=None
+    ) -> list[int]:
+    """Deterministically generates a list of indices based on the provided weights to oversample the items.
     
     Args:
-        weights (`List[float]`): List of weights for each item.
-        target_size (`Optional[int]`, optional): Desired size of the output list. If None, the size of the output is approximately the sum of the weights.
+        weights: List of weights for each item.
+        target_size: Desired size of the output list. If None, the size of the output is approximately the sum of the weights.
 
     Returns:
-        out (`List[int]`): List of indices to oversample the items.
+        List of indices to oversample the items.
+
     """
-    n = len(weights)
+    # n = len(weights)
     weights = [max(round(w), 1) for w in weights]
     indices = []
 
@@ -85,8 +85,8 @@ def generate_indices(
 
     return indices
 
-def get_datasets(files : List[str]) -> Dict[str, List[str]]:
-    file_dataset = [re.match(r"[^_]+", os.path.basename(f)).group(0) for f in files]
+def get_datasets(files : list[str]) -> dict[str, list[str]]:  # noqa: D103
+    file_dataset = [mtch.group(0) for f in files if (mtch := re.match(r"[^_]+", os.path.basename(f)))]
     datasets = list(set(file_dataset))
     datasets = {d : [] for d in datasets}
     for file, fd in zip(files, file_dataset):
@@ -95,22 +95,28 @@ def get_datasets(files : List[str]) -> Dict[str, List[str]]:
 
 def subset(
         self : "FlatBugYOLODataset", 
-        n : Optional[int]=None, 
-        pattern : Optional[str]=None
+        n : int | None=None, 
+        pattern : str | None=None
     ):
-    """
-    Subsets the dataset to the first 'n' elements that match the pattern.
+    """Subsets the dataset to the first 'n' elements that match the pattern.
 
     Args:
-        n (`Optional[int]`, optional): The number of elements to keep. Defaults to None; keep all.
-        pattern (`Optional[str]`, optional): A regex pattern to match the filenames. Defaults to None; match all.
+        self: A `FlatBugYOLODataset` instance.
+        n: The number of elements to keep. Defaults to None; keep all.
+        pattern: A regex pattern to match the filenames. Defaults to None; match all.
+
     """
     if pattern is None and (n is None or n == -1):
         return self
-    # Compile the regex pattern
-    pattern = re.compile(pattern) if pattern else None
-    # Create a match function that returns Truthy if the filename matches the pattern or the pattern is None
-    match_fn = (lambda x: pattern.search(os.path.basename(x))) if pattern else (lambda x: True)
+    if pattern is not None:
+        cp = re.compile(pattern)
+        def _match_pattern(x):
+            return bool(cp.search(os.path.basename(x)))
+        match_fn = _match_pattern
+    else:
+        def _match_all(_):
+            return True
+        match_fn = _match_all
     # Get the indices of the elements that match the pattern
     indices = [i for i, f in enumerate(self.im_files) if match_fn(f)]
     # If n is not None, keep only the first n elements
@@ -119,9 +125,9 @@ def subset(
     # Subset the images
     self.im_files = [f for i, f in enumerate(self.im_files) if i in indices]
 
-def hook_get_labels_with_subset(
+def hook_get_labels_with_subset(  # noqa: D103
         obj : "FlatBugYOLODataset", 
-        args : Dict
+        args : dict
     ):
     if not isinstance(args, dict):
         raise ValueError("args must be a dictionary")
@@ -133,33 +139,38 @@ def hook_get_labels_with_subset(
         return obj.get_labels()
     obj.get_labels = subset_then_get
 
-class PrintNumInstances:
-    def __init__(self, title : str):
+class PrintNumInstances:  # noqa: D101
+    def __init__(self, title : str):  # noqa: D107
         self.fmt = f'({"{num:>5}"}) ({"{imsize:^10}"}) | {title}'
 
-    def __call__(self, labels : Dict):
+    def __call__(self, labels : dict):  # noqa: D102
         n = len(labels["instances"]) if "instances" in labels else labels["masks"].max().item()
         print(self.fmt.format(num=n, imsize="x".join([str(d) for d in labels["img"].shape])))
         return labels
 
-def train_augmentation_pipeline(
+def train_augmentation_pipeline(  # noqa: D103
         hyperparameters : IterableSimpleNamespace, 
         image_size : int, 
-        max_instances : Optional[int], 
+        max_instances : int | float | None, 
         min_size : int, 
         use_segments : bool, 
         use_keypoints : bool
     ) -> Compose:
     return Compose([
-        RandomCrop(imsize=int(image_size * 1.5)), # Crop to slightly larger than needed for training
-        FlatBugRandomPerspective(imgsz=int(image_size * 1.5), degrees=180, translate=0, scale=0), # Affine transformation at same size as above
-        CenterCrop(image_size), # Crop to needed size
+        # Crop to slightly larger than needed for training
+        RandomCrop(imsize=int(image_size * 1.5)),
+        # Affine transformation at same size as above
+        FlatBugRandomPerspective(imgsz=int(image_size * 1.5), degrees=180, translate=0, scale=0),
+        # Crop to needed size
+        CenterCrop(image_size),
         RandomHSV(hgain=hyperparameters.hsv_h, sgain=hyperparameters.hsv_s, vgain=hyperparameters.hsv_v),
         RandomColorInv(p=0.25),
         RandomFlip(direction="vertical", p=hyperparameters.flipud),
         RandomFlip(direction="horizontal", p=hyperparameters.fliplr),
-        FixInstances(area_thr=0.975, max_targets=max_instances, min_size=min_size), # Remove instances outside crop
-        Format( # YOLO-native preprocessing
+         # Remove instances outside crop
+        FixInstances(area_thr=0.975, max_targets=max_instances, min_size=min_size),
+        # YOLO-native preprocessing
+        Format(
             bbox_format="xywh",
             normalize=True,
             return_mask=use_segments,
@@ -170,7 +181,7 @@ def train_augmentation_pipeline(
         ),
     ])
 
-def validation_augmentation_pipeline(
+def validation_augmentation_pipeline(  # noqa: D103
         image_size : int, 
         min_size : int, 
         use_segments : bool, 
@@ -191,15 +202,19 @@ def validation_augmentation_pipeline(
         )
     ])
 
-class FlatBugYOLODataset(YOLODataset):
-    _min_size : int=32 # What is the minimum size of an instance to be considered (width or height in pixels after augmentations)
-    _oversample_factor : int=2 # How much do we allow the dataset to grow when oversampling - this is done to ensure larger images are not underrepresented
+class FlatBugYOLODataset(YOLODataset):  # noqa: D101
+    
+    # What is the minimum size of an instance to be considered (width or height in pixels after augmentations)
+    _min_size : int=32
 
-    def __init__(
-            self : Self, 
-            max_instances : Optional[int], 
+    # How much do we allow the dataset to grow when oversampling - this is done to ensure larger images are not underrepresented
+    _oversample_factor : int=2
+
+    def __init__(  # noqa: D107
+            self, 
+            max_instances : int | float | None, 
             classes : None=None, 
-            subset_args : Optional[Dict]=None, 
+            subset_args : dict | None=None, 
             *args, 
             **kwargs
         ):
@@ -208,10 +223,13 @@ class FlatBugYOLODataset(YOLODataset):
         if subset_args is not None:
             hook_get_labels_with_subset(self, subset_args)
         if "data" in kwargs:
-            if not "channels" in kwargs["data"]:
+            if "channels" not in kwargs["data"]:
                 kwargs["data"]["channels"] = 3
         super().__init__(classes=classes, *args, **kwargs)
-        self.sample_weights = [image_weight * len(label_i["cls"]) for label_i, image_weight in zip(self.labels, calculate_image_weights(self.im_files))]
+        self.sample_weights = [
+            image_weight * len(label_i["cls"])
+            for label_i, image_weight in zip(self.labels, calculate_image_weights(self.im_files))
+        ]
         self.__indices = generate_indices(self.sample_weights, target_size=len(self.im_files) * self._oversample_factor)
 
     def _debug_write_loaded_images(self, out, index):
@@ -223,18 +241,29 @@ class FlatBugYOLODataset(YOLODataset):
         for k in range(bbs.shape[0]):
             x, y, w, h = bbs[k, :]
             n = cv2.rectangle(n, (x - w // 2, y - w // 2), (x + w // 2, y + h // 2), 255, 3)
-        cv2.imwrite("/tmp/test/%i-img.jpg" % index, n + m / 3)
+        cv2.imwrite(f"/tmp/test/{index}-img.jpg", n + m / 3)
 
     def load_image(
-            self : Self, 
-            i : Union[int, slice]
-        ) -> Tuple[np.ndarray, Tuple[int, int], Tuple[int, int]]:
+            self, 
+            i : int | slice
+        ) -> tuple[np.ndarray, tuple[int, int], tuple[int, int]]:
+        """Load an image.
+
+        Args:
+            i: Image index.
+        
+        Returns:
+            im, hw_original, hw_resized
+
+        """
         # Loads 1 image from dataset index 'i', returns (im, resized hw)
         im, f, fn = self.ims[i], self.im_files[i], self.npy_files[i]
+        f = cast(Path, f)
+        fn = cast(Path, fn)
 
         if im is None:  # not cached in RAM
             if fn.exists():  # load npy
-                im = np.load(fn)
+                im = cast(np.ndarray, np.load(fn))
 
             else:  # read image
                 im = cv2.imread(f)  # BGR
@@ -243,12 +272,11 @@ class FlatBugYOLODataset(YOLODataset):
 
             h0, w0 = im.shape[:2]  # orig hw
 
-            return im, (h0, w0), im.shape[:2]  # im, hw_original, hw_resized
-        # print("cached", f, self.im_hw0[i], self.im_hw[i])
-        return self.ims[i], self.im_hw0[i], self.im_hw[i]  # im, hw_original, hw_resized
+            return im, (h0, w0), im.shape[:2]  # type: ignore
+        return self.ims[i], self.im_hw0[i], self.im_hw[i] # type: ignore
 
-    def build_transforms(
-            self : Self, 
+    def build_transforms(  # noqa: D102
+            self, 
             hyp : IterableSimpleNamespace
         ) -> Compose:
         return train_augmentation_pipeline(
@@ -261,15 +289,14 @@ class FlatBugYOLODataset(YOLODataset):
         )
 
     def cache_labels(
-            self : Self, 
+            self, 
             path : Path=Path("./labels.cache")
         ):
-        """
-        OBS: DO NOT USE THIS FUNCTION MANUALLY.
-        """
+        """OBS: DO NOT USE THIS FUNCTION MANUALLY."""
         LOGGER.warning("!! OBS !! ==>>== Flat-bug doesn't use the .cache-file! ==<<== !! OBS !!")
 
-        # To bypass the creation of .cache files we use a temporary dummy file, which is set to read-only, causing a check in ultralytics to bail on creating the file
+        # To bypass the creation of .cache files we use a temporary dummy file, which is set to read-only, 
+        # causing a check in ultralytics to bail on creating the file
         tmp_file = tempfile.NamedTemporaryFile(delete=False)
         # The path passed to the superclass `cache_labels` method must be a pathlib.Path object
         unwriteable_tmp_path = Path(tmp_file.name)
@@ -277,7 +304,8 @@ class FlatBugYOLODataset(YOLODataset):
         # Change the file to read-only
         os.chmod(str(unwriteable_tmp_path), stat.S_IREAD)
 
-        # Before calling the superclass `cache_labels` method, we need to create a dummy `<unwriteable_tmp_path>.cache.npy` file
+        # Before calling the superclass `cache_labels` method, 
+        # we need to create a dummy `<unwriteable_tmp_path>.cache.npy` file
         temporary_dummy_numpy_cache_file = unwriteable_tmp_path.with_suffix(".cache.npy")
         np.save(temporary_dummy_numpy_cache_file, np.array([0]))
         
@@ -300,11 +328,11 @@ class FlatBugYOLODataset(YOLODataset):
     def __getitem__(self, index):
         return self.transforms(self.get_image_and_label(self.__indices[index]))
 
-class FlatBugYOLOValidationDataset(FlatBugYOLODataset):
+class FlatBugYOLOValidationDataset(FlatBugYOLODataset):  # noqa: D101
     _resample_n : int= 5
 
-    def build_transforms(
-            self : Self, 
+    def build_transforms(  # noqa: D102
+            self, 
             hyp : IterableSimpleNamespace
         ) -> Compose:
         return validation_augmentation_pipeline(

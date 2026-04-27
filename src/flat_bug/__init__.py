@@ -1,23 +1,23 @@
+# noqa: D104
 import logging
-import urllib.error
+import os
 import urllib.parse
 import urllib.request
-from typing import Optional
-import os
 
-from tqdm import tqdm
+from tqdm.auto import tqdm
 
 REMOTE_REPOSITORY = "https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/"
 # GUI access: https://anon.erda.au.dk/cgi-sid/ls.py?share_id=Bb0CR1FHG6
 
 # Thanks to: https://stackoverflow.com/a/53877507/19104786
-class DownloadProgressBar(tqdm):
-    def update_to(self, b : int=1, bsize : int=1, tsize : Optional[int]=None):
+class DownloadProgressBar(tqdm):  # noqa: D101
+    def update_to(self, b : int=1, bsize : int=1, tsize : int | None=None):  # noqa: D102
         if tsize is not None:
             self.total = tsize
         self.update(b * bsize - self.n)
 
-def download_from_repository(url : str, output_path : Optional[str]=None, strict : bool=True, progress : bool=True):
+def download_from_repository(url : str, output_path : str | None=None, strict : bool=True, progress : bool=True):
+    """Download a file from the flatbug "repository."""
     if output_path is None:
         output_path = url
     url = urllib.parse.quote(urllib.parse.urljoin(REMOTE_REPOSITORY, url), safe="/:")
@@ -52,6 +52,6 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-def set_log_level(level):
+def set_log_level(level):  # noqa: D103
     logger.setLevel(level)
     logger.info(f'Log level set to {level}')

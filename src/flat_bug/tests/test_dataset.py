@@ -1,12 +1,11 @@
+"""Tests for the custom flatbug datasets used for training."""
+import glob
 import os
 import tempfile
-import glob
 import unittest
-
 from copy import deepcopy
 
 import numpy as np
-
 from ultralytics.data import build_dataloader
 from ultralytics.data.utils import verify_image_label
 from ultralytics.utils import DEFAULT_CFG, IterableSimpleNamespace
@@ -15,7 +14,6 @@ from ultralytics.utils.ops import resample_segments
 from ultralytics.utils.plotting import plot_images
 
 from flat_bug.datasets import FlatBugYOLODataset, FlatBugYOLOValidationDataset
-
 from flat_bug.tests.remote_lfs_fallback import check_file_with_remote_fallback
 
 TEST_DIR = os.path.dirname(__file__)
@@ -42,11 +40,11 @@ RANK = -1
 TEST_CFG = deepcopy(DEFAULT_CFG)
 setattr(TEST_CFG, "task", "segment")
 
-def mock_verify_image_label(image_path : str, label_path : str) -> dict:
+def mock_verify_image_label(image_path : str, label_path : str) -> dict:  # noqa: D103
     try:
         args = (image_path, label_path, "unit_test", False, 1, 0, 0)
         im_file, lb, shape, segments, keypoint, nm_f, nf_f, ne_f, nc_f, msg = verify_image_label(args)
-    except ValueError as e:
+    except ValueError:
         args = (image_path, label_path, "unit_test", False, 1, 0, 0, True)
         im_file, lb, shape, segments, keypoint, nm_f, nf_f, ne_f, nc_f, msg = verify_image_label(args)
     label = {
@@ -59,10 +57,16 @@ def mock_verify_image_label(image_path : str, label_path : str) -> dict:
         "normalized": True,
         "bbox_format": "xywh",
     }
-    label["instances"] = Instances(np.array(label["bboxes"]), np.array(resample_segments(label["segments"])), label["keypoints"], bbox_format=label["bbox_format"], normalized=label["normalized"])
+    label["instances"] = Instances(
+        np.array(label["bboxes"]),
+        np.array(resample_segments(label["segments"])),
+        label["keypoints"],
+        bbox_format=label["bbox_format"],
+        normalized=label["normalized"]
+    )
     return label
 
-def create_train_dataset(args : IterableSimpleNamespace) -> FlatBugYOLODataset:
+def create_train_dataset(args : IterableSimpleNamespace) -> FlatBugYOLODataset:  # noqa: D103
     return FlatBugYOLODataset(
         data=ASSET_DATA,
         img_path=ASSET_DIR,
@@ -79,7 +83,7 @@ def create_train_dataset(args : IterableSimpleNamespace) -> FlatBugYOLODataset:
         subset_args={"n" : 1, "pattern" : ASSET_NAME}
     )
 
-def create_validation_dataset(args : IterableSimpleNamespace) -> FlatBugYOLOValidationDataset:
+def create_validation_dataset(args : IterableSimpleNamespace) -> FlatBugYOLOValidationDataset:  # noqa: D103
     return FlatBugYOLOValidationDataset(
         data=ASSET_DATA,
         img_path=ASSET_DIR,
@@ -96,7 +100,7 @@ def create_validation_dataset(args : IterableSimpleNamespace) -> FlatBugYOLOVali
         subset_args={"n" : 1, "pattern" : ASSET_NAME}
     )
 
-def test_plot_batch(batch, ni):
+def test_plot_batch(batch, ni):  # noqa: D103
     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as f:
         plot_images(
             batch["img"],
@@ -109,8 +113,8 @@ def test_plot_batch(batch, ni):
             on_plot=os.remove,
         )
 
-class TestDataset(unittest.TestCase):
-    def test_train_dataset(self):
+class TestDataset(unittest.TestCase):  # noqa: D101
+    def test_train_dataset(self):  # noqa: D102
         args = IterableSimpleNamespace(**TEST_CFG) if not isinstance(TEST_CFG, IterableSimpleNamespace) else TEST_CFG
         dataset = create_train_dataset(args)
         dataloader = build_dataloader(dataset, BATCH_SIZE, N_WORKERS, True, RANK)
@@ -124,7 +128,7 @@ class TestDataset(unittest.TestCase):
         except Exception as e:
             self.fail(f"Failed to plot training batch: {e}")
 
-    def test_validation_dataset(self):
+    def test_validation_dataset(self):  # noqa: D102
         args = IterableSimpleNamespace(**TEST_CFG) if not isinstance(TEST_CFG, IterableSimpleNamespace) else TEST_CFG
         dataset = create_validation_dataset(args)
         dataloader = build_dataloader(dataset, BATCH_SIZE, N_WORKERS, True, RANK)
@@ -138,7 +142,7 @@ class TestDataset(unittest.TestCase):
         except Exception as e:
             self.fail(f"Failed to plot validation batch: {e}")
 
-    def test_verify_image_label(self):
+    def test_verify_image_label(self):  # noqa: D102
         label = mock_verify_image_label(IMAGE_ASSET, LABEL_ASSET)
         self.assertIsInstance(label, dict)
         self.assertIn("im_file", label)
@@ -152,7 +156,7 @@ class TestDataset(unittest.TestCase):
         self.assertIn("instances", label)
 
     @classmethod
-    def tearDownClass(cls):
+    def tearDownClass(cls):  # noqa: D102
         # Clean caches i.e. files ending with .cache or .cache.lock in the directory of this script
         cache_files = glob.glob(os.path.join(TEST_DIR, "*.cache*"))
         for cache_file in cache_files:

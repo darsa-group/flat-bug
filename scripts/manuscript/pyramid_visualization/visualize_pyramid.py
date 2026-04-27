@@ -1,8 +1,6 @@
 import math
 import os
-from typing import List, Tuple
 
-import cv2
 import torch
 from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
@@ -15,7 +13,7 @@ from flat_bug.geometric import equal_allocate_overlaps
 from flat_bug.predictor import Predictor
 
 
-def get_scales(model : Predictor, image : str, scale_increment : float=1/2, scale_before : float=1) -> List[float]:
+def get_scales(model : Predictor, image : str, scale_increment : float=1/2, scale_before : float=1) -> list[float]:
     if isinstance(image, str):
         path : str = image
         image : torch.Tensor = read_image(
@@ -81,7 +79,7 @@ def get_scales(model : Predictor, image : str, scale_increment : float=1/2, scal
     
     return scales, transformed_image
 
-def get_tile_params(model : Predictor, image : torch.Tensor, scale : float) -> Tuple[List[Tuple[Tuple[int, int], Tuple[int, int]]], torch.Tensor]:
+def get_tile_params(model : Predictor, image : torch.Tensor, scale : float) -> tuple[list[tuple[tuple[int, int], tuple[int, int]]], torch.Tensor]:
     orig_h, orig_w = image.shape[1:]
     w, h = orig_w, orig_h
     h_pad, w_pad = 0, 0

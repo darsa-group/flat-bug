@@ -50,7 +50,7 @@ def copy_and_adjust_readme():
 
     os.makedirs(dest_dir, exist_ok=True)
 
-    with open(readme_path, "r") as file:
+    with open(readme_path) as file:
         content = file.read()
 
         # Find and copy images while adjusting paths in README content

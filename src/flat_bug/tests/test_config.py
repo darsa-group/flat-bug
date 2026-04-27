@@ -1,8 +1,10 @@
+"""Tests for flatbug config submodule."""
+import copy
+import os
+import tempfile
 import unittest
 
-import os, tempfile, copy
-
-from flat_bug.config import get_type_def, check_types, check_cfg_types, read_cfg, write_cfg, DEFAULT_CFG
+from flat_bug.config import DEFAULT_CFG, check_cfg_types, check_types, get_type_def, read_cfg, write_cfg
 
 TEST_OBJECTS = {
     "float": 1.23,
@@ -40,7 +42,7 @@ TEST_OBJECTS_TYPES_LIST_TUPLE_INTERCHANGEABLE = {
     "list of mixed list and mixed tuple": [(tuple, list), [[(tuple, list), [int, str]], [(tuple, list), [str, int]]]]
 }
 
-def check_equals_recursive(obj1, obj2):
+def check_equals_recursive(obj1, obj2):  # noqa: D103
     if isinstance(obj1, (tuple, list)):
         if len(obj1) != len(obj2):
             return False
@@ -50,19 +52,19 @@ def check_equals_recursive(obj1, obj2):
         return True
     return obj1 == obj2
 
-class TestConfig(unittest.TestCase):
-    def test_check_types(self):
+class TestConfig(unittest.TestCase):  # noqa: D101
+    def test_check_types(self):  # noqa: D102
         for i, (key, obj) in enumerate(TEST_OBJECTS.items()):
             expected_type = get_type_def(obj)
             check_types(obj, expected_type, f"Object '{key}' ({i})")
             check_types(obj, TEST_OBJECTS_TYPES_LIST_TUPLE_NOT_INTERCHANGEABLE[key], f"Object '{key}' ({i})")
             check_types(obj, TEST_OBJECTS_TYPES_LIST_TUPLE_INTERCHANGEABLE[key], f"Object '{key}' ({i})")
     
-    def test_check_cfg_types(self):
+    def test_check_cfg_types(self):  # noqa: D102
         try:
             check_cfg_types(DEFAULT_CFG, strict=True)
         except Exception as e:
-            type(e)(f"Error raised when checking the types of the default config:\n" + str(e))
+            type(e)("Error raised when checking the types of the default config:\n" + str(e))
         altered_cfg = copy.deepcopy(DEFAULT_CFG)
         altered_cfg["UNKNOWN_KEY"] = "value"
         with self.assertRaises(KeyError, msg="Failed to raise an error when checking config with unknown key and strict=True"):
@@ -70,24 +72,33 @@ class TestConfig(unittest.TestCase):
         try:
             check_cfg_types(altered_cfg, strict=False)
         except Exception as e:
-            raise type(e)(f"Error raised when checking config with unknown key and strict=False:\n" + str(e))
+            raise type(e)("Error raised when checking config with unknown key and strict=False:\n" + str(e))
 
-    def test_get_type_def(self):
+    def test_get_type_def(self):  # noqa: D102
         error_msg = \
         """
         Failed to generate the correct type definitions for the test objects with tuple_list_interchangeable={}.
+        
         TEST_OBJECTS_TYPES should be a dictionary with:
             - keys: same as TEST_OBJECTS, 
             - values: the type definitions of the corresponding values in TEST_OBJECTS, that pass the check_types function.
-        Either TEST_OBJECTS_TYPES is incorrect, get_type_def is not generating the correct type definitions or test_check_types did not pass.
+        
+        Either TEST_OBJECTS_TYPES is incorrect, 
+            get_type_def is not generating the correct type definitions or test_check_types did not pass.
         """
         try:
             for key, expected_type in TEST_OBJECTS_TYPES_LIST_TUPLE_NOT_INTERCHANGEABLE.items():
                 obj = TEST_OBJECTS[key]
                 type_def = get_type_def(obj, tuple_list_interchangeable=False)
                 # Check that the generated type definition is the same as the expected type definition
-                self.assertTrue(check_equals_recursive(type_def, expected_type), f"\nFailed on object:\n'{key}' => {obj}\nwith generated type definition:\n{type_def}\nand expected type definition:\n{expected_type}")
-                # Check that the object passes the type definition - no need to assertTrue, since check_types will raise an error if it fails
+                self.assertTrue(
+                    check_equals_recursive(type_def, expected_type),
+                    f"\nFailed on object:\n'{key}' => {obj}\n"
+                    f"with generated type definition:\n{type_def}\n"
+                    f"and expected type definition:\n{expected_type}"
+                )
+                # Check that the object passes the type definition
+                # (no need to assertTrue, since check_types will raise an error if it fails)
                 check_types(obj, type_def, f"Object {key}")
         except Exception as e:
             raise type(e)(str(e) + error_msg.format(False))
@@ -96,19 +107,25 @@ class TestConfig(unittest.TestCase):
                 obj = TEST_OBJECTS[key]
                 type_def = get_type_def(obj, tuple_list_interchangeable=True)
                 # Check that the generated type definition is the same as the expected type definition
-                self.assertTrue(check_equals_recursive(type_def, expected_type), f"\nFailed on object:\n'{key}' => {obj}\nwith generated type definition:\n{type_def}\nand expected type definition:\n{expected_type}")
-                # Check that the object passes the type definition - no need to assertTrue, since check_types will raise an error if it fails
+                self.assertTrue(
+                    check_equals_recursive(type_def, expected_type), 
+                    f"\nFailed on object:\n'{key}' => {obj}\n"
+                    f"with generated type definition:\n{type_def}"
+                    f"\nand expected type definition:\n{expected_type}"
+                )
+                # Check that the object passes the type definition
+                # (no need to assertTrue, since check_types will raise an error if it fails)
                 check_types(obj, type_def, f"Object {key}")
         except Exception as e:
             raise type(e)(str(e) + error_msg.format(True))
 
-    def test_default_cfg(self):
+    def test_default_cfg(self):  # noqa: D102
         try:
             check_cfg_types(DEFAULT_CFG, strict=True)
         except Exception as e:
-            raise type(e)(f"Error raised when checking the types and keys of the default config:\n" + str(e))
+            raise type(e)("Error raised when checking the types and keys of the default config:\n" + str(e))
 
-    def test_write_read_cfg(self):
+    def test_write_read_cfg(self):  # noqa: D102
         orig_cfg = copy.deepcopy(DEFAULT_CFG)
         with tempfile.TemporaryDirectory() as tmpdir:
             invalid_cfg_file = os.path.join(tmpdir, "test.cfg")
@@ -126,9 +143,15 @@ class TestConfig(unittest.TestCase):
             try:
                 read_cfg(alter_file)
             except Exception as e:
-                type(e)(f"Error raised when reading a config file with unknown key and strict=False:\n" + str(e))
-        self.assertTrue(check_types(new_cfg, get_type_def(orig_cfg), "Reconstructed Config", strict=False), f"Failed to reconstruct the original config with comparable types after writing and reading.")
-        self.assertTrue(check_equals_recursive(orig_cfg, new_cfg), "Failed to reconstruct the values of the original config after writing and reading. Although the types are comparable, the values are not equal.")
+                type(e)("Error raised when reading a config file with unknown key and strict=False:\n" + str(e))
+        self.assertTrue(
+            check_types(new_cfg, get_type_def(orig_cfg), "Reconstructed Config", strict=False),
+            "Failed to reconstruct the original config with comparable types after writing and reading.")
+        self.assertTrue(
+            check_equals_recursive(orig_cfg, new_cfg), 
+            "Failed to reconstruct the values of the original config after writing and reading. "
+            "Although the types are comparable, the values are not equal."
+        )
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+# noqa: D100
 import argparse
 import glob
 import hashlib
@@ -11,6 +11,9 @@ import tempfile
 
 import yaml
 from ultralytics.data.converter import convert_coco
+
+# TODO: fixme
+# ruff: disable[D103]
 
 
 def collapse_in_parent_dir(child):
@@ -105,23 +108,32 @@ def prepare_coco_file(source_file, image_list, out):
 def main():
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
-    args_parse.add_argument("-i", "--input-data", dest="coco_data_root",
-                            help="A directory that contains subdirectories for each COCO sub-datasets."
-                                 "Each sub-dataset contains a single json file named 'instances_default.json' "
-                                 "and the associated images"
-                            )
+    args_parse.add_argument(
+        "-i", "--input-data", dest="coco_data_root",
+        help=(
+            "A directory that contains subdirectories for each COCO sub-datasets."
+            "Each sub-dataset contains a single json file named 'instances_default.json' "
+            "and the associated images"
+    ))
 
-    args_parse.add_argument("-o", "--output-dir", dest="prepared_data_target",
-                            help="The output compiled YOLO dataset joining together all sub-datasets in a single dataset with the structure:"
-                                 f"{out_structure}")
+    args_parse.add_argument(
+        "-o", "--output-dir", dest="prepared_data_target",
+        help=(
+            "The output compiled YOLO dataset joining together"
+            f" all sub-datasets in a single dataset with the structure: {out_structure}"
+    ))
 
-    args_parse.add_argument("-p", "--validation-proportion", dest="validation_proportion",
-                            help="the proportion of data allocated to the validation set, based on md5 (pseudorandom)",
-                            default=0.15)
+    args_parse.add_argument(
+        "-p", "--validation-proportion", dest="validation_proportion",
+        help="the proportion of data allocated to the validation set, based on md5 (pseudorandom)",
+        default=0.15
+    )
 
-    args_parse.add_argument("-f", "--force", dest="delete_target_before",
-                            help="Delete output directory before, this avoids duplicating data etc",
-                            action="store_true")
+    args_parse.add_argument(
+        "-f", "--force", dest="delete_target_before",
+        help="Delete output directory before, this avoids duplicating data etc",
+        action="store_true"
+    )
     args = args_parse.parse_args()
     option_dict = vars(args)
 
@@ -164,7 +176,8 @@ def main():
         try:
 
             coco_files = [f for f in sorted(glob.glob(os.path.join( source_dir, "*.json")))]
-            assert len(coco_files) == 1, os.path.join(source_dir, "*.json") #,"Multiple label files, only supporting one"
+            #,"Multiple label files, only supporting one"
+            assert len(coco_files) == 1, os.path.join(source_dir, "*.json")
 
 
             convert_coco(labels_dir=source_dir, save_dir=tmp_dir, use_segments=True)
@@ -187,7 +200,10 @@ def main():
             for f in sorted(glob.glob(os.path.join(tmp_dir,OUT_COCO_CONVERTER, "*.txt"))):
                 basename_sans_ext = os.path.splitext(os.path.basename(f))[0]
 
-                image_matches = [i for i in images if basename_sans_ext == os.path.splitext(os.path.basename(i))[0]]
+                image_matches = [
+                    i for i in images
+                    if basename_sans_ext == os.path.splitext(os.path.basename(i))[0]
+                ]
                 n_matches = len(image_matches)
                 if n_matches == 0:
                     logging.warning("Missing image: " + f)
@@ -217,18 +233,32 @@ def main():
                     training_files[im_basename] = new_bn_se + ".jpg"
                 logging.info(f"{im_basename} -> {subset}")
 
-                shutil.move(f, os.path.join(tmp_dir, OUT_COCO_CONVERTER, os.path.join(subset, new_bn_se + ".txt")))
-                shutil.copy(im_path, os.path.join(tmp_dir, OUT_COCO_CONVERTER_IMAGES, subset, new_bn_se + ".jpg"))
+                shutil.move(
+                    f,
+                    os.path.join(tmp_dir, OUT_COCO_CONVERTER, os.path.join(subset, new_bn_se + ".txt"))
+                )
+                shutil.copy(
+                    im_path,
+                    os.path.join(tmp_dir, OUT_COCO_CONVERTER_IMAGES, subset, new_bn_se + ".jpg")
+                )
 
             if len(validation_files) == 0:
                 logging.warning(f"No validation files for {d}")
             else:
-                prepare_coco_file(coco_files[0], validation_files, os.path.join(tmp_dir, OUT_COCO_CONVERTER, "val", f"{d}"+JSON_FILE_BASENAME))
+                prepare_coco_file(
+                    coco_files[0],
+                    validation_files,
+                    os.path.join(tmp_dir, OUT_COCO_CONVERTER, "val", f"{d}"+JSON_FILE_BASENAME)
+                )
 
             if len(validation_files) == 0:
                 logging.warning(f"No train files for {d}")
             else:
-                prepare_coco_file(coco_files[0], training_files, os.path.join(tmp_dir, OUT_COCO_CONVERTER, "train", f"{d}"+JSON_FILE_BASENAME))
+                prepare_coco_file(
+                    coco_files[0],
+                    training_files, 
+                    os.path.join(tmp_dir, OUT_COCO_CONVERTER, "train", f"{d}"+JSON_FILE_BASENAME)
+                )
 
             collapse_in_parent_dir(os.path.join(tmp_dir, OUT_COCO_CONVERTER))
             collapse_in_parent_dir(os.path.join(tmp_dir,  OUT_COCO_CONVERTER_IMAGES))
