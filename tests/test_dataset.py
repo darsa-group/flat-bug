@@ -2,8 +2,8 @@
 import glob
 import os
 import tempfile
-import unittest
 from copy import deepcopy
+import pytest
 
 import numpy as np
 from ultralytics.data import build_dataloader
@@ -14,7 +14,8 @@ from ultralytics.utils.ops import resample_segments
 from ultralytics.utils.plotting import plot_images
 
 from flat_bug.datasets import FlatBugYOLODataset, FlatBugYOLOValidationDataset
-from flat_bug.tests.remote_lfs_fallback import check_file_with_remote_fallback
+from tests.remote_lfs_fallback import check_file_with_remote_fallback
+
 
 TEST_DIR = os.path.dirname(__file__)
 ASSET_DIR = os.path.join(TEST_DIR, "assets")
@@ -100,7 +101,7 @@ def create_validation_dataset(args : IterableSimpleNamespace) -> FlatBugYOLOVali
         subset_args={"n" : 1, "pattern" : ASSET_NAME}
     )
 
-def test_plot_batch(batch, ni):  # noqa: D103
+def _test_plot_batch(batch, ni):  # noqa: D103
     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as f:
         plot_images(
             batch["img"],
@@ -113,7 +114,8 @@ def test_plot_batch(batch, ni):  # noqa: D103
             on_plot=os.remove,
         )
 
-class TestDataset(unittest.TestCase):  # noqa: D101
+@pytest.mark.filterwarnings("ignore:.*argument is set as true but no accelerator is found.*:UserWarning")
+class TestDataset:  # noqa: D101
     def test_train_dataset(self):  # noqa: D102
         args = IterableSimpleNamespace(**TEST_CFG) if not isinstance(TEST_CFG, IterableSimpleNamespace) else TEST_CFG
         dataset = create_train_dataset(args)
@@ -121,12 +123,9 @@ class TestDataset(unittest.TestCase):  # noqa: D101
         dataloader_iter = dataloader.iterator
 
         for batch, _ in zip(dataloader_iter, range(1)):
-            self.assertEqual(batch["img"].shape[0], BATCH_SIZE)
+            assert batch["img"].shape[0] ==  BATCH_SIZE
 
-        try:
-            test_plot_batch(batch, 0)
-        except Exception as e:
-            self.fail(f"Failed to plot training batch: {e}")
+        _test_plot_batch(batch, 0)
 
     def test_validation_dataset(self):  # noqa: D102
         args = IterableSimpleNamespace(**TEST_CFG) if not isinstance(TEST_CFG, IterableSimpleNamespace) else TEST_CFG
@@ -135,33 +134,26 @@ class TestDataset(unittest.TestCase):  # noqa: D101
         dataloader_iter = dataloader.iterator
 
         for batch, _ in zip(dataloader_iter, range(1)):
-            self.assertEqual(batch["img"].shape[0], BATCH_SIZE)
+            assert batch["img"].shape[0] == BATCH_SIZE
 
-        try:
-            test_plot_batch(batch, 0)
-        except Exception as e:
-            self.fail(f"Failed to plot validation batch: {e}")
+        _test_plot_batch(batch, 0)
 
     def test_verify_image_label(self):  # noqa: D102
         label = mock_verify_image_label(IMAGE_ASSET, LABEL_ASSET)
-        self.assertIsInstance(label, dict)
-        self.assertIn("im_file", label)
-        self.assertIn("shape", label)
-        self.assertIn("cls", label)
-        self.assertIn("bboxes", label)
-        self.assertIn("segments", label)
-        self.assertIn("keypoints", label)
-        self.assertIn("normalized", label)
-        self.assertIn("bbox_format", label)
-        self.assertIn("instances", label)
+        assert isinstance(label, dict)
+        assert "im_file" in label
+        assert "shape" in label
+        assert "cls" in label
+        assert "bboxes" in label
+        assert "segments" in label
+        assert "keypoints" in label
+        assert "normalized" in label
+        assert "bbox_format" in label
+        assert "instances" in label
 
     @classmethod
-    def tearDownClass(cls):  # noqa: D102
+    def teardown_class(cls):  # noqa: D102
         # Clean caches i.e. files ending with .cache or .cache.lock in the directory of this script
         cache_files = glob.glob(os.path.join(TEST_DIR, "*.cache*"))
         for cache_file in cache_files:
             os.remove(cache_file)
-
-if __name__ == "__main__":
-    unittest.main()
-    

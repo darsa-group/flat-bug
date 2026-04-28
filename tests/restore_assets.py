@@ -9,8 +9,10 @@ if __name__ == "__main__":
         if f.startswith("pyramid_") or f.startswith("single_scale_")
     ]
 
+    print("-------------------------- Restoring test assets --------------------------")
     for asset in prediction_assets:
-        print(asset)
+        print("\t", asset)
         with open(asset, "w") as f:
             f.write("ERDA Pointer")
+    print("-------------------------- Test assets restored! --------------------------")
     

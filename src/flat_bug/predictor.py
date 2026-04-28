@@ -120,7 +120,7 @@ class Prepared_Results:
     def __init__(self, predictions: ResultsWithTiles, scale: tuple[float, float], device, dtype):  # noqa: D107
         self.wh_scale = torch.tensor(scale, device=device, dtype=dtype).unsqueeze(0)
         self._predictions = predictions
-        assert self._predictions.boxes is not None and isinstance(self._predictions.boxes, torch.Tensor)
+        assert self._predictions.boxes is not None and isinstance(self._predictions.boxes.data, torch.Tensor)
         self._predictions.boxes.data[:, :4] /= self.wh_scale.repeat(1, 2)
         self._predictions.polygons = self._predictions.polygons._apply(
             lambda poly : (poly + torch.roll(poly, 1, dims=0)) / (2 * self.wh_scale)
@@ -240,7 +240,7 @@ class TensorPredictions:
         # Device and dtype are None by default, but they may be set by the user or 
         # passed by **kwargs, so we check if they are None and if so set them to the default values
         # Then we check that they are the same for all predictions and the image (if they are not None)
-        if predictions is not None and len(predictions) >= 0:
+        if predictions is not None and len(predictions) > 0:
             # Check that all predictions have the same device and dtype
             elem = predictions[0]
             if self.device is None:
@@ -269,7 +269,7 @@ class TensorPredictions:
             self.image = image.to(self.device)
 
         # Combine the predictions
-        if predictions is not None and len(predictions) >= 0:
+        if predictions is not None and len(predictions) > 0:
             self._combine_predictions(predictions)
         else:
             # If there are no predictions, set other attributes to empty tensors or lists.
@@ -1210,8 +1210,9 @@ class TensorPredictions:
             with open(json_path, 'w') as f:
                 json.dump(json_data, f)
 
+    @classmethod
     def load(
-            self, 
+            cls, 
             data: str | dict, 
             device : DeviceLikeType | None=None, 
             dtype : torch.types._dtype | None=None
@@ -1249,18 +1250,18 @@ class TensorPredictions:
             dtype = torch.float32
 
         empty_image = torch.zeros((3, data["image_height"], data["image_width"]), device=device, dtype=dtype) + 255  # type: ignore
-        self.__init__(image=empty_image, device=device, dtype=dtype)
-        setattr(self, "PREFER_POLYGONS", True) # Since we only store contours in the .json file, we prefer polygons on loading
+        inst = cls(image=empty_image, device=device, dtype=dtype)
+        setattr(inst, "PREFER_POLYGONS", True) # Since we only store contours in the .json file, we prefer polygons on loading
 
         # Load constants
         for k, v in data.items():
-            if k in self.CONSTANTS:
-                setattr(self, k, v)
+            if k in inst.CONSTANTS:
+                setattr(inst, k, v)
 
         # Load the data
         for k, v in data.items():
             # Skip constants in second round
-            if k in self.CONSTANTS:
+            if k in inst.CONSTANTS:
                 continue
             # Skip dynamically computed class property attributes
             if k in ["areas"]:
@@ -1273,16 +1274,16 @@ class TensorPredictions:
                 pass
             # Bounding boxes are easy (as usual)
             elif k == "boxes":
-                v = torch.tensor(v, device=self.device, dtype=self.dtype)
+                v = torch.tensor(v, device=inst.device, dtype=inst.dtype)
             # While masks are a bit more complicated
             # Confidences and classes are 1-d tensors (arrays)
             elif k in ["confs", "classes"]:
-                v = torch.tensor(v, device=self.device, dtype=self.dtype)
+                v = torch.tensor(v, device=inst.device, dtype=inst.dtype)
             else:
                 raise RuntimeError(f"Unknown key in json file: {k}")
-            setattr(self, k, v)
+            setattr(inst, k, v)
 
-        return self
+        return inst
 
     def save(
             self, 

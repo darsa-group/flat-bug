@@ -5,7 +5,7 @@ import os
 import torch
 from torchvision.io import read_image
 
-from flat_bug.tests.test_predictor import ASSET_DIR, ASSET_NAME, TEST_MODEL_NAME, DummyModel
+from tests.test_predictor import ASSET_DIR, ASSET_NAME, TEST_MODEL_NAME, DummyModel
 
 # ruff: disable[E501]
 # Command I used: 

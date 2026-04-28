@@ -619,7 +619,7 @@ wheels = [
 
 [[package]]
 name = "flat-bug"
-version = "1.0.0"
+version = "1.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "scikit-optimize" },
@@ -638,20 +638,21 @@ cloud-datasets = [
 erda = [
     { name = "pyremotedata" },
 ]
-jupyter = [
-    { name = "jupyter" },
-]
 
 [package.dev-dependencies]
-dev = [
-    { name = "flat-bug", extra = ["cloud-datasets", "erda"] },
+notebook = [
+    { name = "ipykernel" },
+    { name = "ipywidgets" },
+    { name = "jupyter" },
+]
+tests = [
+    { name = "pytest" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "boto3", marker = "extra == 'cloud-datasets'", specifier = ">=1.40" },
     { name = "cvat-sdk", marker = "extra == 'cloud-datasets'", specifier = ">=2.47" },
-    { name = "jupyter", marker = "extra == 'jupyter'", specifier = ">=1.0.0" },
     { name = "pyremotedata", marker = "extra == 'erda'", specifier = ">=0.0.16" },
     { name = "scikit-optimize", specifier = ">=0.10.1" },
     { name = "scipy", specifier = ">=1.14.1" },
@@ -660,10 +661,15 @@ requires-dist = [
     { name = "torchvision", specifier = ">=0.17.0" },
     { name = "ultralytics", specifier = ">=8.2.16,<=8.3.124" },
 ]
-provides-extras = ["erda", "cloud-datasets", "jupyter"]
+provides-extras = ["erda", "cloud-datasets"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "flat-bug", extras = ["notebook", "erda", "cloud-datasets"] }]
+notebook = [
+    { name = "ipykernel", specifier = ">=7.2.0" },
+    { name = "ipywidgets", specifier = ">=8.1.8" },
+    { name = "jupyter", specifier = ">=1.0.0" },
+]
+tests = [{ name = "pytest", specifier = ">=9.0.3" }]
 
 [[package]]
 name = "fonttools"
@@ -776,6 +782,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ce/cc/762dfb036166873f0059f3b7de4565e1b5bc3d6f28a414c13da27e442f99/idna-3.13.tar.gz", hash = "sha256:585ea8fe5d69b9181ec1afba340451fba6ba764af97026f92a91d4eef164a242", size = 194210, upload-time = "2026-04-22T16:42:42.314Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5d/13/ad7d7ca3808a898b4612b6fe93cde56b53f3034dcde235acb1f0e1df24c6/idna-3.13-py3-none-any.whl", hash = "sha256:892ea0cde124a99ce773decba204c5552b69c3c67ffd5f232eb7696135bc8bb3", size = 68629, upload-time = "2026-04-22T16:42:40.909Z" },
+]
+
+[[package]]
+name = "iniconfig"
+version = "2.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/72/34/14ca021ce8e5dfedc35312d08ba8bf51fdd999c576889fc2c24cb97f4f10/iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730", size = 20503, upload-time = "2025-10-18T21:55:43.219Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12", size = 7484, upload-time = "2025-10-18T21:55:41.639Z" },
 ]
 
 [[package]]
@@ -1999,6 +2014,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pluggy"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412, upload-time = "2025-05-15T12:30:07.975Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538, upload-time = "2025-05-15T12:30:06.134Z" },
+]
+
+[[package]]
 name = "prometheus-client"
 version = "0.25.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2124,6 +2148,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/3b/05/f3530ee8d90e3339699554c8eec707ad5264c1251802f075edfdb1cf3bb6/pyremotedata-0.1.13.tar.gz", hash = "sha256:c1c20ee9aa11630d5926eb67ba39200cd3f1fb8de2002d34f134474ef9229869", size = 87261, upload-time = "2026-04-16T13:34:06.36Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b2/2a/917b538610294ab56afca0fb9111930c0d1ffb6ee2b0d40cbc33db0193fc/pyremotedata-0.1.13-py3-none-any.whl", hash = "sha256:488b2e33c6c28155e91cb98e27c87627a87c44d89ab945684d59b8d308fe8f33", size = 29055, upload-time = "2026-04-16T13:34:07.673Z" },
+]
+
+[[package]]
+name = "pytest"
+version = "9.0.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "iniconfig" },
+    { name = "packaging" },
+    { name = "pluggy" },
+    { name = "pygments" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7d/0d/549bd94f1a0a402dc8cf64563a117c0f3765662e2e668477624baeec44d5/pytest-9.0.3.tar.gz", hash = "sha256:b86ada508af81d19edeb213c681b1d48246c1a91d304c6c81a427674c17eb91c", size = 1572165, upload-time = "2026-04-07T17:16:18.027Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d4/24/a372aaf5c9b7208e7112038812994107bc65a84cd00e0354a88c2c77a617/pytest-9.0.3-py3-none-any.whl", hash = "sha256:2c5efc453d45394fdd706ade797c0a81091eccd1d6e4bccfcd476e2b8e0ab5d9", size = 375249, upload-time = "2026-04-07T17:16:16.13Z" },
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 [project]
 name = "flat-bug"
-version = "1.0.0"
+version = "1.1.0"
 authors = [
   {name="Asger Svenning", email="asgersvenning@ecos.au.dk"},
   {name="Quentin Geissman"},
@@ -34,9 +34,6 @@ cloud_datasets = [
     "boto3>=1.40",
     "cvat_sdk>=2.47"
 ]
-jupyter = [
-    "jupyter>=1.0.0",
-]
 
 [project.urls]
 "Homepage" = "https://github.com/darsa-group/flat-bug"
@@ -51,8 +48,13 @@ fb_prepare_data = "bin.fb_prepare_data:main"
 fb_clone_data = "bin.fb_clone_data:main"
 
 [dependency-groups]
-dev = [
-    "flat-bug[notebook,erda,cloud_datasets]",
+notebook = [
+    "ipykernel>=7.2.0",
+    "ipywidgets>=8.1.8",
+    "jupyter>=1.0.0",
+]
+tests = [
+    "pytest>=9.0.3",
 ]
 
 [tool.ruff]
@@ -71,6 +73,12 @@ extend-exclude = [
 # E: pycodestyle, F: Pyflakes, UP: pyupgrade, I: isort (sorts imports cleanly)
 select = ["E", "F", "UP", "I", "D"]
 ignore = ["D105"]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore:.*The NVIDIA driver on your system is too old.*:UserWarning",
+    "ignore:.*`torch.jit.script.*` is deprecated.*:DeprecationWarning"
+]
 
 [build-system]
 requires = ["uv_build>=0.10.7,<0.11.0"]

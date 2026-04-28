@@ -124,11 +124,11 @@ def merge_tile_results(
         exclude_masks : bool=False
     ) :
     """Merge results from multiple images into a single Results object, possibly with a new image."""
-    assert isinstance(results[0].boxes, torch.Tensor)
+    assert results[0].boxes is not None and isinstance(results[0].boxes.data, torch.Tensor)
     _device = results[0].boxes.data.device
     if orig_img is None:
-        orig_img = results[0].orig_img
-    assert isinstance(orig_img, torch.Tensor), f"orig_img must be a torch.Tensor, not {type(orig_img)}"
+        orig_img = torch.as_tensor(results[0].orig_img)
+    assert isinstance(orig_img, torch.Tensor), f"orig_img must be a torch.Tensor, not {type(orig_img).__name__}"
     if box_offsetters is None:
         box_offsetters = torch.zeros((len(results), 2), device=_device).int()
     if mask_offsetters is None:

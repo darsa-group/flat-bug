@@ -1,7 +1,6 @@
 """Tests for flatbug augmentations (including their integration into the dataloader)."""
 import math
 import os
-import unittest
 from copy import deepcopy
 from typing import Any
 
@@ -16,7 +15,7 @@ from ultralytics.utils.instance import Instances
 from ultralytics.utils.ops import resample_segments
 
 from flat_bug.datasets import train_augmentation_pipeline, validation_augmentation_pipeline
-from flat_bug.tests.remote_lfs_fallback import check_file_with_remote_fallback
+from tests.remote_lfs_fallback import check_file_with_remote_fallback
 
 TEST_HYP = {
     "hsv_h": 0.5,
@@ -132,19 +131,18 @@ def make_empty(obj : Any) -> Any:  # noqa: D103
         obj = []
     return obj
 
-class TestMockYOLOHelpers(unittest.TestCase):  # noqa: D101
+class TestMockYOLOHelpers:  # noqa: D101
     def test_mock_yolo_base_dataset_load_image(self):  # noqa: D102
         loaded_img, _, _ = mock_yolo_base_dataset_load_image(TEST_IMG, TEST_HYP["imgsz"])
-        self.assertIsInstance(loaded_img, np.ndarray, msg=f"Expected {np.ndarray} object, got {type(loaded_img)}")
-        self.assertEqual(
-            loaded_img.shape, (TEST_HYP["imgsz"], TEST_HYP["imgsz"], 3), 
-            msg=f"Expected image shape ({TEST_HYP['imgsz']}, {TEST_HYP['imgsz']}, 3), got {loaded_img.shape}"
+        assert isinstance(loaded_img, np.ndarray), f"Expected np.ndarray object, got {type(loaded_img).__name__}"
+        assert loaded_img.shape == (TEST_HYP["imgsz"], TEST_HYP["imgsz"], 3), (
+            f"Expected image shape ({TEST_HYP['imgsz']}, {TEST_HYP['imgsz']}, 3), got {loaded_img.shape}"
         )
 
     def test_mock_verify_image_label(self):  # noqa: D102
         result = mock_verify_image_label(TEST_IMG, TEST_LABEL)
-        self.assertIsInstance(result, dict, msg=f"Expected {dict} object, got {type(result)}")
-        correct = {
+        assert isinstance(result, dict), f"Expected dict, got {type(result).__name__}"
+        correct : dict[str, type | None] = {
             "im_file": str,
             "shape": tuple,
             "cls": np.ndarray,
@@ -156,19 +154,21 @@ class TestMockYOLOHelpers(unittest.TestCase):  # noqa: D101
             "instances": Instances
         }
         for k, v in correct.items():
-            self.assertTrue(k in result, msg=f"Missing key '{k}' in result")
+            assert k in result, f"Missing key '{k}' in result"
             if v is None:
                 continue
-            self.assertIsInstance(result[k], v, msg=f"Invalid type for key '{k}'. Expected {v}, got {type(result[k])}")
+            assert isinstance(result[k], v), (
+                f"Invalid type for key '{k}'. Expected {v.__name__}, got {type(result[k]).__name__}"
+            )
 
-class TestAugmentations(unittest.TestCase):  # noqa: D101
+class TestAugmentations:  # noqa: D101
     def test_generate_train_augmentation_pipeline(self):  # noqa: D102
         pipeline = generate_train_augmentation_pipeline(TEST_HYP)
-        self.assertTrue(isinstance(pipeline, Compose), msg=f"Expected {Compose} object, got {type(pipeline)}")
+        assert isinstance(pipeline, Compose), f"Expected Compose object, got {type(pipeline).__name__}"
 
     def test_generate_validation_augmentation_pipeline(self):  # noqa: D102
         pipeline = generate_validation_augmentation_pipeline(TEST_HYP)
-        self.assertTrue(isinstance(pipeline, Compose), msg=f"Expected {Compose} object, got {type(pipeline)}")
+        assert isinstance(pipeline, Compose), f"Expected Compose object, got {type(pipeline).__name__}"
 
     def test_train_augmentation_pipeline(self):  # noqa: D102
         pipeline = generate_train_augmentation_pipeline(TEST_HYP)
@@ -186,8 +186,9 @@ class TestAugmentations(unittest.TestCase):  # noqa: D101
             # cv2.drawContours(out_img, polys, -1, (0, 255, 0), 2)
             # cv2.imwrite(ASSET_DIR + "/test_train_augmentation_pipeline.jpg", out_img)
         except Exception as e:
-            raise type(e)("Failed to execute training augmentation pipeline on image with labels due to:\n\t" + str(e))
-        self.assertIsInstance(out, dict, msg="Invalid output of training augmentation pipeline on image with labels")
+            e.add_note("Failed to execute training augmentation pipeline on image with labels.")
+            raise
+        assert isinstance(out, dict), "Invalid output of training augmentation pipeline on image with labels"
         # Simulate empty labels
         empty_pipeline_input = deepcopy(pipeline_input)
         for k, v in empty_pipeline_input.items():
@@ -206,8 +207,9 @@ class TestAugmentations(unittest.TestCase):  # noqa: D101
         try:
             out = pipeline(empty_pipeline_input)
         except Exception as e:
-            raise type(e)("Failed to execute training augmentation pipeline on image without labels due to:\n\t" + str(e))
-        self.assertIsInstance(out, dict, msg="Invalid output of training augmentation pipeline on image without labels")
+            e.add_note("Failed to execute training augmentation pipeline on image without labels.")
+            raise
+        assert isinstance(out, dict), "Invalid output of training augmentation pipeline on image without labels"
 
     def test_validation_augmentation_pipeline(self):  # noqa: D102
         pipeline = generate_validation_augmentation_pipeline(TEST_HYP)
@@ -218,8 +220,9 @@ class TestAugmentations(unittest.TestCase):  # noqa: D101
         try:
             out = pipeline(deepcopy(pipeline_input))
         except Exception as e:
-            raise type(e)("Failed to execute validation augmentation pipeline on image with labels due to:\n\t" + str(e))
-        self.assertIsInstance(out, dict, msg="Invalid output of validation augmentation pipeline on image with labels")
+            e.add_note("Failed to execute validation augmentation pipeline on image with labels.")
+            raise
+        assert isinstance(out, dict), "Invalid output of validation augmentation pipeline on image with labels"
         # Simulate empty labels
         empty_pipeline_input = deepcopy(pipeline_input)
         for k, v in empty_pipeline_input.items():
@@ -238,9 +241,6 @@ class TestAugmentations(unittest.TestCase):  # noqa: D101
         try:
             out = pipeline(empty_pipeline_input)
         except Exception as e:
-            raise type(e)("Failed to execute validation augmentation pipeline on image without labels due to:\n\t" + str(e))
-        self.assertIsInstance(out, dict, msg="Invalid output of validation augmentation pipeline on image without labels")
-
-
-if __name__ == "__main__":
-    unittest.main()
+            e.add_note("Failed to execute validation augmentation pipeline on image without labels.")
+            raise
+        assert isinstance(out, dict), "Invalid output of validation augmentation pipeline on image without labels."

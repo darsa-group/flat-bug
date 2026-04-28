@@ -3,7 +3,6 @@ import os
 import re
 import shutil
 import tempfile
-import unittest
 from collections import defaultdict
 from glob import glob
 
@@ -13,7 +12,7 @@ from torchvision.io import read_image
 
 from flat_bug import logger
 from flat_bug.predictor import Predictor, TensorPredictions
-from flat_bug.tests.remote_lfs_fallback import check_file_with_remote_fallback
+from tests.remote_lfs_fallback import check_file_with_remote_fallback
 
 TEST_MODEL_NAME = "flat_bug_M.pt"
 PYRAMID_SCALE_BEFORE = 0.6
@@ -44,18 +43,15 @@ TEST_CFG = {
     "BATCH_SIZE": 1
 }
 
-class TestTensorPredictions(unittest.TestCase):  # noqa: D101
+class TestTensorPredictions:  # noqa: D101
     def test_load(self):  # noqa: D102
-        tp = TensorPredictions()
-        tp.load(check_file_with_remote_fallback(SERIALISED_TENSOR_PREDS))
-        self.assertEqual(
-            len(tp), N_PREDICTIONS,
-            msg=f"Number of predictions ({len(tp)}) does not match the expected number of predictions ({N_PREDICTIONS})"
+        tp = TensorPredictions.load(check_file_with_remote_fallback(SERIALISED_TENSOR_PREDS))
+        assert len(tp) == N_PREDICTIONS, (
+            f"Number of predictions ({len(tp)}) does not match the expected number of predictions ({N_PREDICTIONS})"
         )
 
     def test_save(self):  # noqa: D102
-        tp = TensorPredictions()
-        tp = tp.load(check_file_with_remote_fallback(SERIALISED_TENSOR_PREDS))
+        tp = TensorPredictions.load(check_file_with_remote_fallback(SERIALISED_TENSOR_PREDS))
         image_path = os.path.join(os.path.dirname(__file__), "assets", f"{ASSET_NAME}.jpg")
         check_file_with_remote_fallback(image_path)
         tp.image = read_image(image_path) * 255
@@ -63,7 +59,7 @@ class TestTensorPredictions(unittest.TestCase):  # noqa: D101
         with tempfile.TemporaryDirectory() as tmp_directory:
             save_dir = tp.save(tmp_directory, mask_crops=True, wait=True)
             assert save_dir is not None
-            self.assertTrue(os.path.exists(os.path.join(save_dir, "crops")))
+            assert os.path.exists(os.path.join(save_dir, "crops"))
             crops = glob(os.path.join(save_dir, "crops", "*"))
             n_crops = len(crops)
             # ###### DEBUG ######
@@ -71,21 +67,19 @@ class TestTensorPredictions(unittest.TestCase):  # noqa: D101
             # overview = glob(os.path.join(save_dir, "overview*"))[0] 
             # shutil.move(overview, os.path.join(os.path.dirname(__file__), "assets", os.path.basename(overview)))
             # ###################
-            self.assertEqual(
-                n_crops, N_PREDICTIONS, 
-                msg=f"Number of crops ({n_crops}) saved does not match the expected number of predictions ({N_PREDICTIONS})"
+            assert n_crops == N_PREDICTIONS, ( 
+                f"Number of crops ({n_crops}) saved does not match the expected number of predictions ({N_PREDICTIONS})"
             )
             centroid_initial = [i.float().mean(dim=0).numpy() for i in tp.contours]
             centroid_reloaded = [
                 i.float().mean(dim=0).numpy()
-                for i in TensorPredictions().load(glob(os.path.join(save_dir, "metadata*.json"))[0]).contours
+                for i in TensorPredictions.load(glob(os.path.join(save_dir, "metadata*.json"))[0]).contours
             ]
             centroid_initial = np.stack(centroid_initial)
             centroid_reloaded = np.stack(centroid_reloaded)
             abs_diff = np.abs(centroid_initial - centroid_reloaded).max()
-            self.assertTrue(
-                abs_diff < 0.01,
-                msg=f"Centroid difference between initial and reloaded contours ({abs_diff}) is too large"
+            assert abs_diff < 0.01, (
+                f"Centroid difference between initial and reloaded contours ({abs_diff}) is too large"
             )
 
 def cast_nested(obj, new_dtype):  # noqa: D103
@@ -191,7 +185,7 @@ class DummyModel(torch.nn.Module):  # noqa: D101
         with open(os.path.join(self.asset_dir, "pyramid_output_length.txt"), "w") as f:
             f.write(str(len(output)))
 
-class TestPredictor(unittest.TestCase):  # noqa: D101
+class TestPredictor:  # noqa: D101
     TOLERANCE = 0.1
 
     def test_single_scale(self):  # noqa: D102
@@ -209,9 +203,8 @@ class TestPredictor(unittest.TestCase):  # noqa: D101
         with open(check_file_with_remote_fallback(os.path.join(ASSET_DIR, "single_scale_output_length.txt"))) as f:
             reference_length = int(f.read())
         # Check that the output length is within tolerance of the reference length
-        self.assertTrue(
-            abs(1 - output_length/reference_length) < self.TOLERANCE,
-            msg=f"Output length ({output_length}) does not match the reference length ({reference_length})"
+        assert abs(1 - output_length/reference_length) < self.TOLERANCE, (
+            f"Output length ({output_length}) does not match the reference length ({reference_length})"
         )
     
     def test_pyramid(self):  # noqa: D102
@@ -228,10 +221,6 @@ class TestPredictor(unittest.TestCase):  # noqa: D101
         with open(check_file_with_remote_fallback(os.path.join(ASSET_DIR, "pyramid_output_length.txt"))) as f:
             reference_length = int(f.read())
         # Check that the output length is within tolerance of the reference length
-        self.assertTrue(
-            abs(1 - output_length/reference_length) < self.TOLERANCE, 
-            msg=f"Output length ({output_length}) does not match the reference length ({reference_length})"
+        assert abs(1 - output_length/reference_length) < self.TOLERANCE, (
+            f"Output length ({output_length}) does not match the reference length ({reference_length})"
         )
-
-if __name__ == '__main__':
-    unittest.main()
