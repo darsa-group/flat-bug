@@ -263,7 +263,7 @@ def contours_to_masks(
         return torch.as_tensor(masks, dtype=torch.bool, device=contours[0].device)
     return masks.astype(bool)
 
-@torch.compile
+@torch.compile(fullgraph=True, mode="max-autotune-no-cudagraphs")
 def _poly_area_tensor(poly : torch.Tensor):
     if len(poly) < 10e4:
         poly = poly.cpu()
@@ -297,7 +297,7 @@ def _poly_normals_arr(polygon : np.ndarray) -> np.ndarray:
     n = (n + np.roll(n, 1, axis=0)) / 2
     return n
 
-@torch.compile
+@torch.compile(fullgraph=True, mode="max-autotune-no-cudagraphs")
 def _poly_normals_tensor(polygon: torch.Tensor) -> torch.Tensor:
     v = torch.roll(polygon, shifts=-1, dims=0) - polygon
     n = torch.column_stack([v[:, 1], -v[:, 0]])
@@ -334,7 +334,7 @@ def _linear_interpolate_arr(poly: np.ndarray, scale: int) -> np.ndarray:
     new_poly[-scale:] = np.linspace(poly[-1], poly[0], scale, endpoint=False)
     return new_poly[~(new_poly == np.roll(new_poly, -1, axis=0)).all(axis=1)]
 
-@torch.compile
+@torch.compile(fullgraph=True, mode="max-autotune-no-cudagraphs")
 def _linear_interpolate_tensor(poly: torch.Tensor, scale: int) -> torch.Tensor:
     if scale < 1:
         raise ValueError(f"Scale must be at least 1, not {scale}")

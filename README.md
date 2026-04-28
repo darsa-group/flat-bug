@@ -35,11 +35,19 @@ The goal of `flatbug` is to provide a single unified model for detection and seg
 We recommend using `uv` ([*installation*](https://docs.astral.sh/uv/getting-started/installation/)):
 
 ```bash
+# Easy-install
+uv pip install flat-bug --torch-backend=auto
 # Add to a project permanently (recommended)
 uv add flat-bug
-# install temporarily in a venv/project
-uv pip install flat-bug
 ```
+
+> [!TIP]
+> If you have problems with PyTorch not being installed with CUDA enabled try:
+> ```bash
+> uv pip install torch torchvision --torch-backend=auto --reinstall
+> ```
+> More details:
+> https://docs.astral.sh/uv/guides/integration/pytorch/#the-uv-pip-interface
 
 or *(not recommended)*:
 
@@ -51,17 +59,29 @@ pip install flat-bug
 
 Or a development version can be installed from source by cloning this repository:
 
+#### Clone the repository
+
 ```bash
-# Clone repository
 git clone https://github.com/darsa-group/flat-bug.git
 cd flat-bug
-# Install
-uv sync --all-extras --all-groups --upgrade
-# or (not recommended)
+```
+
+#### Install `flatbug`
+
+```bash
+uv sync --all-extras --all-groups --upgrade 
+# (optional but recommended)
+uv pip install torch torchvision --torch-backend=auto --reinstall
+```
+
+or *(not recommended)*:
+
+```bash
 pip install -e .
 ```
 
-However, as with other packages built with `PyTorch` it is best to ensure that `torch` is installed separately. See [https://pytorch.org/](https://pytorch.org/get-started/locally) for details. We recommend using `torch>=2.3`.
+> [!WARNING]
+> If you do decide to install with `pip`, as with other packages built with `PyTorch` it is best to ensure that `torch` is installed separately. See [https://pytorch.org/](https://pytorch.org/get-started/locally) for details. We recommend using `torch>=2.3`.
 
 ---
 
@@ -82,6 +102,62 @@ We provide a number of tutorials on general and advanced usage, training, deploy
 Find our documentation at [https://darsa.info/flat-bug/](https://darsa.info/flat-bug/).
 
 ---
+
+## CUDA Issues
+
+Working with cross-platform PyTorch code can be a bit confusing, so if you ever get stuck with some CUDA errors, here are some possible paths to resolve the issues.
+
+### `uv` and `pip`
+
+If you installed `flat-bug` via a package manager but find that GPU acceleration is not working, your environment likely downloaded the default PyPI wheels which may not match your system's NVIDIA drivers.
+
+**If you are using `uv`**, the easiest fix is to force a re-resolution of the PyTorch backend:
+
+```bash
+# Automatically detect hardware and reinstall PyTorch
+uv pip install torch torchvision --torch-backend=auto --reinstall
+
+# OR manually force a specific CUDA version (e.g., CUDA 11.8)
+uv pip install torch torchvision --torch-backend=cu118 --reinstall
+```
+
+**If you are using standard `pip`**, you must manually point to the PyTorch index that matches your system:
+
+```bash
+# Uninstall the broken versions
+pip uninstall torch torchvision
+
+# Reinstall pointing explicitly to the CUDA 11.8 or 12.1 (cu121) index
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+```
+
+**Verification:**
+
+```bash
+[uv run] python -c "import torch; print(f'CUDA Available: {torch.cuda.is_available()}')"
+```
+
+
+### Source
+
+Rebuild the environment and lockfile from scratch:
+
+```bash
+# cd ~/flat-bug
+
+# 1. Purge old state
+rm uv.lock
+rm -rf .venv
+
+# 2. Generate the pure, cross-platform lockfile
+uv lock
+
+# 3. Create your local environment
+uv sync --all-extras --all-groups
+
+# 4. Patch your local environment with your specific hardware backend
+uv pip install torch torchvision --torch-backend=auto --reinstall
+```
 
 <!-- fixme: Remember to add this later!
 ### Archive

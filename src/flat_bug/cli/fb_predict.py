@@ -180,6 +180,8 @@ def predict(
     if verbose:
         set_log_level("DEBUG")
     
+    torch.set_float32_matmul_precision("medium")
+    
     logger.debug(f"OPTIONS: {locals()}")
 
     # Sanitize paths

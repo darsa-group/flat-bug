@@ -87,7 +87,7 @@ def ios_boxes(
     ios = intersections / (sareas + 1e-6)
     return ios
 
-@torch.compile
+@torch.compile(fullgraph=True, mode="max-autotune-no-cudagraphs")
 def iou_masks(
         m1s : torch.Tensor, 
         m2s : torch.Tensor, 
@@ -144,7 +144,7 @@ def iou_masks(
     
     return intersections / (unions + 1e-6)
 
-@torch.compile
+@torch.compile(fullgraph=True, mode="max-autotune-no-cudagraphs")
 def ios_masks(  # noqa: D103
         m1s : torch.Tensor, 
         m2s : torch.Tensor, 
@@ -458,7 +458,6 @@ def fancy_nms(
     else:
         return objects[indices], scores[indices]
 
-# @torch.compile
 def nms_masks_(
         masks : torch.Tensor, 
         scores : torch.Tensor, 
@@ -689,7 +688,6 @@ def nms_masks(
         )=iou_masks,
         overlap_fn_boxes : Callable[..., torch.Tensor] | str | None=None
     ) -> torch.Tensor: ...
-# @torch.compile
 def nms_masks(
         masks : torch.Tensor, 
         scores : torch.Tensor, 

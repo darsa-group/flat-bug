@@ -21,6 +21,8 @@ concurrency:
 jobs:
   Continous-Testing:
     runs-on: ubuntu-latest
+    env:
+      UV_TORCH_BACKEND: cpu
 
     strategy:
       matrix:
