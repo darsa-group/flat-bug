@@ -35,9 +35,9 @@ The goal of `flatbug` is to provide a single unified model for detection and seg
 We recommend using `uv` ([*installation*](https://docs.astral.sh/uv/getting-started/installation/)):
 
 ```bash
-# Easy-install
+# Install
 uv pip install flat-bug --torch-backend=auto
-# Add to a project permanently (recommended)
+# Add to a project permanently
 uv add flat-bug
 ```
 
