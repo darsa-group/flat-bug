@@ -70,7 +70,7 @@ However, as with other packages built with `PyTorch` it is best to ensure that `
 We provide a number of [CLI scripts](https://darsa.info/flat-bug/cli.html) with `flatbug`. The main one of interest is `fb_predict`, which can be used to run inference on images or videos:
 
 ```bash
-[uv] fb_predict -i <DIR_WITH_IMGS> -o <OUTPUT_DIR> [-w <WEIGHT_PATH>] ...
+[uv run] fb_predict -i <DIR_WITH_IMGS> -o <OUTPUT_DIR> [-w <WEIGHT_PATH>] ...
 ```
 
 ## Tutorials
