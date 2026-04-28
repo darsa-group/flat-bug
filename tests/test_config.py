@@ -2,6 +2,7 @@
 import copy
 import os
 import tempfile
+
 import pytest
 
 from flat_bug.config import DEFAULT_CFG, check_cfg_types, check_types, get_type_def, read_cfg, write_cfg

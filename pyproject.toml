@@ -80,6 +80,15 @@ extend-exclude = [
 select = ["E", "F", "UP", "I", "D"]
 ignore = ["D105"]
 
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.pydoclint]
+ignore-one-line-docstrings = true
+
+[tool.ruff.lint.extend-per-file-ignores]
+"tests/*" = ["D100"]
+
 [tool.pytest.ini_options]
 filterwarnings = [
     "ignore:.*The NVIDIA driver on your system is too old.*:UserWarning",

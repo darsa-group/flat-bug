@@ -1,11 +1,10 @@
 # tests/conftest.py
-import subprocess
 import os
+import subprocess
+
 
 def pytest_sessionfinish(session, exitstatus):
-    """
-    This hook runs after all tests have completed.
-    """
+    """This hook runs after all tests have completed."""  # noqa: D401, D404
     script_path = os.path.join(os.path.dirname(__file__), "restore_assets.py")
     print(f"\n\nRunning Post-Test Cleanup:\n\t{script_path}\n")
     

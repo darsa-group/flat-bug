@@ -2,7 +2,7 @@
 import math
 from collections.abc import Sequence
 from itertools import accumulate
-from typing import Literal, TypeVar, overload, Never
+from typing import Literal, Never, TypeVar, overload
 
 import cv2
 import numpy as np
@@ -218,6 +218,7 @@ def contours_to_masks(
 
     Returns:
         NxHxW tensor or array of boolean masks with the contours filled in.
+
     """
     N = len(contours)
     
@@ -276,10 +277,13 @@ def poly_area(poly : torch.Tensor | np.ndarray) -> float:
     See https://en.wikipedia.org/wiki/Shoelace_formula#Shoelace_formula for details.
 
     Args:
-        poly: A tensor or array of shape (n, 2), where n is the number of vertices and the 2 columns are the x and y coordinates of the vertices.
+        poly: A tensor or array of shape (n, 2), 
+            where n is the number of vertices 
+            and the 2 columns are the x and y coordinates of the vertices.
     
     Returns:
         The area of the polygon
+
     """
     if isinstance(poly, torch.Tensor):
         return float(_poly_area_tensor(poly))
@@ -308,6 +312,7 @@ def poly_normals(polygon : V) -> V:
 
     Returns:
         A tensor of shape (n, 2), where n is the number of vertices and the 2 columns are the x and y coordinates of the normals.
+
     """
     if isinstance(polygon, torch.Tensor):
         return _poly_normals_tensor(polygon)

@@ -3,9 +3,9 @@ import glob
 import os
 import tempfile
 from copy import deepcopy
-import pytest
 
 import numpy as np
+import pytest
 from ultralytics.data import build_dataloader
 from ultralytics.data.utils import verify_image_label
 from ultralytics.utils import DEFAULT_CFG, IterableSimpleNamespace
@@ -15,7 +15,6 @@ from ultralytics.utils.plotting import plot_images
 
 from flat_bug.datasets import FlatBugYOLODataset, FlatBugYOLOValidationDataset
 from tests.remote_lfs_fallback import check_file_with_remote_fallback
-
 
 TEST_DIR = os.path.dirname(__file__)
 ASSET_DIR = os.path.join(TEST_DIR, "assets")
