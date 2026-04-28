@@ -1,4 +1,4 @@
-name: Flat-bug Unit Tests
+name: Tests
 run-name: ${{ github.ref }} is running unit tests
 on: 
   push:

@@ -11,7 +11,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/flat-bug.svg)](https://pypi.org/project/flat-bug/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/flat-bug.svg)](https://pypi.org/project/flat-bug/)
-[![CI Status](https://github.com/darsa-group/flat-bug/actions/workflows/ci.yaml/badge.svg)](https://github.com/darsa-group/flat-bug/actions)
+[![CI Status](https://github.com/darsa-group/flat-bug/actions/workflows/ci.yml/badge.svg)](https://github.com/darsa-group/flat-bug/actions/workflows/ci.yml)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
