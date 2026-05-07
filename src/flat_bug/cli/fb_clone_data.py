@@ -1,20 +1,26 @@
-from zipfile import ZipFile
-import hashlib
-import boto3
-from cvat_sdk import make_client
-from botocore.config import Config
-import yaml
+# noqa: D100
 import argparse
+import hashlib
+import json
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-import os, json, shutil
+from zipfile import ZipFile
+
+import boto3
+import yaml
+from botocore.config import Config
 from botocore.exceptions import ClientError
+from cvat_sdk import make_client
 
 try:
     from tqdm import tqdm
     _HAVE_TQDM = True
 except Exception:
     _HAVE_TQDM = False
+
+# TODO: fixme
+# ruff: disable[D103]
 
 
 secrets_structure = """
@@ -41,14 +47,12 @@ FORMAT_NAME = "COCO 1.0"
 
 # ------------------ Load secrets from YAML ------------------
 def load_secrets_yaml(path):
-    with open(path, "r") as f:
+    with open(path) as f:
         return yaml.safe_load(f)
 
 # ------------------ Helpers ------------------
 def safe_segment(name: str) -> str:
-    """
-    Make a filesystem-safe folder name (keep common chars; replace others with underscore).
-    """
+    """Make a filesystem-safe folder name (keep common chars; replace others with underscore)."""
     allowed = "-_.() abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
     cleaned = "".join(c if c in allowed else "_" for c in name).strip()
     # avoid empty folder names
@@ -66,10 +70,11 @@ def md5_file(path: Path, chunk=1024 * 1024) -> str:
     return h.hexdigest()
 
 def task_is_completed(task) -> bool:
-    """
+    """Check if a task is done.
+    
     Consider a task completed if either:
-      - task.status == 'completed', OR
-      - all of its jobs are in state == 'completed'
+        - task.status == 'completed', OR
+        - all of its jobs are in state == 'completed'
     """
     try:
         if getattr(task, "status", None) == "completed":
@@ -99,9 +104,7 @@ def build_s3_client(s3_access_key, s3_secret_key, s3_region, s3_endpoint):
     )
 
 def list_s3_objects_with_prefix(s3, bucket: str, prefix: str):
-    """
-    Yield dicts with 'Key', 'Size', 'ETag' (no quotes), and 'LastModified'.
-    """
+    """Yield dicts with 'Key', 'Size', 'ETag' (no quotes), and 'LastModified'."""
     continuation = None
     while True:
         kwargs = {"Bucket": bucket, "Prefix": prefix}
@@ -129,7 +132,8 @@ def ensure_parent(path: Path):
 #
 # ------------------ COCO Export ------------------
 def export_coco_annotations_for_task(task, output_json_path: Path, s3_prefix):
-    """
+    """Export COCO for task.
+    
     Export task dataset (COCO 1.0, annotations only) to a temp zip,
     then extract the COCO annotations json to output_json_path.
     """
@@ -200,8 +204,7 @@ def sync_s3_prefix_to_local(
     local_root: Path,
     delete_extraneous: bool = True,
 ) -> bool:
-    """
-    Incremental sync of s3://bucket/prefix -> local_root.
+    """Incremental sync of s3://bucket/prefix -> local_root.
 
     - Skips files whose cached ETag matches upstream ETag.
     - If no sidecar exists: when upstream ETag looks like a single-part MD5
@@ -307,8 +310,7 @@ def _process_one_task(task_id: int,
                       s3_bucket: str,
                       s3_prefix_root: str,
                       target_dir: Path):
-    """Runs in a thread. Returns (task_id, ok, msg)."""
-
+    """Runs in a thread. Returns (task_id, ok, msg).""" # noqa: D401
     CVAT_HOST = cfg_cvat.get("host", "https://app.cvat.ai")
     USERNAME = cfg_cvat["username"]
     PASSWORD = cfg_cvat["password"]
@@ -359,17 +361,25 @@ def _process_one_task(task_id: int,
 def main():
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
-    args_parse.add_argument("-s", "--secrets-file", dest="secrets_file",
-                            help="A YAML files containing credentials for s3 and cvat. It has the following structure"
-                                 f"{secrets_structure}"
-                            )
+    args_parse.add_argument(
+        "-s", "--secrets-file", dest="secrets_file",
+        help=(
+            "A YAML files containing credentials for s3 and cvat. It has the following structure"
+            f"{secrets_structure}"
+    ))
 
-    args_parse.add_argument("-o", "--output-dir", dest="output_dir",
-                            help="The output directory where all subdatasets are stored. Each subdirectory is a coco dataset, with a JSON file and a list of images")
+    args_parse.add_argument(
+        "-o", "--output-dir", dest="output_dir",
+        help=(
+            "The output directory where all subdatasets are stored. "
+            "Each subdirectory is a coco dataset, with a JSON file and a list of images"
+    ))
 
-    args_parse.add_argument("-f", "--force", dest="delete_target_before",
-                            help="Delete output directory before, this avoids duplicating data etc",
-                            action="store_true")
+    args_parse.add_argument(
+        "-f", "--force", dest="delete_target_before",
+        help="Delete output directory before, this avoids duplicating data etc",
+        action="store_true"
+    )
     args = args_parse.parse_args()
     option_dict = vars(args)
 

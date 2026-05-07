@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-DEPRECATED.
+"""DEPRECATED.
 """
 
 import argparse
@@ -10,7 +9,6 @@ import logging
 import os
 import random
 import re
-from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -23,8 +21,7 @@ from flat_bug import logger
 from flat_bug.coco_utils import fb_to_coco, filter_coco, split_annotations
 from flat_bug.config import DEFAULT_CFG, read_cfg, write_cfg
 from flat_bug.datasets import get_datasets
-from flat_bug.eval_utils import (best_confidence_threshold, compare_groups,
-                                 f1_score)
+from flat_bug.eval_utils import best_confidence_threshold, compare_groups, f1_score
 from flat_bug.predictor import Predictor
 
 # Fixed ranges for the parameters during tuning - should probably be configurable
@@ -37,39 +34,39 @@ PARAMETER_RANGES = {
 
 # Class for scaling and unscaling the parameters - ensures that the parameters visible to the optimizer have equal dynamic ranges [0, 1]
 class Scaler:
-    def __init__(self, ranges : Dict[str, Tuple[int, Union[int, float]]]):
+    def __init__(self, ranges : dict[str, tuple[int, int | float]]):
         self.ranges = ranges
         self.scales = [(r[1] - r[0]) for r in ranges.values()]
         self.offsets = [r[0] for r in ranges.values()]
 
-    def scale(self, params : Union[list, np.ndarray]) -> list:
-        """
-        Scales the parameters between 0 and 1. 
+    def scale(self, params : list | np.ndarray) -> list:
+        """Scales the parameters between 0 and 1.
 
         scale(x) = (x - x_min) / (x_max - x_min)
 
         Args:
-            params (Union[list, np.ndarray]): The parameters to scale
+            params: The parameters to scale
 
         Returns:
             list: The scaled parameters
+
         """
         if not isinstance(params, list):
             params = params.tolist()
         value = [(p - o) / s for p, o, s in zip(params, self.offsets, self.scales)]
         return value
     
-    def unscale(self, params : Union[list, np.ndarray]) -> list:
-        """
-        Unscales values between 0 and 1 to the original parameter ranges.
+    def unscale(self, params : list | np.ndarray) -> list:
+        """Unscales values between 0 and 1 to the original parameter ranges.
 
         unscale(x) = x * (x_max - x_min) + x_min
 
         Args:
-            params (Union[list, np.ndarray]): The scaled parameters, i.e. values between 0 and 1
+            params: The scaled parameters, i.e. values between 0 and 1
 
         Returns:
             list: The unscaled parameters
+
         """
         if not isinstance(params, list):
             params = params.tolist()
@@ -77,7 +74,7 @@ class Scaler:
         return value
 
 class Tuner(Predictor):
-    def __init__(self, loader : torch.utils.data.DataLoader, default_cfg : dict, scale_before : Union[float, int], file_path : Optional[str], *args, **kwargs):
+    def __init__(self, loader : torch.utils.data.DataLoader, default_cfg : dict, scale_before : float | int, file_path : str | None, *args, **kwargs):
         self.loader = loader
         self.default_cfg = default_cfg
         self.scale_before = scale_before
@@ -102,8 +99,7 @@ class Tuner(Predictor):
         self._init_score_threshold = self.SCORE_THRESHOLD
     
     def evaluate(self) -> float:
-        r"""
-        Evaluates the model on the dataset(s) and returns the cost.
+        r"""Evaluates the model on the dataset(s) and returns the cost.
         Cost is defined as the average of one minus the intersection over union (IoU) for all matches between labels and predicted instances. This includes both matched predictions, unmatched predictions (false positives), and unmatched labels (false negatives).
         Including false positives and negatives ensures that the model is penalized for missing instances as well as for predicting instances that are not present in the ground truth.
 
@@ -120,8 +116,10 @@ class Tuner(Predictor):
         False positives or negatives lead to either :math:`L_{i,p}` or :math:`P_{i,q}` being empty, which will result in a cost of 1 for that instance.
         A prediction perfectly matching a ground truth label will result in a cost of 0 for that instance.
         In reality, the cost is calculated as 1 minus the average IoU for each instance, this is equivalent to the above formula, but the code is a bit cleaner.
+
         Returns:
             float: The cost of the model on the dataset(s), where 0 corresponds to exactly finding and matching all ground truth instances, and 1 corresponds to not finding any instances.
+
         """
         eval_results = {}
         for data in tqdm(self.loader, dynamic_ncols=True, leave=False, desc="Evaluating model "):
@@ -185,8 +183,7 @@ class Tuner(Predictor):
         return cost, c_f1, c_iou
     
     def update_score_threshold(self, cost, threshold):
-        """
-        Potentially updates the score threshold based on the cost and the current best score threshold.
+        """Potentially updates the score threshold based on the cost and the current best score threshold.
 
         An update is applied if:
         - There are no prior costs
@@ -260,10 +257,10 @@ class Tuner(Predictor):
 class AnnotatedDataset(torch.utils.data.IterableDataset):
     FILES_PER_DATASET_PER_ITER = 1
 
-    def __init__(self, files : list, annotations : dict, datasets_per_iter : Optional[int] = None, files_per_iter : Optional[int] = None):
+    def __init__(self, files : list, annotations : dict, datasets_per_iter : int | None = None, files_per_iter : int | None = None):
         self.files = []
         # Create a dictionary with the base name of the images as keys and the annotations as values
-        self.annotations = split_annotations(filter_coco(json.load(open(annotations, "r")), area=32**2), strip_directories=True)
+        self.annotations = split_annotations(filter_coco(json.load(open(annotations)), area=32**2), strip_directories=True)
         # Add the files to the dataset if they are found in the annotations
         [self.files.append(file) if os.path.basename(file) in self.annotations else logging.warning(f"File {file} not found in the annotations!") for file in files]
         del files
@@ -279,7 +276,7 @@ class AnnotatedDataset(torch.utils.data.IterableDataset):
             self.DATASETS_PER_ITER = len(self.datasets)
         else:
             self.DATASETS_PER_ITER = min(datasets_per_iter, len(self.datasets))
-        if not files_per_iter is None:
+        if files_per_iter is not None:
             self.FILES_PER_DATASET_PER_ITER = files_per_iter
 
     def __getitem__(self, idx):

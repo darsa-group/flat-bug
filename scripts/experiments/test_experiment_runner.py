@@ -1,6 +1,9 @@
-import os, sys
+import os
+import sys
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
-from scripts.experiments.experiment_helpers import get_cmd_args, read_slurm_params, ExperimentRunner, run_command
+from scripts.experiments.experiment_helpers import ExperimentRunner, get_cmd_args, read_slurm_params, run_command
+
 
 def print_environment_status_for_debug(test_string : str, dry_run : bool=False, execute : bool=True, device=None):
     command = f"""

@@ -1,28 +1,32 @@
+"""Implementations of non-maximum suppression for boxes, polygons and masks used in flatbug inference."""
+from collections.abc import Callable
 from functools import partial
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Literal, cast, overload
 
 import numpy as np
+import scipy.sparse
 import shapely
 import torch
 import torchvision
 
-import scipy.sparse
-
 
 def iou_boxes(
         rectangles : torch.Tensor,
-        other_rectangles : Optional[torch.Tensor]=None
+        other_rectangles : torch.Tensor | None=None
     ) -> torch.Tensor:
-    """
-    Calculates the intersection over union (IoU) of a set of rectangles.
+    """Calculate the intersection over union (IoU) of a set of rectangles.
 
     Args:
-        rectangles (`torch.Tensor`): A tensor of shape (n, 4), where n is the number of rectangles and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles.
-        other_rectangles (`Optional[torch.Tensor]`, optional): A tensor of shape (m, 4), where m is the number of rectangles and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles. 
+        rectangles: A tensor of shape (n, 4), where n is the number of rectangles
+            and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles.
+        other_rectangles: A tensor of shape (m, 4), where m is the number of rectangles
+            and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles. 
             Defaults to None, in which case the symmetric IoU of the rectangles with themselves is calculated.
 
     Returns:
-        out (`torch.Tensor`): A tensor of shape (n, n), where n is the number of rectangles, containing the IoU of each rectangle with each other rectangle.
+        A tensor of shape (n, n), where n is the number of rectangles, 
+        containing the IoU of each rectangle with each other rectangle.
+
     """
     if not isinstance(rectangles, torch.Tensor):
         raise ValueError(f"Rectangles must be a tensor, not {type(rectangles)}")
@@ -46,18 +50,21 @@ except TypeError:
 
 def ios_boxes(
         rectangles : torch.Tensor,
-        other_rectangles : Optional[torch.Tensor]=None
+        other_rectangles : torch.Tensor | None=None
     ) -> torch.Tensor:
-    """
-    Calculates the intersection over smaller (IoS) of a set of rectangles.
+    """Calculate the intersection over smaller (IoS) of a set of rectangles.
 
     Args:
-        rectangles (`torch.Tensor`): A tensor of shape (n, 4), where n is the number of rectangles and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles.
-        other_rectangles (`Optional[torch.Tensor]`, optional): A tensor of shape (m, 4), where m is the number of rectangles and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles. 
+        rectangles: A tensor of shape (n, 4), where n is the number of rectangles
+            and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles.
+        other_rectangles: A tensor of shape (m, 4), where m is the number of rectangles
+            and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the rectangles. 
             Defaults to None, in which case the symmetric IoS of the rectangles with themselves is calculated.
 
     Returns:
-        out (`torch.Tensor`): A tensor of shape (n, n), where n is the number of rectangles, containing the IoS of each rectangle with each other rectangle.
+        A tensor of shape (n, n), where n is the number of rectangles, 
+        containing the IoS of each rectangle with each other rectangle.
+
     """
     if not isinstance(rectangles, torch.Tensor):
         raise ValueError(f"Rectangles must be a tensor, not {type(rectangles)}")
@@ -80,16 +87,15 @@ def ios_boxes(
     ios = intersections / (sareas + 1e-6)
     return ios
 
-@torch.jit.script
+@torch.compile(fullgraph=True, mode="max-autotune-no-cudagraphs")
 def iou_masks(
         m1s : torch.Tensor, 
         m2s : torch.Tensor, 
-        a1s : Union[torch.Tensor, None]=None, 
-        a2s : Union[torch.Tensor, None]=None, 
+        a1s : torch.Tensor | None=None, 
+        a2s : torch.Tensor | None=None, 
         dtype : torch.dtype=torch.float32
     ) -> torch.Tensor:
-    """
-    Computes IoU between all pairs between two sets of masks.
+    """Compute IoU between all pairs between two sets of masks.
 
     The IoU is calculated using the formula: 
     
@@ -97,19 +103,21 @@ def iou_masks(
 
     `intersection[i, j] = (m1s[i] * m2s[j]).sum()`
 
-    The reason the intersection is calculated this way is that it can be vectorized and calculated in a single matrix multiplication for all pairs of masks.
+    The reason the intersection is calculated this way is that it can be vectorized
+    and calculated in a single matrix multiplication for all pairs of masks.
 
     OBS: Results will only be valid for boolean or masks containing only 0s and 1s.
 
     Args:
-        m1s (`torch.Tensor`): A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
-        m2s (`torch.Tensor`): A tensor of shape (m, h, w), where m is the number of masks and h and w are the height and width of the masks.
-        a1s (`Optional[torch.Tensor]`, optional): A tensor of shape (n, ) containing the areas of the masks in m1s. Defaults to None, in which case the areas are calculated.
-        a2s (`Optional[torch.Tensor]`, optional): A tensor of shape (m, ) containing the areas of the masks in m2s. Defaults to None, in which case the areas are calculated.
-        dtype (`torch.dtype`, optional): The data type of the output tensor. Defaults to torch.float32.
+        m1s: A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
+        m2s: A tensor of shape (m, h, w), where m is the number of masks and h and w are the height and width of the masks.
+        a1s: A tensor of shape (n, ) containing the areas of the masks in m1s. Defaults to None, in which case the areas are calculated.
+        a2s: A tensor of shape (m, ) containing the areas of the masks in m2s. Defaults to None, in which case the areas are calculated.
+        dtype: The data type of the output tensor. Defaults to torch.float32.
         
     Returns:
-        out (`torch.Tensor`): A tensor of shape (n, m) containing the IoU of each pair of masks.
+        A tensor of shape (n, m) containing the IoU of each pair of masks.
+
     """
     # 1. Standardize Inputs: Ensure batch dim and flatten spatial dims (N, H, W) -> (N, P)
     if m1s.dim() == 2:
@@ -136,16 +144,15 @@ def iou_masks(
     
     return intersections / (unions + 1e-6)
 
-@torch.jit.script
-def ios_masks(
+@torch.compile(fullgraph=True, mode="max-autotune-no-cudagraphs")
+def ios_masks(  # noqa: D103
         m1s : torch.Tensor, 
         m2s : torch.Tensor, 
-        a1s : Union[torch.Tensor, None]=None, 
-        a2s : Union[torch.Tensor, None]=None, 
+        a1s : torch.Tensor | None=None, 
+        a2s : torch.Tensor | None=None, 
         dtype : torch.dtype=torch.float32
     ) -> torch.Tensor:
-    """
-    Computes IoS (Intersection over Smaller area) between all pairs between two sets of masks.
+    """Compute IoS (Intersection over Smaller area) between all pairs between two sets of masks.
 
     The IoS is calculated using the formula:
 
@@ -153,19 +160,21 @@ def ios_masks(
 
     `intersection[i, j] = (m1s[i] * m2s[j]).sum()`
 
-    The reason the intersection is calculated this way is that it can be vectorized and calculated in a single matrix multiplication for all pairs of masks.
+    The reason the intersection is calculated this way is that it can be vectorized 
+    and calculated in a single matrix multiplication for all pairs of masks.
 
     OBS: Results will only be valid for boolean or masks containing only 0s and 1s.
 
     Args:
-        m1s (`torch.Tensor`): A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
-        m2s (`torch.Tensor`): A tensor of shape (m, h, w), where m is the number of masks and h and w are the height and width of the masks.
-        a1s (`Optional[torch.Tensor]`, optional): A tensor of shape (n, ) containing the areas of the masks in m1s. Defaults to None, in which case the areas are calculated.
-        a2s (`Optional[torch.Tensor]`, optional): A tensor of shape (m, ) containing the areas of the masks in m2s. Defaults to None, in which case the areas are calculated.
-        dtype (`torch.dtype`, optional): The data type of the output tensor. Defaults to torch.float32.
+        m1s: A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
+        m2s: A tensor of shape (m, h, w), where m is the number of masks and h and w are the height and width of the masks.
+        a1s: A tensor of shape (n, ) containing the areas of the masks in m1s. Defaults to None, in which case the areas are calculated.
+        a2s: A tensor of shape (m, ) containing the areas of the masks in m2s. Defaults to None, in which case the areas are calculated.
+        dtype: The data type of the output tensor. Defaults to torch.float32.
 
     Returns:
-        out (`torch.Tensor`): A tensor of shape (n, m) containing the IoS of each pair of masks.
+        A tensor of shape (n, m) containing the IoS of each pair of masks.
+
     """
     # 1. Standardize Inputs: Ensure batch dim and flatten spatial dims (N, H, W) -> (N, P)
     if m1s.dim() == 2:
@@ -192,9 +201,10 @@ def ios_masks(
     
     return intersections / (amin + 1e-6)
 
-def iou_polygons(
-        polygons1: Union[List[torch.Tensor], np.ndarray], 
-        polygons2: Optional[Union[List[torch.Tensor], np.ndarray]] = None
+def iou_polygons(  # noqa: D103
+        polygons1: list[torch.Tensor] | np.ndarray, 
+        polygons2: list[torch.Tensor] | np.ndarray | None = None,
+        *args, **kwargs
     ) -> np.ndarray:
     
     if len(polygons1) == 0:
@@ -226,9 +236,10 @@ def iou_polygons(
     return iou_mat
 
 
-def ios_polygons(
-        polygons1: Union[List[torch.Tensor], np.ndarray], 
-        polygons2: Optional[Union[List[torch.Tensor], np.ndarray]] = None
+def ios_polygons(  # noqa: D103
+        polygons1: list[torch.Tensor] | np.ndarray, 
+        polygons2: list[torch.Tensor] | np.ndarray | None = None,
+        *args, **kwargs
     ) -> np.ndarray:
     
     if len(polygons1) == 0:
@@ -259,46 +270,76 @@ def ios_polygons(
 
     return ios_mat
 
+@overload
 def base_nms_(
         objects : Any, 
         overlap_fn : Callable, 
         scores : torch.Tensor, 
-        collate_fn : Callable=None, 
+        collate_fn : Callable | None=None, 
+        overlap_threshold : float=0.5, 
+        strict : bool=True, 
+        return_indices : Literal[False]=False, 
+        **kwargs
+    ) -> tuple[Any, torch.Tensor]: ...
+@overload
+def base_nms_(
+        objects : Any, 
+        overlap_fn : Callable, 
+        scores : torch.Tensor, 
+        collate_fn : Callable | None=None, 
+        overlap_threshold : float=0.5, 
+        strict : bool=True, 
+        return_indices : Literal[True]=True, 
+        **kwargs
+    ) -> torch.Tensor: ...
+def base_nms_(
+        objects : Any, 
+        overlap_fn : Callable, 
+        scores : torch.Tensor, 
+        collate_fn : Callable | None=None, 
         overlap_threshold : float=0.5, 
         strict : bool=True, 
         return_indices : bool=False, 
         **kwargs
-    ) -> Union[torch.Tensor, Tuple[Any, torch.Tensor]]:
-    """
-    Implements the standard non-maximum suppression algorithm.
+    ) -> torch.Tensor | tuple[Any, torch.Tensor]:
+    """Perform the standard non-maximum suppression algorithm.
 
     Args:
-        objects (`Any`): An object which can be indexed by a tensor of indices.
-        overlap_fn (`Callable`): A function which takes an anchor object and a comparison set (not in the Python sense) of (different) objects and returns the IoU of the anchor object with each object in the comparison set as a tensor of shape (1, n). 
-            The reason it is not just (n, ) is to allow for implementations of `overlap_fn` functions between two sets, where the IoU is calculated between each pair of objects from distinct sets.
-        scores (`torch.Tensor`): A tensor of shape (n, ) containing the "scores" of the objects, this can merely be though of as a priority score, where the higher the score, the higher the priority of the object - it does not have to be a probability/confidence.
-        collate_fn (`Callable`, optional): A function which takes a list of objects and returns a single combined object. Defaults to `torch.cat` if `objects` is a tensor and `lambda x : x` if `objects` is a list, otherwise it has to be specified.
-        overlap_threshold (`float`, optional): The overlap (e.g. IoU) threshold for non-maximum suppression. Defaults to 0.5.
-        strict (`bool`, optional): A flag to indicate whether to perform strict checks on the algorithm. Defaults to True.
-        return_indices (`bool`, optional): A flag to indicate whether to return the indices of the picked objects or the objects themselves. Defaults to False. If True, both the picked objects and scores are returned.
+        objects: An object which can be indexed by a tensor of indices.
+        overlap_fn: A function which takes an anchor object and a comparison set (not in the Python sense) of (different) objects 
+            and returns the IoU of the anchor object with each object in the comparison set as a tensor of shape (1, n). 
+            The reason it is not just (n, ) is to allow for implementations of `overlap_fn` functions between two sets, 
+            where the IoU is calculated between each pair of objects from distinct sets.
+        scores: A tensor of shape (n, ) containing the "scores" of the objects, this can merely be though of as a priority score, 
+            where the higher the score, the higher the priority of the object - it does not have to be a probability/confidence.
+        collate_fn: A function which takes a list of objects and returns a single combined object. 
+            Defaults to `torch.cat` if `objects` is a tensor and `lambda x : x` if `objects` is a list, otherwise it has to be specified.
+        overlap_threshold: The overlap (e.g. IoU) threshold for non-maximum suppression. Defaults to 0.5.
+        strict: A flag to indicate whether to perform strict checks on the algorithm. Defaults to True.
+        return_indices: A flag to indicate whether to return the indices of the picked objects or the objects themselves. 
+            Defaults to False.  If True, both the picked objects and scores are returned.
         **kwargs: Additional keyword arguments to be passed to the overlap_fn function.
     
     Returns:
-        out (`Union[torch.Tensor, Tuple[Any, torch.Tensor]]`):
-            - `torch.Tensor`: A tensor of shape `(m,)` containing the indices of the picked objects.
-            - `Tuple[Any, torch.Tensor]`: A tuple where the first element contains the picked objects and the second element is a tensor of their scores.
+        Either a tensor of shape `(m,)` containing the indices of the picked objects, 
+        or a tuple (`tuple[Any, torch.Tensor]`) where the first element contains 
+        the picked objects and the second element is a tensor of their scores.
+
     """
     if collate_fn is None:
         if isinstance(objects, torch.Tensor):
             collate_fn = torch.cat
         elif isinstance(objects, list):
-            collate_fn = lambda x : x
+            collate_fn = lambda x : x  # noqa: E731
         else:
             raise ValueError(f"collate_fn must be specified for objects of type {type(objects)}")
+    
+    device = scores.device
     if len(scores.shape) != 1:
         raise ValueError(f"Scores must be of shape (n,), not {scores.shape}")
 
-    if len(objects) == 0 or len(objects) == 1:
+    N = len(objects)
+    if N == 0 or N == 1:
         if return_indices:
             return torch.arange(len(objects))
         else:
@@ -309,11 +350,9 @@ def base_nms_(
 
     # Initialize tensors for winners (selected boxes), possible boxes and counters
     winners = []
-    possible = torch.ones((len(objects),), dtype=torch.bool, device=objects.device)
+    possible = torch.ones((len(objects),), dtype=torch.bool, device=device)
     left = len(objects)
-    i, n = 0, 0
-
-    while True:
+    for i in range(N):
         possible_idx = possible.nonzero().squeeze()
         n_possible = possible_idx.numel()
         if n_possible < 2:
@@ -336,13 +375,12 @@ def base_nms_(
             # In/Decrement the counters
             increment = (~winner_mask).sum().item() + 1
             left -= increment
-            n += 1
             assert left == (possible_idx.numel() - 1), f"left ({left}) != possible_idx.numel() - 1 ({possible_idx.numel() - 1})"
-            assert n == len(winners), f"n ({n}) != winners.sum() ({len(winners)})"
+            assert (i + 1) == len(winners), f"n ({i + 1}) != winners.sum() ({len(winners)})"
 
 
     # Map the indices back to the original indices and sort them (returns boxes, scores & indices in the original order of the input)
-    winners = torch.tensor(winners, dtype=torch.long, device=objects.device)
+    winners = torch.tensor(winners, dtype=torch.long, device=device)
     winners = indices[winners].sort().values 
     
     # Return the boxes and scores that were picked
@@ -355,32 +393,39 @@ def fancy_nms(
         objects : Any, 
         overlap_fn : Callable, 
         scores : torch.Tensor, 
-        overlap_threshold : Union[float, int]=0.5, 
+        overlap_threshold : float | int=0.5, 
         return_indices : bool=False
-    ) -> Union[torch.Tensor, Tuple[Any, torch.Tensor]]:
-    """
-    This is a 'fancy' implementation of non-maximum suppression. It is not as fast as the non-maximum suppression algorithm, nor does it follow the exact same algorithm, but it is more readable and easier to debug.
+    ) -> torch.Tensor | tuple[Any, torch.Tensor]:
+    """Perform a 'fancy' implementation of non-maximum suppression (NMS).
+    
+    It is not as fast as the non-maximum suppression algorithm, 
+    nor does it follow the exact same algorithm, but it is more readable and easier to debug.
 
     The algorithm works as follows:
         1. Sort the objects by score (implicitly)
         2. Calculate the overlap (e.g. IoU) matrix
         3. Create a boolean matrix where overlap > overlap_threshold 
         4. Fold the boolean matrix sequentially (i.e. row_i = row_i + row_i-1 + ... + row_0)
-           (The values on the diagonal of the matrix now correspond to the number of higher-priority objects that suppress the current object, including itself)
+           (The values on the diagonal of the matrix now correspond to the number 
+           of higher-priority objects that suppress the current object, including itself)
         5. objects which are suppressed only by themselves are returned.
 
     
     Args:
-        objects (`Any`): Any object collection that can be indexed by a tensor, where the first dimension corresponds to the objects.
-        overlap_fn (`Callable`): A function that calculates the symmetric overlap (e.g. IoU) matrix of a set of objects returned as a `torch.Tensor` of shape (n, n), where n is the number of objects. The device should match the device of the scores.
-        scores (`torch.Tensor`): A tensor of shape (n, ) containing the scores of the objects.
-        overlap_threshold (`Union[float, int]`, optional): The overlap (e.g. IoU) threshold for non-maximum suppression. Defaults to 0.5.
-        return_indices (`bool`, optional): A flag to indicate whether to return the indices of the picked objects or the objects themselves. Defaults to False. If True, both the picked objects and scores are returned.
+        objects: Any object collection that can be indexed by a tensor, where the first dimension corresponds to the objects.
+        overlap_fn: A function that calculates the symmetric overlap (e.g. IoU) matrix 
+            of a set of objects returned as a `torch.Tensor` of shape (n, n), 
+            where n is the number of objects. The device should match the device of the scores.
+        scores: A tensor of shape (n, ) containing the scores of the objects.
+        overlap_threshold: The overlap (e.g. IoU) threshold for non-maximum suppression. Defaults to 0.5.
+        return_indices: A flag to indicate whether to return the indices of the picked objects or the objects themselves. 
+            Defaults to False. If True, both the picked objects and scores are returned.
 
     Returns:
-        out (`Union[torch.Tensor, Tuple[Any, torch.Tensor]]`):
-            - `torch.Tensor`: A tensor of shape `(m,)` containing the indices of the picked objects.
-            - `Tuple[Any, torch.Tensor]`: A tuple where the first element contains the picked objects and the second element is a tensor of their scores.
+        Either a tensor containing the indices of the picked objects, 
+        or a tuple (`tuple[Any, torch.Tensor`) where the first element contains 
+        the picked objects and the second element is a tensor of their scores.
+
     """
     if not len(objects.shape) == 2:
         raise ValueError(f"Boxes must be of shape (n, x), not {objects.shape}")
@@ -404,7 +449,8 @@ def fancy_nms(
     # Fold the overlap matrix sequentially (i.e. row_i = row_i + row_i-1 + ... + row_0)
     overlaps = (overlaps > overlap_threshold).cumsum(dim=1) <= 1
 
-    # The boxes with an overlap greater than the threshold are the elements on the diagonal of the folded overlap matrix which are one (suppressed only by itself)
+    # The boxes with an overlap greater than the threshold are the elements on 
+    # the diagonal of the folded overlap matrix which are one (suppressed only by itself)
     indices = indices[torch.where(overlaps.diagonal())[0]]
 
     if return_indices:
@@ -412,23 +458,23 @@ def fancy_nms(
     else:
         return objects[indices], scores[indices]
 
-# @torch.jit.script
 def nms_masks_(
         masks : torch.Tensor, 
         scores : torch.Tensor, 
         overlap_threshold : float=0.5,
-        overlap_fn : Callable[[torch.Tensor, torch.Tensor], torch.Tensor]=iou_masks
+        overlap_fn : Callable[[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None, torch.dtype], torch.Tensor]=iou_masks
     ) -> torch.Tensor:
-    """
-    Performs non-maximum suppression on a set of masks.
+    """Perform non-maximum suppression (NMS) on a set of masks.
     
     Args:
-        masks (`torch.Tensor`): A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
-        scores (`torch.Tensor`): A tensor of shape (n, ) containing the scores of the masks.
-        overlap_threshold (`float`, optional): The overlap (e.g. IoU) threshold for non-maximum suppression. Defaults to 0.5.
+        masks: A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
+        scores: A tensor of shape (n, ) containing the scores of the masks.
+        overlap_threshold: The overlap (e.g. IoU) threshold for non-maximum suppression. Defaults to 0.5.
+        overlap_fn: A function to compute overlaps between masks.
 
     Returns:
-        out (`torch.Tensor`): A tensor containing the indices of the picked masks.
+        A tensor containing the indices of the picked masks.
+
     """
     N, device = len(scores), masks.device
     if N <= 1:
@@ -461,9 +507,9 @@ def nms_masks_(
         overlaps = overlap_fn(
             masks[possible_idx[0:1]].unsqueeze(1), 
             masks[possible_idx[1:]].unsqueeze(1), 
-            a1s=areas[possible_idx[0:1]], 
-            a2s=areas[possible_idx[1:]], 
-            dtype=torch.float32
+            areas[possible_idx[0:1]], 
+            areas[possible_idx[1:]], 
+            torch.float32
         ).squeeze(0)
         
         winner_mask = overlaps <= overlap_threshold
@@ -472,8 +518,8 @@ def nms_masks_(
 
     return indices[winners[:i]].sort().values 
 
-def nms_polygons_(
-        polys : List[torch.Tensor], 
+def nms_polygons_(  # noqa: D103
+        polys : list[torch.Tensor], 
         scores : torch.Tensor, 
         overlap_threshold : float=0.5,
         overlap_fn : Callable[[np.ndarray, np.ndarray], np.ndarray]=iou_polygons
@@ -483,7 +529,7 @@ def nms_polygons_(
         return torch.arange(N, device=device)
 
     scores_np = scores.cpu().numpy()
-    geoms = np.array([shapely.polygons(p.cpu().numpy()).buffer(0) for p in polys])
+    geoms = np.array([cast(shapely.Polygon, shapely.polygons(p.cpu().numpy())).buffer(0) for p in polys])
 
     indices = np.argsort(scores_np)[::-1] # Ascending sort -> reverse for descending
     geoms = geoms[indices]
@@ -525,9 +571,9 @@ def nms_polygons_(
 def cluster_overlap_boxes(
         boxes: torch.Tensor, 
         overlap_threshold: float = 0.5,
-        overlap_fn: Callable[[torch.Tensor], torch.Tensor] = iou_boxes,
+        overlap_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = iou_boxes,
         time: bool = False
-    ) -> Tuple[List[torch.Tensor], torch.Tensor]:
+    ) -> tuple[list[torch.Tensor], torch.Tensor]:
     """Cluster boxes via connected components.
     
     Note: Implementation relies on ``overlap_fn`` being symmetric (e.g. IoU/IoS).
@@ -581,7 +627,7 @@ def cluster_overlap_boxes(
     return list(groups), cluster_vec
 
 
-OVERLAP_FNS : dict[str, dict[str, Callable[[torch.Tensor], torch.Tensor]]] = {
+OVERLAP_FNS : dict[str, dict[str, Callable]] = {
     "polygon" : {
         "iou" : iou_polygons,
         "ios" : ios_polygons
@@ -596,43 +642,86 @@ OVERLAP_FNS : dict[str, dict[str, Callable[[torch.Tensor], torch.Tensor]]] = {
     }
 }
 
-def get_overlap_fn(geometry : str, metric : str):
+def get_overlap_fn(geometry : str, metric : str):  # noqa: D103
     geometry, metric = geometry.lower().strip(), metric.lower().strip()
     if geometry not in OVERLAP_FNS:
-        raise NotImplementedError(f'No overlap metrics implemented for geometry type: "{geometry}", valid options are [{", ".join(OVERLAP_FNS.keys())}]')
+        raise NotImplementedError(
+            f'No overlap metrics implemented for geometry type: "{geometry}", ' +
+            'valid options are [{}]'.format(
+                ", ".join(OVERLAP_FNS.keys())
+            )
+        )
     options = OVERLAP_FNS[geometry]
     if metric not in options:
-        raise NotImplementedError(f'Overlap metric: "{metric}" not implemented for geometry type: "{geometry}", valid options are [{", ".join(options.keys())}]')
+        raise NotImplementedError(
+            f'Overlap metric: "{metric}" not implemented for geometry type: "{geometry}", ' +
+            'valid options are [{}]'.format(
+                ", ".join(options.keys())
+            )
+        )
     return options[metric]
 
-# @torch.jit.script
+
+@overload
+def nms_masks(
+        masks : torch.Tensor, 
+        scores : torch.Tensor, 
+        overlap_threshold : float=0.5, 
+        return_indices : Literal[False]=False, 
+        group_first : bool=True, 
+        boxes : torch.Tensor | None=None,
+        overlap_fn : (
+            Callable[[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None, torch.dtype], torch.Tensor] | str
+        )=iou_masks,
+        overlap_fn_boxes : Callable[..., torch.Tensor] | str | None=None
+    ) -> tuple[torch.Tensor, torch.Tensor]: ...
+@overload
+def nms_masks(
+        masks : torch.Tensor, 
+        scores : torch.Tensor, 
+        overlap_threshold : float=0.5, 
+        return_indices : Literal[True]=True, 
+        group_first : bool=True, 
+        boxes : torch.Tensor | None=None,
+        overlap_fn : (
+            Callable[[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None, torch.dtype], torch.Tensor] | str
+        )=iou_masks,
+        overlap_fn_boxes : Callable[..., torch.Tensor] | str | None=None
+    ) -> torch.Tensor: ...
 def nms_masks(
         masks : torch.Tensor, 
         scores : torch.Tensor, 
         overlap_threshold : float=0.5, 
         return_indices : bool=False, 
         group_first : bool=True, 
-        boxes : torch.Tensor=None,
-        overlap_fn : Callable[[torch.Tensor], torch.Tensor] | str=iou_masks,
-        overlap_fn_boxes : Optional[Union[Callable[[torch.Tensor], torch.Tensor], str]]=None
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-    """
-    Efficiently perform non-maximum suppression on a set of boolean masks.
+        boxes : torch.Tensor | None=None,
+        overlap_fn : (
+            Callable[[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None, torch.dtype], torch.Tensor] | str
+        )=iou_masks,
+        overlap_fn_boxes : Callable[..., torch.Tensor] | str | None=None
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+    """Efficiently perform non-maximum suppression on a set of boolean masks.
 
     Defaults to a modified two-stage NMS algorithm, that aims to minimize the number of mask intersection calculations needed.
 
     Args:
-        masks (`torch.Tensor`): A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
-        scores (`torch.Tensor`): A tensor of shape (n, ) containing the "scores" of the masks, this can merely be though of as a priority score, where the higher the score, the higher the priority of the object - it does not have to be a probability/confidence.
-        overlap_threshold (`float`, optional): The overlap (e.g. IoU) threshold for non-maximum suppression. Defaults to 0.5.
-        return_indices (`bool`, optional): A flag to indicate whether to return the indices of the picked objects or the objects themselves. Defaults to False. If True, both the picked objects and scores are returned.
-        group_first (`bool`, optional): A flag to indicate whether two use the two-stage NMS method. Defaults to True.
-        boxes (`Optional[torch.Tensor]`, optional): Bounding boxes for the masks. A tensor of shape (n, 4), where n is the number of masks and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the bounding boxes.
+        masks: A tensor of shape (n, h, w), where n is the number of masks and h and w are the height and width of the masks.
+        scores: A tensor of shape (n, ) containing the "scores" of the masks, this can merely be though of as a priority score, 
+            where the higher the score, the higher the priority of the object - it does not have to be a probability/confidence.
+        overlap_threshold: The overlap (e.g. IoU) threshold for non-maximum suppression. Defaults to 0.5.
+        return_indices: A flag to indicate whether to return the indices of the picked objects or the objects themselves. Defaults to False.
+            If True, both the picked objects and scores are returned.
+        group_first: A flag to indicate whether two use the two-stage NMS method. Defaults to True.
+        boxes: Bounding boxes for the masks. A tensor of shape (n, 4), where n is the number of masks and 
+            the 4 columns are the x_min, y_min, x_max and y_max coordinates of the bounding boxes.
+        overlap_fn: A function to compute overlaps between masks.
+        overlap_fn_boxes: A function to compute overlaps between boxes.
     
     Returns:
-        out (`Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]`):
-            - `torch.Tensor`: A tensor of shape `(m,)` containing the indices of the picked objects.
-            - `Tuple[torch.Tensor, torch.Tensor]`: A tuple where the first element contains the picked masks and the second element is a tensor of their scores.
+        Either a tensor of shape `(m,)` containing the indices of the picked objects, 
+        or a tuple (`tuple[torch.Tensor, torch.Tensor]`) where the first element contains 
+        the picked masks and the second element is a tensor of their scores.
+
     """
     if isinstance(overlap_fn_boxes, str):
         overlap_fn_boxes = get_overlap_fn("box", overlap_fn_boxes)
@@ -647,16 +736,27 @@ def nms_masks(
             raise ValueError("'boxes' must be specified for nms_masks when 'group_first' is True")
         if overlap_fn_boxes is None:
             raise RuntimeError("If an overlap function is manually provided for masks, one must also be provided for boxes.")
-        # We decrease the overlap_threshold for the clustering, since there is no straight-forward relationship between the IoU of the boxes and the IoU of the masks
-        groups, _ = cluster_overlap_boxes(boxes=boxes, overlap_threshold=min(1, overlap_threshold / 4), overlap_fn=overlap_fn_boxes, time=False)
-        _nms_ind = [torch.empty(0) for i in range(len(groups))]
+        # We decrease the overlap_threshold for the clustering, 
+        # since there is no straight-forward relationship between the IoU of the boxes and the IoU of the masks
+        groups, _ = cluster_overlap_boxes(
+            boxes=boxes,
+            overlap_threshold=min(1, overlap_threshold / 4),
+            overlap_fn=overlap_fn_boxes,
+            time=False
+        )
+        _nms_ind = [torch.empty((0,)) for i in range(len(groups))]
         for i, group in enumerate(groups):
             if len(group) == 1:
                 _nms_ind[i] = group
             else:
                 group_boxes = boxes[group].round().long()
                 xmin, ymin, xmax, ymax = group_boxes[:, 0].min(), group_boxes[:, 1].min(), group_boxes[:, 2].max(), group_boxes[:, 3].max()
-                _nms_ind[i] = group[nms_masks_(masks=masks[group, ymin:(ymax+1), xmin:(xmax+1)], scores=scores[group], overlap_threshold=overlap_threshold, overlap_fn=overlap_fn)]
+                _nms_ind[i] = group[nms_masks_(
+                        masks=masks[group, ymin:(ymax+1), xmin:(xmax+1)],
+                        scores=scores[group],
+                        overlap_threshold=overlap_threshold,
+                        overlap_fn=overlap_fn
+                )]
         if len(_nms_ind) > 0:
             nms_ind = torch.cat(_nms_ind)
         else:
@@ -666,33 +766,67 @@ def nms_masks(
     else:
         return masks[nms_ind], scores[nms_ind]
 
+
+@overload
 def nms_polygons(
-        polygons : List[torch.Tensor], 
+        polygons : list[torch.Tensor], 
         scores : torch.Tensor, 
-        overlap_threshold : Union[float, int]=0.5, 
+        overlap_threshold : float | int=0.5, 
+        return_indices : Literal[False]=False, 
+        group_first : bool=True, 
+        boxes : torch.Tensor | None=None,
+        overlap_fn : Callable | str="IoU",
+        overlap_fn_boxes : Callable[..., torch.Tensor] | str | None=None,
+    ) -> tuple[list[torch.Tensor], torch.Tensor]: ...
+@overload
+def nms_polygons(
+        polygons : list[torch.Tensor], 
+        scores : torch.Tensor, 
+        overlap_threshold : float | int=0.5, 
+        return_indices : Literal[True]=True, 
+        group_first : bool=True, 
+        boxes : torch.Tensor | None=None,
+        overlap_fn : Callable | str="IoU",
+        overlap_fn_boxes : Callable[..., torch.Tensor] | str | None=None,
+    ) -> torch.Tensor: ...
+def nms_polygons(
+        polygons : list[torch.Tensor], 
+        scores : torch.Tensor, 
+        overlap_threshold : float | int=0.5, 
         return_indices : bool=False, 
         group_first : bool=True, 
-        boxes : Optional[torch.Tensor]=None,
-        overlap_fn : Union[Callable[[List[torch.Tensor], List[torch.Tensor]], torch.Tensor], str]="IoU",
-        overlap_fn_boxes : Optional[Union[Callable[[torch.Tensor], torch.Tensor], str]]=None,
-    ) -> Union[torch.Tensor, Tuple[List[torch.Tensor], torch.Tensor]]:
-    """
-    Efficiently perform non-maximum suppression on a set of polygons.
+        boxes : torch.Tensor | None=None,
+        overlap_fn : Callable | str="IoU",
+        overlap_fn_boxes : Callable[..., torch.Tensor] | str | None=None,
+    ) -> torch.Tensor | tuple[list[torch.Tensor], torch.Tensor]:
+    """Efficiently perform non-maximum suppression on a set of polygons.
 
-    Defaults to a modified two-stage NMS algorithm, that aims to minimize the number of polygon intersection calculations needed (very expensive).
+    Defaults to a modified two-stage NMS algorithm, 
+    that aims to minimize the number of polygon intersection calculations needed (very expensive).
 
     Args:
-        polygons (`List[torch.Tensor]`): A list of tensors of shape (n, 2), where n is the number of vertices in the polygon and the 2 columns are the x and y coordinates of the vertices.
-        scores (`torch.Tensor`): A tensor of shape (n, ) containing the "scores" of the polygons, this can merely be though of as a priority score, where the higher the score, the higher the priority of the object - it does not have to be a probability/confidence.
-        overlap_threshold (`float`, optional): The overlap (e.g. IoU) threshold for non-maximum suppression. Defaults to 0.5.
-        return_indices (`bool`, optional): A flag to indicate whether to return the indices of the picked objects or the objects themselves. Defaults to False. If True, both the picked objects and scores are returned.
-        group_first (`bool`, optional): A flag to indicate whether two use the two-stage NMS method. Defaults to True (recommended).
-        boxes (`Optional[torch.Tensor]`, optional): Bounding boxes for the polygons. A tensor of shape (n, 4), where n is the number of polygons and the 4 columns are the x_min, y_min, x_max and y_max coordinates of the bounding boxes.
+        polygons: A list of tensors of shape (n, 2), 
+            where n is the number of vertices in the polygon and the 2 columns are the x and y coordinates of the vertices.
+        scores: A tensor of shape (n, ) containing the "scores" of the polygons, this can merely be though of as a priority score,
+            where the higher the score, the higher the priority of the object - it does not have to be a probability/confidence.
+        overlap_threshold: The overlap (e.g. IoU) threshold for non-maximum suppression.
+            Defaults to 0.5.
+        return_indices: A flag to indicate whether to return the indices of the picked objects or the objects themselves.
+            Defaults to False. If True, both the picked objects and scores are returned.
+        group_first: A flag to indicate whether two use the two-stage NMS method. Defaults to True (recommended).
+        boxes: Bounding boxes for the polygons. 
+            A tensor of shape (n, 4), where n is the number of polygons and 
+            the 4 columns are the x_min, y_min, x_max and y_max coordinates of the bounding boxes.
+        overlap_fn: A callable to compute overlap between polygons. Must accept either one or two lists of tensors and return a tensor. 
+            Can also be a string (e.g., "IoU").
+        overlap_fn_boxes: A callable to compute overlap between a set of bounding boxes.
+            Can also be a string (e.g., "IoU").
     
     Returns:
-        out (`Union[torch.Tensor, Tuple[List[torch.Tensor], torch.Tensor]]`):
-            - `torch.Tensor`: A tensor of shape `(m,)` containing the indices of the picked polygons.
-            - `Tuple[List[torch.Tensor], torch.Tensor]`: A tuple where the first element contains the picked polygons and the second element is a tensor of their scores.
+        Either a tensor of shape `(m,)` containing the indices of the picked polygons, 
+        or a tuple (`tuple[list[torch.Tensor], torch.Tensor]`) where the first element 
+        contains the picked polygons and the second element is a tensor of their scores.
+
     """
     if isinstance(overlap_fn_boxes, str):
         overlap_fn_boxes = get_overlap_fn("box", overlap_fn_boxes)
@@ -705,18 +839,35 @@ def nms_polygons(
             raise RuntimeError("If an overlap function is manually provided for polygons, one must also be provided for boxes.")
     device = polygons[0].device
     if not group_first or len(polygons) < 10:
-        nms_ind = nms_polygons_(polys=polygons, scores=scores, overlap_threshold=overlap_threshold, overlap_fn=overlap_fn)
+        nms_ind = nms_polygons_(
+            polys=polygons,
+            scores=scores,
+            overlap_threshold=overlap_threshold,
+            overlap_fn=overlap_fn
+        )
     else:
         if boxes is None:
             raise ValueError("'boxes' must be specified for nms_masks when 'group_first' is True")
-        # We decrease the overlap_threshold for the clustering, since there is no straight-forward relationship between the overlap of the boxes and the overlap of the polygons
-        groups, _ = cluster_overlap_boxes(boxes=boxes, overlap_threshold=min(1, overlap_threshold / 4), overlap_fn=overlap_fn_boxes, time=False) 
-        nms_ind = [None for _ in range(len(groups))]
+        # We decrease the overlap_threshold for the clustering, 
+        # since there is no straight-forward relationship between the overlap of the boxes and the overlap of the polygons
+        groups, _ = cluster_overlap_boxes(
+            boxes=boxes, 
+            overlap_threshold=min(1, overlap_threshold / 4), 
+            overlap_fn=overlap_fn_boxes, 
+            time=False
+        ) 
+        nms_ind : list[torch.Tensor] | torch.Tensor = []
         for i, group in enumerate(groups):
             if len(group) == 1:
-                nms_ind[i] = group
+                nms_ind.append(group)
             else:
-                nms_ind[i] = group[nms_polygons_(polys=[polygons[gi] for gi in group], scores=scores[group], overlap_threshold=overlap_threshold, overlap_fn=overlap_fn)]
+                nms_ind.append(
+                    group[nms_polygons_(
+                        polys=[polygons[gi] for gi in group], 
+                        scores=scores[group], 
+                        overlap_threshold=overlap_threshold, overlap_fn=overlap_fn
+                    )]
+                )
         if len(nms_ind) > 0:
             nms_ind = torch.cat(nms_ind)
         else:
@@ -729,15 +880,19 @@ def nms_polygons(
 def nms_boxes(
         boxes : torch.Tensor, 
         scores : torch.Tensor, 
-        overlap_threshold : Union[float, int]=0.5,
-        overlap_fn : Optional[Union[Callable[[torch.Tensor], torch.Tensor], str]]=None,
+        overlap_threshold : float | int=0.5,
+        overlap_fn : Callable[[torch.Tensor], torch.Tensor] | str | None=None,
     ) -> torch.Tensor:
-    """
-    Wrapper for `torchvision.ops.nms`; the standard non-maximum suppression algorithm.
+    """Perform NMS on boxes and return the NMS indexes.
+    
+    Wraps `torchvision.ops.nms`; the standard non-maximum suppression algorithm.
     """
     if overlap_fn is None or isinstance(overlap_fn, str) and (overlap_fn := overlap_fn.strip().lower()) == "iou":
-        with torch.autocast(device_type=boxes.device.type, dtype=boxes.dtype):
+        if boxes.dtype != torch.float32:
+            with torch.autocast(device_type=boxes.device.type, dtype=boxes.dtype):
+                return torchvision.ops.nms(boxes, scores, overlap_threshold).sort().values
+        else:
             return torchvision.ops.nms(boxes, scores, overlap_threshold).sort().values
     if isinstance(overlap_fn, str):
         overlap_fn = get_overlap_fn("box", overlap_fn)
-    return base_nms_(boxes, overlap_fn=overlap_fn, scores=scores, overlap_threshold=overlap_fn, return_indices=True)
+    return base_nms_(boxes, overlap_fn=overlap_fn, scores=scores, overlap_threshold=overlap_threshold, return_indices=True)

@@ -1,24 +1,25 @@
+"""Utilities for flatbug evaluation."""
 import csv
 import os
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from collections.abc import Sequence
+from typing import Any
 
 import cv2
 import numpy as np
 
 from flat_bug import logger
-from flat_bug.coco_utils import (annotations_to_numpy, contour_area,
-                                 contour_bbox)
+from flat_bug.coco_utils import annotations_to_numpy, contour_area, contour_bbox
 
 
-def isfloat(num : str) -> bool:
+def isfloat(num : str) -> bool:  # noqa: D103
     try:
-        num = float(num)
-        return not num.is_integer()
+        fnum = float(num)
+        return not fnum.is_integer()
     except Exception:
         return False
 
-def ispath(path : str) -> bool:
+def ispath(path : str) -> bool:  # noqa: D103
     return "/" in path or "\\" in path
     
 def format_cell(
@@ -26,18 +27,18 @@ def format_cell(
         digits : int = 3, 
         max_length : int = 30
     ) -> str:
-    """
-    Autoformat a cell for a table.
+    """Autoformat a cell for a table.
 
     Standardizes the number of decimals if the cell is coercible to a float, and truncates the cell if it exceeds the maximum length.
 
     Args:
-        cell (`str`): The cell to format.
-        digits (`int`, optional): Number of digits to display for floats. Default is 3.
-        max_length (`int`, optional): Maximum number of characters in the output string. Default is 30. OBS: Paths are not truncated.
+        cell: The cell to format.
+        digits: Number of digits to display for floats. Default is 3.
+        max_length: Maximum number of characters in the output string. Default is 30. OBS: Paths are not truncated.
 
     Returns:
-        out (`str`): The formatted cell string where `length <= max_length`.
+        The formatted cell string where `length <= max_length`.
+
     """
     if isfloat(cell):
         return f"{float(cell):.{digits}f}"
@@ -48,20 +49,20 @@ def format_cell(
     return cell
 
 def format_row(
-        cells : List[Any], 
-        widths : List[int], 
+        cells : list[Any], 
+        widths : list[int], 
         align : str = "center"
     ) -> str:
-    """
-    Format a row of a table.
+    """Format a row of a table.
 
     Args:
-        cells (`List[Any]`): The cells of the row. Elements should be compatible with f-strings (`__format__`).
-        widths (`List[int]`): The widths of each column.
-        align (`str`, optional): Alignment of the cell content within each column. Valid options are "center"/"left"/"right". Defaults to "center".
+        cells: The cells of the row. Elements should be compatible with f-strings (`__format__`).
+        widths: The widths of each column.
+        align: Alignment of the cell content within each column. Valid options are "center"/"left"/"right". Defaults to "center".
 
     Returns:
-        out (`str`): The formatted row.
+        The formatted row.
+
     """
     row = "|"
     for cell, width in zip(cells, widths):
@@ -78,14 +79,15 @@ def pretty_print_csv(
         csv_file : str, 
         delimiter : str = ","
     ):
-    """
-    Pretty print the CSV file.
+    """Pretty print the CSV file.
 
     Args:
-        csv_file (`str`): The path to the CSV file.
+        csv_file: The path to the CSV file.
+        delimiter: Delimiter.
+
     """
     # Read the CSV file data
-    with open(csv_file, 'r') as file:
+    with open(csv_file) as file:
         csv_reader = csv.reader(file, delimiter=delimiter)
         try:
             headers = next(csv_reader)
@@ -113,15 +115,15 @@ def bbox_intersect(
         b1 : np.ndarray, 
         b2s : np.ndarray
     ) -> np.ndarray:
-    """
-    Calculate the intersecting rectangle between two rectangles. The rectangles must be aligned with the axes.
+    """Calculate the intersecting rectangle between two rectangles. The rectangles must be aligned with the axes.
 
     Args:
-        b1 (`np.ndarray`): Bounding box 1.
-        b2s (`np.ndarray`): Bounding boxes 2.
+        b1: Bounding box 1.
+        b2s: Bounding boxes 2.
 
     Returns:
-        out (`np.ndarray`): Intersecting rectangles of shape (n, 4).
+        Intersecting rectangles of shape (n, 4).
+
     """
     if len(b2s.shape) == 1:
         b2s = b2s.copy().reshape(-1, 4)
@@ -139,15 +141,15 @@ def bbox_intersect_area(
         b1 : np.ndarray, 
         b2s : np.ndarray
     ) -> np.ndarray:
-    """
-    Calculate the area of the intersecting rectangle between two rectangles. The rectangles must be aligned with the axes.
+    """Calculate the area of the intersecting rectangle between two rectangles. The rectangles must be aligned with the axes.
 
     Args:
-        b1 (`np.ndarray`): Bounding box 1.
-        b2s (`np.ndarray`): Bounding boxes 2.
+        b1: Bounding box 1.
+        b2s: Bounding boxes 2.
 
     Returns:
-        out (`np.ndarray`): Area of the intersecting rectangles of shape (n,).
+        Area of the intersecting rectangles of shape (n,).
+
     """
     if len(b2s.shape) == 1:
         b2s = b2s.copy().reshape(-1, 4)
@@ -161,9 +163,8 @@ def contour_intersection(
         contour2: np.ndarray, 
         box1: np.ndarray, 
         box2: np.ndarray
-    ) -> np.ndarray:
-    """
-    Calculates the intersection of two contours.
+    ):
+    """Calculate the intersection of two contours.
 
     Contours should be providedd as [x1, y1, x2, y2, ..., xn, yn]
 
@@ -177,13 +178,14 @@ def contour_intersection(
     7. Return the sum of the intersection mask.
 
     Args:
-        contour1 (`np.ndarray`): Contour 1.
-        contour2 (`np.ndarray`): Contour 2.
-        box1 (`np.ndarray`): Bounding box 1.
-        box2 (`np.ndarray`): Bounding box 2.
+        contour1: Contour 1.
+        contour2: Contour 2.
+        box1: Bounding box 1.
+        box2: Bounding box 2.
 
     Returns:
-        out (`np.ndarray`): Scalar intersection of the contours with type np.int64.
+        Scalar intersection of the contours with type np.int64.
+
     """
     # If any of the contours are empty, return 0
     if len(contour1) < 2 or len(contour2) < 2:
@@ -206,32 +208,31 @@ def contour_intersection(
     cv2.drawContours(mask1, [contour1], -1, 1, thickness=cv2.FILLED)
     cv2.drawContours(mask2, [contour2], -1, 1, thickness=cv2.FILLED)
     # Calculate the intersection
-    return (mask1 * mask2).sum(dtype=np.int64)
+    return float((mask1 * mask2).sum(dtype=np.int64))
 
 
 def pairwise_contour_intersection(
-        contours1: List[np.ndarray], 
-        contours2: Optional[List[np.ndarray]] = None,
-        bboxes1: Optional[np.ndarray] = None, 
-        bboxes2: Optional[np.ndarray] = None,
-        areas1: Optional[np.ndarray] = None,
-        areas2: Optional[np.ndarray] = None
-    ) -> np.array:
-    """
-    Calculates the pairwise intersection of two groups of contours.
+        contours1: list[np.ndarray], 
+        contours2: list[np.ndarray] | None = None,
+        bboxes1: np.ndarray | None = None, 
+        bboxes2: np.ndarray | None = None,
+        areas1: np.ndarray | None = None,
+        areas2: np.ndarray | None = None
+    ) -> np.ndarray:
+    """Calculate the pairwise intersection of two groups of contours.
 
     Args:
-        contours1 (`List[np.ndarray]`): Contours in group 1.
-        contours2 (`Optional[np.ndarray]`): Contours in group 2. If None provided, symmetric intersection is calculated for contours1 instead. Defaults to None.
-        areas1 (`Optional[np.ndarray]`): Areas of contours in group 1. Computed if not None. Defaults to None
-        areas2 (`Optional[np.ndarray]`): Areas of contours in group 2. Computed if not None. Defaults to None
-        bboxes1 (`Optional[np.ndarray]`): Bounding boxes of contours in group 1. Computed if not None. Defaults to None
-        bboxes2 (`Optional[np.ndarray]`): Bounding boxes of contours in group 2. Computed if not None. Defaults to None
+        contours1: Contours in group 1.
+        contours2: Contours in group 2. If None provided, symmetric intersection is calculated for contours1 instead. Defaults to None.
+        areas1: Areas of contours in group 1. Computed if not None. Defaults to None
+        areas2: Areas of contours in group 2. Computed if not None. Defaults to None
+        bboxes1: Bounding boxes of contours in group 1. Computed if not None. Defaults to None
+        bboxes2: Bounding boxes of contours in group 2. Computed if not None. Defaults to None
 
     Returns:
-        out (`np.ndarray`): Intersection matrix of shape (n, m).
-    """
+        Intersection matrix of shape (n, m).
 
+    """
     # If contours2 is not provided, set it to contours1
     if contours2 is None:
         contours2 = contours1
@@ -263,30 +264,34 @@ def pairwise_contour_intersection(
 
 
 def match_geoms(
-        contours1: List[np.ndarray], 
-        contours2: List[np.ndarray], 
+        contours1: list[np.ndarray], 
+        contours2: list[np.ndarray], 
         threshold: float = 1 / 4,
-        iou_mat: Optional[np.ndarray] = None, 
-        areas1: Optional[np.ndarray] = None,
-        areas2: Optional[np.ndarray] = None
-    ) -> Tuple[np.ndarray, int]:
-    """
-    Matches geometries (polygons) in group 1 to geometries in group 2.
+        iou_mat: np.ndarray | None = None, 
+        areas1: np.ndarray | None = None,
+        areas2: np.ndarray | None = None
+    ) -> tuple[np.ndarray, int]:
+    """Match geometries (polygons) in group 1 to geometries in group 2.
 
     Args:
-        contours1 (`List[np.ndarray]`): Geometries (polygons) in group 1. List of length N, where each element is a Xx2 array of contour coordinates.
-        contours2 (`List[np.ndarray]`): Geometries (polygons) in group 2. List of length M, where each element is a Xx2 array of contour coordinates.
-        threshold (`float`, optional): IoU threshold. Defaults to 1/4.
-        iou_mat (`Optional[np.ndarray]`, optional): IoU matrix of size NxM. Computed if None. Defaults to None.
-        areas1 (`Optional[np.ndarray]`, optional): Areas of polygons in group 1. Computed if None. Defaults to None.
-        areas2 (`Optional[np.ndarray]`, optional): Areas of polygons in group 2. Computed if None. Defaults to None.
+        contours1: Geometries (polygons) in group 1. List of length N, where each element is a Xx2 array of contour coordinates.
+        contours2: Geometries (polygons) in group 2. List of length M, where each element is a Xx2 array of contour coordinates.
+        threshold: IoU threshold. Defaults to 1/4.
+        iou_mat: IoU matrix of size NxM. Computed if None. Defaults to None.
+        areas1: Areas of polygons in group 1. Computed if None. Defaults to None.
+        areas2: Areas of polygons in group 2. Computed if None. Defaults to None.
 
     Returns:
-        out (`List[np.ndarray, int]`): Nx2 array of matched indices from group 1 and group 2, and the number of unmatched geometries in group 2.
+        Nx2 array of matched indices from group 1 and group 2, and the number of unmatched geometries in group 2.
+
     """
     # Calculate the number of contours in each group
     n = len(contours1)
     m = len(contours2)
+    if areas1 is None:
+        areas1 = np.array(list(map(contour_area, contours1)))
+    if areas2 is None:
+        areas2 = np.array(list(map(contour_area, contours1)))
     if iou_mat is None:
         # Calculate the IoU matrix
         intersections = pairwise_contour_intersection(contours1, contours2)
@@ -334,32 +339,33 @@ def match_geoms(
 
 def plot_heatmap(
         mat: np.ndarray, 
-        axis_labels: Optional[List[str]] = None, 
+        axis_labels: Sequence[str] | None = None, 
         breaks: int = 25,
-        dimensions: Optional[Tuple[int, int]] = None, 
-        output_path: str = None, 
+        dimensions: tuple[int, int] | None = None, 
+        output_path: str | None = None, 
         scale: float = 1
     ):
-    """
-    Plots a heatmap of a matrix using OpenCV.
+    """Plot a heatmap of a matrix using OpenCV.
 
     Args:
-        mat (`np.ndarray`): Matrix to plot.
-        axis_labels (`Optional[List[str]]`, optional): Axis labels. Defaults to None.
-        breaks (`int`, optional): Number of breaks on the colorbar. Defaults to 25.
-        dimensions (`Optional[Tuple[int, int]]`, optional): Dimensions of the output image. Defaults to None.
-        output_path (`str`, optional): Output path. Defaults to None.
-        scale (`float`, optional): Scale of the output image. Defaults to 1.
+        mat: Matrix to plot.
+        axis_labels: Axis labels. Defaults to None.
+        breaks: Number of breaks on the colorbar. Defaults to 25.
+        dimensions: Dimensions of the output image. Defaults to None.
+        output_path: Output path. Defaults to None.
+        scale: Scale of the output image. Defaults to 1.
+
     """
     if dimensions is None:
-        dimensions = tuple([m * 10 for m in mat.shape[::-1]])
+        dimensions = tuple([m * 10 for m in mat.shape[::-1]])  # type: ignore
         min_dim = max(min(dimensions), 1)
         if min_dim < 1000:
             scale_dims = 1000 / min_dim
-            dimensions = tuple([int(d * scale_dims) for d in dimensions])
+            dimensions = tuple([int(d * scale_dims) for d in dimensions])  # type: ignore
     if mat.shape[0] == 0 or mat.shape[1] == 0:
         logger.warning('Empty matrix. Cannot plot heatmap.')
         return
+    assert dimensions is not None
 
     # Create a colormap for viridis
     colormap = cv2.applyColorMap(
@@ -385,12 +391,15 @@ def plot_heatmap(
     if cmin == cmax:
         nice_breaks = np.array([cmin])
     else:
-        # Add semi-equally spaced numbers to the colorbar at "nice" values, "nice" values are defined as integer multiples of powers of 10 to the power of the maximum value - the integer rounded 10 logarithm of the number of breaks
+        # Add semi-equally spaced numbers to the colorbar at "nice" values, 
+        # "nice" values are defined as integer multiples of powers of 10 
+        # to the power of the maximum value - the integer rounded 10 logarithm of the number of breaks
         raw_breaks = np.linspace(cmin, cmax, breaks)
         nice_multiple = 10 ** (np.log10(cmax) - np.ceil(np.log10(breaks)))
         nice_breaks = (raw_breaks / nice_multiple).round() * nice_multiple
         nice_breaks = nice_breaks[nice_breaks <= cmax]
-        # Ensure that the minimum and maximum values are included, and remove the breaks if they are within 1 "nice_multiple" of any other break
+        # Ensure that the minimum and maximum values are included, 
+        # and remove the breaks if they are within 1 "nice_multiple" of any other break
         nice_breaks = nice_breaks[np.abs(nice_breaks - cmin) >= (nice_multiple * 0.9)]
         nice_breaks = nice_breaks[np.abs(nice_breaks - cmax) >= (nice_multiple * 0.9)]
         nice_breaks = np.concatenate([[cmin], nice_breaks, [cmax]])
@@ -465,7 +474,8 @@ def plot_heatmap(
 
         # First create the x-axis box
         x_axis_box = np.zeros((axis_box_size, dimensions[0] + colorbar_width, 3), dtype=np.uint8) + 255
-        # Then create the y-axis box, remembering to take into account the extra vertical space taken up by the x-axis label. It is instantiated in the flipped orientation.
+        # Then create the y-axis box, remembering to take into account the extra vertical space taken up by the x-axis label. 
+        # It is instantiated in the flipped orientation.
         y_axis_box = np.zeros((axis_box_size, dimensions[1] + axis_box_size, 3), dtype=np.uint8) + 255
         # Calculate the midpoint on each box with respect to the heatmap
         x_label_width = cv2.getTextSize(x_label, cv2.FONT_HERSHEY_COMPLEX, axis_label_font_size, 3)[0][0]
@@ -522,21 +532,22 @@ def plot_heatmap(
 
 def equal_spaced_cuts(
         k : int, 
-        start : Union[float, int], 
-        end : Union[float, int]
+        start : float | int, 
+        end : float | int
     ) -> np.ndarray:
-    """
-    Generate k equal spaced cuts between start and end. 
+    """Generate k equal spaced cuts between start and end.
     
-    The edges are not included, and the distance between the left-most and right-most cut to the edges is half the distance between the cuts. 
+    The edges are not included, and the distance between the left-most and 
+    right-most cut to the edges is half the distance between the cuts. 
 
     Args:
-        k (`int`): Number of cuts.
-        start (`float`): Start value.
-        end (`float`): End value.
+        k: Number of cuts.
+        start: Start value.
+        end: End value.
 
     Returns:
-        out (`np.ndarray`): Cuts.
+        Cuts.
+
     """
     return np.linspace(start + (end - start) / (k * 2), end - (end - start) / (k * 2), k)
 
@@ -544,25 +555,28 @@ def equal_spaced_cuts(
 def plot_matches(
         matches: np.ndarray, 
         contours1: list[np.ndarray], 
-        contours2: List[np.ndarray],
-        group_labels: Optional[List[str]] = None, 
-        image_path: Optional[str] = None,
-        output_path: Optional[str] = None, 
+        contours2: list[np.ndarray],
+        group_labels: Sequence[str] | None = None, 
+        image_path: str | None = None,
+        output_path: str | None = None, 
         scale: float = 1, 
         boxes: bool = True
     ):
-    """
-    Plots the matches between two groups of contours using OpenCV.
+    """Plot the matches between two groups of contours using OpenCV.
 
     Args:
-        matches (`np.ndarray`): Matches between group 1 and 2.
-        contours1 (`List[np.ndarray]`): Contours of group 1.
-        contours2 (`List[np.ndarray]`): Contours of group 2.
-        group_labels (`Optional[List[str]]`, optional): Labels of the two groups (should have a length of 2). If None the groups are labelled as "1" and "2". Defaults to None.
-        image_path (`Optional[str]`, optional): Path to the image. If None the matches are plotted on a black background. Defaults to None.
-        output_path (`Optional[str]`, optional): Output path of plot. If None the rasterized result is displayed or returned as an array, depending in the context. Defaults to None.
-        scale (`float`, optional): Scale of the output image. Defaults to 1.
-        boxes (`bool`, optional): Flag to indicate whether to plot bounding boxes. Defaults to True.
+        matches: Matches between group 1 and 2.
+        contours1: Contours of group 1.
+        contours2: Contours of group 2.
+        group_labels: Labels of the two groups (should have a length of 2). If None the groups are labelled as "1" and "2". 
+            Defaults to None.
+        image_path: Path to the image. If None the matches are plotted on a black background. Defaults to None.
+        output_path: Output path of plot. 
+            If None the rasterized result is displayed or returned as an array, depending in the context. 
+            Defaults to None.
+        scale: Scale of the output image. Defaults to 1.
+        boxes: Flag to indicate whether to plot bounding boxes. Defaults to True.
+
     """
     GROUP_COLORS = [(184, 126, 55), (28, 26, 228)]
     # Type check the input
@@ -570,24 +584,24 @@ def plot_matches(
         raise ValueError(f'Expected matches to be a NumPy array, got {type(matches)}')
     for i, c1 in enumerate(contours1):
         if not isinstance(c1, np.ndarray):
-            raise ValueError(f'Expected contours1[{i}] to be a NumPy array, got {type(c1)}')
+            raise ValueError(f'Expected contours1[{i}] to be a NumPy array, got {type(c1).__name__}')
     for i, c2 in enumerate(contours2):
         if not isinstance(c2, np.ndarray):
-            raise ValueError(f'Expected contours2[{i}] to be a NumPy array, got {type(c2)}')
-    if not isinstance(group_labels, list) and not group_labels is None:
+            raise ValueError(f'Expected contours2[{i}] to be a NumPy array, got {type(c2).__name__}')
+    if not isinstance(group_labels, list) and group_labels is not None:
         raise ValueError(f'Expected group_labels to be a list or None, got {type(group_labels)}')
     elif isinstance(group_labels, list):
-        for i, l in enumerate(group_labels):
-            if not isinstance(l, str):
-                raise ValueError(f'Expected group_labels[{i}] to be a string, got {type(l)}')
-    elif isinstance(group_labels, None):
+        for i, lab in enumerate(group_labels):
+            if not isinstance(lab, str):
+                raise ValueError(f'Expected group_labels[{i}] to be a string, got {type(lab).__name__}')
+    elif group_labels is None:
         group_labels = ["1", "2"]
-    if not isinstance(image_path, str) and not image_path is None:
-        raise ValueError(f'Expected image_path to be a string or None, got {type(image_path)}')
+    if not isinstance(image_path, str) and image_path is not None:
+        raise ValueError(f'Expected image_path to be a string or None, got {type(image_path).__name__}')
     elif isinstance(image_path, str) and not os.path.exists(image_path):
         raise ValueError(f'Expected image_path to be a valid file, got {image_path}')
-    if not isinstance(output_path, str) and not output_path is None:
-        raise ValueError(f'Expected output_path to be a string or None, got {type(output_path)}')
+    if not isinstance(output_path, str) and output_path is not None:
+        raise ValueError(f'Expected output_path to be a string or None, got {type(output_path).__name__}')
     elif isinstance(output_path, str) and not os.path.exists(os.path.dirname(output_path)):
         raise ValueError(f'Output directory does not exist: {os.path.dirname(output_path)}')
 
@@ -596,13 +610,14 @@ def plot_matches(
     if save_plot:
         # Check the output path extension
         _, out_ext = os.path.splitext(output_path)
-        if not out_ext in [".jpg", ".jpeg", ".JPG", ".JPEG"]:
+        if out_ext not in [".jpg", ".jpeg", ".JPG", ".JPEG"]:
             raise ValueError(f'Expected output path to have a .JPG/.jpg/.JPEG/.jpeg extension, got {out_ext}')
 
     # If the is image path is provided
     if isinstance(image_path, str):
         # Load the image
         image = cv2.imread(filename = image_path)
+        assert image is not None
     else:
         # Otherwise, create a blank image. The dimensions are dynamically calculated to fit the contours
         xmax, ymax = 0, 0
@@ -843,13 +858,13 @@ def plot_matches(
         compatible_display(image)
 
 
-def compatible_display(image: np.array):
+def compatible_display(image: np.ndarray):  # noqa: D103
     TIMEOUT = 5  # seconds
     # Check if the image is displayed in a Jupyter notebook
     if 'get_ipython' in globals():
         # Only import the necessary modules if the image is displayed in a Jupyter notebook, ensures they are optional dependencies
-        import ipywidgets as widgets
-        from IPython.display import clear_output, display
+        import ipywidgets as widgets  # type: ignore
+        from IPython.display import clear_output, display  # type: ignore
 
         # Convert the image from BGR to RGB
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -892,16 +907,15 @@ def compare_groups(
         group1: list, 
         group2: list, 
         threshold: float=0.1,
-        group_labels: Optional[str]=["Ground Truth", "Predictions"], 
+        group_labels: Sequence[str] | None=("Ground Truth", "Predictions"), 
         plot: bool=False, 
         plot_scale: float=1, 
         plot_boxes: bool=True,
-        image_path: Optional[str]=None, 
-        output_identifier: Optional[str]=None, 
-        output_directory: Optional[str]=None
-    ) -> Union[str, Dict]:
-    """
-    Compares group 1 to group 2.
+        image_path: str | None=None, 
+        output_identifier: str | None=None, 
+        output_directory: str | None=None
+    ) -> str | dict:
+    """Compare group 1 to group 2.
 
     Output is saved to a CSV file with the following columns:
         - Idx_1 (`int`) is the index of the geometry in group 1
@@ -910,24 +924,29 @@ def compare_groups(
         - contourArea_1 (`int`) is the area of the contour in group 1
         - contourArea_2 (`int`) is the area of the contour in group 2, or 0 if there is no match
         - bbox_1 (`list[int, int, int, int : xmin, ymin, xmax, ymax]`) is the bounding box of the geometry in group 1
-        - bbox_2 (`list[int, int, int, int : xmin, ymin, xmax, ymax]`) is the bounding box of the matched geometry in group 2, or an empty list if there is no match
+        - bbox_2 (`list[int, int, int, int : xmin, ymin, xmax, ymax]`) is the bounding box of the 
+            matched geometry in group 2, or an empty list if there is no match
         - contour_1 (`list[list[int, int : x_i, y_i]]`) is the contour of the geometry in group 1
-        - contour_2 (`list[list[int, int : x_i, y_i]]`) is the contour of the matched geometry in group 2, or an empty list if there is no match
+        - contour_2 (`list[list[int, int : x_i, y_i]]`) is the contour of the matched geometry in group 2, 
+            or an empty list if there is no match
 
     Args:
-        group1 (`list`): Group 1.
-        group2 (`list`): Group 2.
-        threshold (`float`, optional): IoU threshold for matching elements between groups. Defaults to 0.1.
-        group_labels (`Optional[str]`, optional): Group labels. Defaults to `["Ground Truth", "Predictions"]`.
-        plot (`bool`, optional): Whether to plot the matches and the IoU matrix, usually this is much slower than simply comparing the groups. Defaults to False.
-        plot_scale (`float`, optional): Scale of the plot. Defaults to 1. Lower values will make the plot smaller, but may be faster.
-        plot_boxes (`bool`, optional): Whether to plot the bounding boxes. Defaults to True.
-        image_path (`Optional[str]`, optional): Path to the image. Defaults to None.
-        output_identifier (`Optional[str]`, optional): Output identifier. Defaults to None.
-        output_directory (`Optional[str]`, optional): Output directory. Defaults to None.
+        group1: Group 1.
+        group2: Group 2.
+        threshold: IoU threshold for matching elements between groups. Defaults to 0.1.
+        group_labels: Group labels. Defaults to `["Ground Truth", "Predictions"]`.
+        plot: Whether to plot the matches and the IoU matrix, 
+            usually this is much slower than simply comparing the groups. Defaults to False.
+        plot_scale: Scale of the plot. Defaults to 1. Lower values will make the plot smaller, but may be faster.
+        plot_boxes: Whether to plot the bounding boxes. Defaults to True.
+        image_path: Path to the image. Defaults to None.
+        output_identifier: Output identifier. Defaults to None.
+        output_directory: Output directory. Defaults to None.
 
     Returns:
-        out (`Union[str, dict]`): Path to the CSV file or the data that would have been saved to the CSV file as a dictionary, where the keys are the column names and the values are the column values.
+        Path to the CSV file or the data that would have been saved to the CSV file as a dictionary, 
+        where the keys are the column names and the values are the column values.
+
     """
     # Type check the input
     if not isinstance(group1, list) or not isinstance(group2, list):
@@ -941,7 +960,7 @@ def compare_groups(
         raise ValueError(f'Expected plot to be a bool, got {type(plot)}')
     if not (isinstance(image_path, str) or image_path is None):
         raise ValueError(f'Expected image_path to be a string or None, got {type(image_path)}')
-    if not isinstance(output_directory, str) and not output_directory is None:
+    if not isinstance(output_directory, str) and output_directory is not None:
         raise ValueError(f'Expected output_directory to be a string or None, got {type(output_directory)}')
     elif isinstance(output_directory, str) and not os.path.isdir(output_directory):
         raise ValueError(f'Expected output_directory to be a valid directory, got {output_directory}')
@@ -953,7 +972,7 @@ def compare_groups(
     b2, c2 = annotations_to_numpy(group2)
 
     a1, a2 = np.array([contour_area(c) for c in c1]), np.array([contour_area(c) for c in c2])
-    len_1, len_2 = len(c1), len(c2)
+    len_1, len_2 = len(c1), len(c2)  # noqa: F841
 
     # Calculate the IoU matrix
     intersection = pairwise_contour_intersection(c1, c2, b1, b2, a1, a2)
@@ -973,15 +992,15 @@ def compare_groups(
             contours2 = c2, 
             group_labels = group_labels, 
             image_path = image_path,
-            output_path = os.path.join(output_directory, f'{output_identifier}_matches.jpg') if not output_directory is None else None,
+            output_path = os.path.join(output_directory, f'{output_identifier}_matches.jpg') if output_directory is not None else None,
             scale = plot_scale, 
             boxes = plot_boxes
         )
-        if not any([l == 0 for l in iou.shape]):
+        if not any([dim == 0 for dim in iou.shape]):
             plot_heatmap(
                 mat = iou, 
-                axis_labels = group_labels[::-1],
-                output_path = os.path.join(output_directory, f'{output_identifier}_heatmap.jpg') if not output_directory is None else None,
+                axis_labels = group_labels[::-1] if group_labels is not None else None,
+                output_path = os.path.join(output_directory, f'{output_identifier}_heatmap.jpg') if output_directory is not None else None,
                 scale = plot_scale
             )
 
@@ -1049,7 +1068,11 @@ def compare_groups(
          len_contours2])
     if len(data_length) != 1:
         raise ValueError(
-            f"Lengths of the data are not all the same: {len_idx1, len_idx2, len_matched_iou, len_careas1, len_careas2, len_boxes1, len_boxes2, len_contours1, len_contours2}")
+            "Lengths of the data are not all the same: {}, {}, {}, {}, {}, {}, {}, {}, {}".format(  # noqa: UP032
+                len_idx1, len_idx2, len_matched_iou, len_careas1, 
+                len_careas2, len_boxes1, len_boxes2, len_contours1, len_contours2
+            )
+        )
 
     # Construct the output by combining the data
     output = {
@@ -1066,7 +1089,7 @@ def compare_groups(
         "contour_2": contours2
     }
 
-    if not output_directory is None:
+    if output_directory is not None:
         # Write the output to a CSV file
         output_path = f"{output_directory}{os.sep}{output_identifier}.csv"
         separator = ";"
@@ -1084,16 +1107,16 @@ def compare_groups(
         return output
 
 def generate_block(min: int, max: int, size: int) -> np.ndarray:
-    """
-    Generates a block of integers centered around a random start value within a given range.
+    """Generate a block of integers centered around a random start value within a given range.
 
     Args:
-        min (`int`): Minimum value for the block.
-        max (`int`): Maximum value for the block.
-        size (`int`): Size of the block to generate.
+        min: Minimum value for the block.
+        max: Maximum value for the block.
+        size: Size of the block to generate.
 
     Returns:
-        out (`np.ndarray`): Array of integers within the specified range.
+        Array of integers within the specified range.
+
     """
     if size <= 0 or min >= max:
         raise ValueError("Size must be positive and min must be less than max.")
@@ -1106,17 +1129,17 @@ def generate_block(min: int, max: int, size: int) -> np.ndarray:
     return block[np.logical_and(block >= min, block < max)]
 
 
-def generate_bootstraps(s: int, n: int, block: bool = False) -> List[np.ndarray]:
-    """
-    Generates bootstrap samples with or without block sampling.
+def generate_bootstraps(s: int, n: int, block: bool = False) -> list[np.ndarray]:
+    """Generate bootstrap samples with or without block sampling.
 
     Args:
-        s (`int`): The size of the dataset.
-        n (`int`): The number of bootstrap samples to generate.
-        block (`bool`, optional): If True, generates block-based bootstraps. Defaults to False.
+        s: The size of the dataset.
+        n: The number of bootstrap samples to generate.
+        block: If True, generates block-based bootstraps. Defaults to False.
 
     Returns:
-        out (`List[np.ndarray]`): List of bootstrap samples.
+        List of bootstrap samples.
+
     """
     if s <= 0 or n <= 0:
         raise ValueError("The size 's' and the number 'n' of bootstraps must be positive.")
@@ -1128,15 +1151,15 @@ def generate_bootstraps(s: int, n: int, block: bool = False) -> List[np.ndarray]
         return [np.random.choice(s, s, replace=True) for _ in range(n)]
 
 def f1_score(GT : np.ndarray, MP : np.ndarray) -> float:
-    """
-    Calculates the F1 score for a binary classification problem.
+    """Calculate the F1 score for a binary classification problem.
 
     Args:
-        GT (`np.ndarray`): Ground truth binary labels.
-        MP (`np.ndarray`): Predicted binary labels.
+        GT: Ground truth binary labels.
+        MP: Predicted binary labels.
 
     Returns:
-        out (`float`): The F1 score.
+        The F1 score.
+
     """
     if len(GT) != len(MP):
         raise ValueError("Lengths of GT and MP must match.")
@@ -1156,17 +1179,17 @@ def optimal_threshold_f1(
     confidence: np.ndarray,
     num_thresholds: int = 100
 ) -> float:
-    """
-    Finds the optimal threshold for F1 score by iterating over possible thresholds.
+    """Find the optimal threshold for F1 score by iterating over possible thresholds.
 
     Args:
-        y (`np.ndarray`): Ground truth binary labels.
-        iou (`np.ndarray`): IoU values, 
-        confidence (`np.ndarray`): Confidence scores for predictions.
-        num_thresholds (`int`, optional): Number of thresholds to test. Defaults to 100.
+        y: Ground truth binary labels.
+        iou: IoU values, 
+        confidence: Confidence scores for predictions.
+        num_thresholds: Number of thresholds to test. Defaults to 100.
 
     Returns:
-        out (`float`): The threshold that maximizes the F1 score.
+        The threshold that maximizes the F1 score.
+
     """
     if len(y) != len(iou) or len(y) != len(confidence):
         raise ValueError("Lengths of y, iou, and confidence must match.")
@@ -1188,22 +1211,22 @@ def optimal_threshold_f1(
 
 
 def best_confidence_threshold(
-    y: Union[List[int], np.ndarray],
-    iou: Union[List[float], np.ndarray],
-    confidence: Union[List[float], np.ndarray],
+    y: list[int] | np.ndarray,
+    iou: list[float] | np.ndarray,
+    confidence: list[float] | np.ndarray,
     n: int = 100
 ) -> float:
-    """
-    Finds the best confidence threshold using bootstrapping and F1 score optimization.
+    """Find the best confidence threshold using bootstrapping and F1 score optimization.
 
     Args:
-        y (`Union[List[int], np.ndarray]`): Ground truth binary labels.
-        iou (`Union[List[float], np.ndarray]`): IoU values, non-floats default to 0.
-        confidence (`Union[List[float], np.ndarray]`): Confidence scores for predictions, non-floats default to 0.
-        n (`int`, optional): Number of bootstrap samples. Defaults to 100.
+        y: Ground truth binary labels.
+        iou: IoU values, non-floats default to 0.
+        confidence: Confidence scores for predictions, non-floats default to 0.
+        n: Number of bootstrap samples. Defaults to 100.
 
     Returns:
-        out (`float`): The average of the optimal thresholds found for each bootstrap sample.
+        The average of the optimal thresholds found for each bootstrap sample.
+
     """
     if len(y) != len(iou) or len(y) != len(confidence):
         raise ValueError("Lengths of y, iou, and confidence must match.")

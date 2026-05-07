@@ -1,3 +1,15 @@
+# Run unit tests
+
+From the repository root, run:
+
+```bash
+uv run pytest tests
+```
+
+## Details
+
+Changes to the [test assets](./assets) should (usually) not be committed!
+
 The files:
 
 - pyramid_tps_**.tps
@@ -7,6 +19,6 @@ The files:
 
 Are stored with `git update-index --assume-unchanged`, and should not be updated in the repository, instead the files stored in the ERDA test file repository (https://anon.erda.au.dk/cgi-sid/ls.py?share_id=ecgKtuRWe5) should be swapped instead. 
 
-Use the script `restore_assets.py` to restore the files to links if necessary.
+The script `restore_assets.py` is automatically run after all unit tests.
 
 Contact: asgersvenning@ecos.au.dk

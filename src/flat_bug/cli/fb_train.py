@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""
-``flatbug`` training script. 
+"""``flatbug`` training script.
 
-The ``flatbug`` training script uses a lightly modified YOLO training interface (https://docs.ultralytics.com/modes/train/), with a few additional parameters.
+The ``flatbug`` training script uses a lightly modified YOLO training interface 
+(https://docs.ultralytics.com/modes/train/), with a few additional parameters.
 
 See `scripts/experiments/best_train/default.yaml` for an example training config.
 
@@ -32,7 +32,7 @@ from flat_bug.trainers import FlatBugSegmentationTrainer
 
 
 # fixme, resume should continue on the same "run folder"
-def main():
+def main():  # noqa: D103
     DEFAULT_CONF = {
         "batch": 8,
         "imgsz": 1024,
@@ -75,14 +75,14 @@ def main():
         if not key.startswith("--"):
             raise ValueError(f"Unknown argument: {key}\n" + args_parse.format_help())
         key = key.removeprefix("--")
-        if not key in DEFAULT_CONF:
+        if key not in DEFAULT_CONF:
             raise ValueError(f"Unknown argument: {key}\n" + args_parse.format_help())
         if key.startswith("fb_"):
-            raise ValueError(f"Options starting with 'fb_' should be specified in the config file, not as command line arguments")
+            raise ValueError("Options starting with 'fb_' should be specified in the config file, not as command line arguments")
         # fixme: probably unsafe...
         try:
             value = eval(value)
-        except:
+        except Exception:
             pass
 
         cli_overrides[key] = value
@@ -93,7 +93,8 @@ def main():
     option_dict["data_dir"] = os.path.abspath(os.path.normpath(option_dict["data_dir"]))
     assert os.path.isdir(option_dict["data_dir"]), f'Directory {option_dict["data_dir"]} not found.'
 
-    # I think this should be fixed by resolving the path before passing it to the trainer and setting DATASETS_DIR in the scope of ultralytics.data.utils
+    # I think this should be fixed by resolving the path before passing 
+    # it to the trainer and setting DATASETS_DIR in the scope of ultralytics.data.utils
     # (see https://github.com/ultralytics/ultralytics/blob/588bbbe4aed122e3d24353856484148bc5ef05ad/ultralytics/data/utils.py#L301)
     # #fixme issue when providing new dataset path, sill using old one?! see when i used pollen data
     # settings.update({'datasets_dir': option_dict["data_dir"]})
@@ -116,17 +117,24 @@ def main():
     # Update data directory and resume flag from the command line
     overrides["data"] = os.path.join(option_dict["data_dir"], "data.yaml")
     # OBS: This is a *very* cursed hack around the fact that ultralytics have decided that you cannot change the settings at runtime. 
-    ultralytics_data_utils.DATASETS_DIR = Path(option_dict["data_dir"]) # We technically only need to change it here, but I'll change it both places for consistency
+    # We technically only need to change it here, but I'll change it both places for consistency
+    ultralytics_data_utils.DATASETS_DIR = Path(option_dict["data_dir"])
     ultralytics_utils.DATASETS_DIR = Path(option_dict["data_dir"])
 
     if option_dict["resume"]:
-        assert os.path.isfile(overrides["model"]), f"Trying to resume from a model that does not seem to be a valid file: {overrides['model']}"
+        assert os.path.isfile(overrides["model"]), (
+            f"Trying to resume from a model that does not seem to be a valid file: {overrides['model']}"
+        )
         overrides["resume"] = overrides["model"]
         if (old_optim := overrides.pop("optimizer", None)) is not None:
-            logger.warning(f"Ignored optimizer '{old_optim}' - YOLO does not support changing the optimizer while training.")
+            logger.warning(
+                f"Ignored optimizer '{old_optim}' - "
+                "YOLO does not support changing the optimizer while training."
+            )
     else:
         overrides["resume"] = False
 
+    # ruff: disable[F841] - TODO: fixme, we don't actually support multiple DDP
     # This is just a hack to fix this: https://github.com/pytorch/pytorch/issues/37377 - only relevant for DDP
     if isinstance(overrides["device"], (tuple, list)) :
         num_devices = len(overrides["device"])
@@ -134,6 +142,7 @@ def main():
         num_devices = len(overrides["device"].split(","))
     else:
         num_devices = 1 # Fixme: Is this a real case, or just a type error?
+    # ruff: enable[F841]
     if isinstance(overrides["device"], (tuple, list)) or (isinstance(overrides["device"], str) and len(overrides["device"].split(",")) > 1):
         os.environ['MKL_THREADING_LAYER'] = 'GNU'
         os.environ['OMP_NUM_THREADS'] = str(overrides["workers"])

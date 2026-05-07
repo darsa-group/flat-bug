@@ -1,9 +1,19 @@
 
-import os, sys, re
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-from scripts.experiments.experiment_helpers import DATASETS, set_default_config, get_config, get_cmd_args, read_slurm_params, ExperimentRunner
+import os
+import re
+import sys
 
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 from collections import OrderedDict
+
+from scripts.experiments.experiment_helpers import (
+    DATASETS,
+    ExperimentRunner,
+    get_cmd_args,
+    get_config,
+    read_slurm_params,
+    set_default_config,
+)
 
 BASE_NAME = "fb_leave_one_out"
 BASE_PATH = os.path.dirname(__file__)
