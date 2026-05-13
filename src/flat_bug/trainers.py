@@ -15,8 +15,24 @@ from ultralytics.data import build_dataloader
 from ultralytics.data.build import InfiniteDataLoader
 from ultralytics.models import yolo
 from ultralytics.models.yolo.segment import SegmentationTrainer
-from ultralytics.nn.tasks import attempt_load_one_weight
-from ultralytics.utils import DEFAULT_CFG, LOGGER, RANK, IterableSimpleNamespace, yaml_load
+try:
+    from ultralytics.nn.tasks import attempt_load_one_weight as _attempt_load_one_weight
+    def _load_checkpoint(model):
+        weights, ckpt = _attempt_load_one_weight(model)
+        return weights, ckpt
+except ImportError:
+    from ultralytics.nn.tasks import load_checkpoint as _load_checkpoint_raw  # ultralytics >= 8.4
+    def _load_checkpoint(model):
+        weights, ckpt = _load_checkpoint_raw(model)
+        return weights, ckpt
+from ultralytics.utils import DEFAULT_CFG, LOGGER, RANK, IterableSimpleNamespace
+try:
+    from ultralytics.utils import yaml_load  # ultralytics < 8.4
+except ImportError:
+    from ultralytics.utils import YAML as _YAML  # ultralytics >= 8.4
+    def yaml_load(file):
+        """Load a YAML file."""
+        return _YAML.load(file)
 from ultralytics.utils.files import increment_path
 from ultralytics.utils.torch_utils import smart_inference_mode, torch_distributed_zero_first
 
@@ -293,8 +309,8 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
         model, weights = self.model, None
         ckpt = None
         if str(model).endswith('.pt'):
-            weights, ckpt = attempt_load_one_weight(model)
-            if hasattr(ckpt['model'], 'yaml'):
+            weights, ckpt = _load_checkpoint(model)
+            if ckpt is not None and hasattr(ckpt.get('model', None), 'yaml'):
                 cfg = ckpt['model'].yaml
             else:
                 cfg = weights.yaml

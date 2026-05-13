@@ -388,15 +388,32 @@ def scale_boxes(
     return clip_boxes(boxes, img0_shape)
 
 # Revised from ultralytics
+def _is_end2end_output(preds) -> bool:
+    """Return True if preds is from an end2end model (e.g. YOLOv26).
+
+    Three formats exist:
+    - ultralytics < 8.4 legacy: preds[0] = tensor(b, features, n_anchors)
+    - ultralytics >= 8.4 legacy (e.g. YOLO11): preds[0] = (tensor(b, features, n_anchors), protos)
+    - ultralytics >= 8.4 end2end (e.g. YOLOv26): preds[0] = (tensor(b, n_dets, features), protos)
+
+    The end2end case is identified by preds[0][0].shape[1] > preds[0][0].shape[2]
+    (n_dets > n_features), which is the opposite of the legacy layout.
+    """
+    if not isinstance(preds[0], (list, tuple)):
+        return False  # pre-8.4 legacy tensor format
+    det = preds[0][0]
+    return det.shape[1] > det.shape[2]  # end2end: n_dets > n_features
+
+
 def postprocess(
-        preds, 
-        imgs : Sequence[torch.Tensor] | torch.Tensor, 
-        max_det : int=300, 
-        min_confidence : float=0, 
+        preds,
+        imgs : Sequence[torch.Tensor] | torch.Tensor,
+        max_det : int=300,
+        min_confidence : float=0,
         overlap_threshold : float=0.1,
-        overlap_metric : str="IoU", 
-        nms : int=0, 
-        valid_size_range : tuple[int, int] | list[int] | None=None, 
+        overlap_metric : str="IoU",
+        nms : int=0,
+        valid_size_range : tuple[int, int] | list[int] | None=None,
         edge_margin : int | None=None
     ) -> list[Results]:
     """Postprocesses the predictions of the model.
@@ -410,7 +427,7 @@ def postprocess(
         overlap_metric: Overlap metric to use for NMS. Default is "IoU".
         nms: The type of non-maximum suppression to use. Defaults to 0. 0 is no NMS, 1 is standard NMS, 2 is fancy NMS and 3 is mask NMS.
         valid_size_range: The range of valid sizes for the bounding boxes in pixels. Defaults to None (no valid size range).
-        edge_margin: The minimum gap between the edge of the image and the bounding box in pixels for a prediction to be considered valid. 
+        edge_margin: The minimum gap between the edge of the image and the bounding box in pixels for a prediction to be considered valid.
             Defaults to None (no edge margin).
 
     Returns:
@@ -418,34 +435,61 @@ def postprocess(
 
     """
     tile_size = imgs[0].shape[-1]
-    p = preds[0]
-    assert isinstance(p, torch.Tensor)
-    # Convert from xywh to xyxy
-    p[:, :4, :] = torch.cat((
-            p[:, 0:2, :] - p[:, 2:4, :] / 2,  # x_min, y_min
-            p[:, 0:2, :] + p[:, 2:4, :] / 2   # x_max, y_max
-        ),  
-        dim=1)
+
     if min_confidence < 0 or min_confidence > 1:
         raise ValueError("min_confidence must be between 0 and 1.")
-    if min_confidence > 0:
-        num_above_min_conf = (p[:, 4, :] > min_confidence).sum(dim=1)
-        max_det = min(max_det, int(num_above_min_conf.max().item()))
-    # Filter top-`max_det` predictions
-    if max_det != 0:
-        # Filter out the predictions with the lowest confidence
-        p = p.gather(2, torch.argsort(p[:, 4, :], dim=1, descending=True)[:, :max_det].unsqueeze(1).expand(-1, p.size(1), -1))
 
-    # Change shape from (batch, xyxy + cls + masks, n) to (batch, n, xyxy + cls + masks)
-    p = p.transpose(-2, -1)
-    
+    if _is_end2end_output(preds):
+        # YOLOv26 / end2end models: preds[0] = (dets[batch, n_dets, 4+1+1+32], protos[batch, 32, h, w])
+        # Boxes are already in xyxy format and post-NMS; conf at dim 4, class at dim 5.
+        p = preds[0][0].clone()  # (batch, n_dets, 38)
+        protos = preds[0][1]     # (batch, 32, h, w)
+        if len(protos.shape) == 3:
+            protos = protos.unsqueeze(0)
+        # Filter zero-conf padding slots and apply min_confidence
+        if min_confidence > 0:
+            conf_mask = p[:, :, 4] > min_confidence
+        else:
+            conf_mask = p[:, :, 4] > 0
+        # Cap to max_det
+        if max_det > 0 and p.shape[1] > max_det:
+            p = p[:, :max_det, :]
+            conf_mask = conf_mask[:, :max_det]
+    else:
+        # Legacy format (ultralytics < 8.4): preds[0] = tensor(batch, features, n_anchors)
+        # Legacy format (ultralytics >= 8.4): preds[0] = (tensor(batch, features, n_anchors), protos)
+        if isinstance(preds[0], (list, tuple)):
+            raw_dets = preds[0][0]
+            protos = preds[0][1]
+        else:
+            raw_dets = preds[0]
+            protos = preds[1][-1]
+        p = raw_dets.clone()
+        assert isinstance(p, torch.Tensor)
+        # Convert from xywh to xyxy
+        p[:, :4, :] = torch.cat((
+                p[:, 0:2, :] - p[:, 2:4, :] / 2,  # x_min, y_min
+                p[:, 0:2, :] + p[:, 2:4, :] / 2   # x_max, y_max
+            ),
+            dim=1)
+        if min_confidence > 0:
+            num_above_min_conf = (p[:, 4, :] > min_confidence).sum(dim=1)
+            max_det = min(max_det, int(num_above_min_conf.max().item()))
+        # Filter top-`max_det` predictions
+        if max_det != 0:
+            p = p.gather(2, torch.argsort(p[:, 4, :], dim=1, descending=True)[:, :max_det].unsqueeze(1).expand(-1, p.size(1), -1))
+        # Change shape from (batch, xyxy + cls + masks, n) to (batch, n, xyxy + cls + masks)
+        p = p.transpose(-2, -1)
+        conf_mask = None
+
+        if len(protos.shape) == 3:
+            protos = protos.unsqueeze(0)
     results = []
-    protos = preds[1][-1]
-    if len(protos.shape) == 3:
-        protos = protos.unsqueeze(0)
     for i, (pred, _) in enumerate(zip(p, range(len(imgs)))):
-        # Remove predictions with a confidence below min_confidence
-        if min_confidence != 0:
+        # Remove empty slots (end2end) or low-confidence predictions (legacy)
+        if conf_mask is not None:
+            pred = pred[conf_mask[i]]
+        elif min_confidence != 0:
             pred = pred[pred[:, 4] > min_confidence]
         boxes = scale_boxes(
             (tile_size, tile_size), 
