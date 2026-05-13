@@ -1572,25 +1572,7 @@ class Predictor:
                     raise FileNotFoundError(f"No such model or file: '{model}'")
             
             yolo = YOLO(model, "segment", verbose=True)
-            pred = yolo._smart_load("predictor")
-            class dict2attr:
-                def __init__(self, d):
-                    self.__dict__ = d
-            args = dict2attr({
-                "device": self._device,
-                "half": self._dtype == torch.float16,
-                "batch": self.BATCH_SIZE,
-                "model": yolo.model,
-                "fp16" : self._dtype == torch.float16,
-                "dnn" : False,
-                # If we want to support multiclass inference, 
-                # this needs to point to "Path to the additional data.yaml file containing class names. Optional." 
-                # see: https://github.com/ultralytics/ultralytics/blob/bc9fd45cdf10ebe8009037aaf8def2353761c9ed/ultralytics/nn/autobackend.py#L53
-                "data" : None
-            })
-            pred.args = args
-            pred.setup_model(self=pred, model=yolo.model, verbose=True)
-            self._model = pred.model
+            self._model = yolo.model
             self._model.to(self._device, dtype=self._dtype)
             self._model.eval()
         elif isinstance(model, torch.nn.Module):
