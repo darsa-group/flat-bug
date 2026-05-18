@@ -309,6 +309,10 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
         model, weights = self.model, None
         ckpt = None
         if str(model).endswith('.pt'):
+            if not os.path.exists(model):
+                # ultralytics < 8.4 doesn't auto-download in torch_safe_load, so do it explicitly
+                from ultralytics.utils.downloads import attempt_download_asset
+                model = attempt_download_asset(model)
             weights, ckpt = _load_checkpoint(model)
             if ckpt is not None and hasattr(ckpt.get('model', None), 'yaml'):
                 cfg = ckpt['model'].yaml
