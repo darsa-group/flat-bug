@@ -36,7 +36,7 @@ def main():  # noqa: D103
     DEFAULT_CONF = {
         "batch": 8,
         "imgsz": 1024,
-        "model": "yolov8m-seg.pt",
+        "model": "yolo26m-seg.pt",
         "task": "segment",
         "epochs": 5000,
         "device": "cuda",
