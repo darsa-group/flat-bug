@@ -405,6 +405,7 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
 
         """
         if self.epoch % self.save_period == 0 or self._val_metrics is None:
+            torch.cuda.empty_cache()
             metrics, fitness = super().validate()
             self._val_metrics, self._val_fitness = metrics, fitness
 
