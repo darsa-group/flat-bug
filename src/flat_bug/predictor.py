@@ -1085,7 +1085,7 @@ class TensorPredictions:
         Image.fromarray(
             obj=chw2hwc_uint8(crop, mask).detach().cpu().numpy(),
             mode="RGB" if mask is None else "RGBA"
-        ).save(path)
+        ).save(path, compress_level=1)
         return path
 
     def save_crops(
