@@ -386,9 +386,7 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
         """Construct and return dataloader."""
         assert mode in {"train", "val"}, f"Mode must be 'train' or 'val', not {mode}."
         if mode == "val":
-            # ultralytics doubles batch_size for validation; YOLOv26's one2many loss makes this OOM,
-            # so clamp back to the training batch size.
-            batch_size = self.args.batch
+            batch_size = 1
         with torch_distributed_zero_first(rank):  # init dataset *.cache only once if DDP
             dataset = self.build_dataset(dataset_path, mode, batch_size)
         shuffle = mode == "train"
