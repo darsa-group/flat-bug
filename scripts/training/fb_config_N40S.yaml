@@ -1,5 +1,5 @@
 batch: 8
-#model: "yolov26n.pt"
+# model: "yolov26n.pt"
 epochs: 100
 device: [0]
 patience: 9999
