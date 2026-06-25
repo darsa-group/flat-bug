@@ -399,7 +399,7 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
     @smart_inference_mode()
     def validate(self) -> tuple[dict, float]:
         """Run validation on test set using self.validator.
-        
+
         The returned dict is expected to contain "fitness" key.
 
         Returns:
@@ -408,7 +408,32 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
         """
         if self.epoch % self.save_period == 0 or self._val_metrics is None:
             torch.cuda.empty_cache()
-            metrics, fitness = super().validate()
+
+            # YOLOv26's one2many head assigns many positive anchors per GT instance.
+            # On dense flat-bug images this causes single_mask_loss / crop_mask to
+            # allocate 10+ GB for mask tensors — OOM even at batch_size=1.
+            # Validation loss is only logged, not used for fitness or early stopping,
+            # so we replace model.loss with a no-op for the duration of the validation pass.
+            ema_model = getattr(getattr(self, "ema", None), "ema", None)
+            _patch_targets = [m for m in [ema_model, self.model] if m is not None and hasattr(m, "loss")]
+            _saved_losses = [(m, m.loss) for m in _patch_targets]
+            _zero = torch.zeros(len(self.loss_names), device=self.device)
+            for m, _ in _saved_losses:
+                m.loss = lambda *a, **kw: (_zero, _zero)
+            LOGGER.warning(
+                "Validation loss suppressed to prevent OOM from YOLOv26 one2many head "
+                "on dense-annotation images. mAP/fitness metrics are unaffected."
+            )
+            try:
+                metrics, fitness = super().validate()
+            finally:
+                for m, orig in _saved_losses:
+                    try:
+                        del m.loss  # remove instance attribute, restoring the class method
+                    except AttributeError:
+                        m.loss = orig
+                torch.cuda.empty_cache()
+
             self._val_metrics, self._val_fitness = metrics, fitness
 
             # Custom end-to-end validation
