@@ -417,9 +417,8 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
             ema_model = getattr(getattr(self, "ema", None), "ema", None)
             _patch_targets = [m for m in [ema_model, self.model] if m is not None and hasattr(m, "loss")]
             _saved_losses = [(m, m.loss) for m in _patch_targets]
-            _zero = torch.zeros(len(self.loss_names), device=self.device)
             for m, _ in _saved_losses:
-                m.loss = lambda *a, **kw: (_zero, _zero)
+                m.loss = lambda *a, **kw: (0, 0)
             LOGGER.warning(
                 "Validation loss suppressed to prevent OOM from YOLOv26 one2many head "
                 "on dense-annotation images. mAP/fitness metrics are unaffected."
