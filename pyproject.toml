@@ -1,6 +1,6 @@
 [project]
 name = "flat-bug"
-version = "1.1.2"
+version = "1.2.0"
 authors = [
   {name="Asger Svenning", email="asgersvenning@ecos.au.dk"},
   {name="Quentin Geissman"},
