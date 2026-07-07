@@ -103,11 +103,8 @@ def create_validation_dataset(args : IterableSimpleNamespace) -> FlatBugYOLOVali
 def _test_plot_batch(batch, ni):  # noqa: D103
     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as f:
         plot_images(
-            batch["img"],
-            batch["batch_idx"],
-            batch["cls"].squeeze(-1),
-            batch["bboxes"],
-            masks=batch["masks"],
+            labels=batch,
+            images=batch["img"],
             paths=batch["im_file"],
             fname=f.name,
             on_plot=os.remove,

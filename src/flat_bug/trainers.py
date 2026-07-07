@@ -15,6 +15,7 @@ from ultralytics.data import build_dataloader
 from ultralytics.data.build import InfiniteDataLoader
 from ultralytics.models import yolo
 from ultralytics.models.yolo.segment import SegmentationTrainer
+
 try:
     from ultralytics.nn.tasks import attempt_load_one_weight as _attempt_load_one_weight
     def _load_checkpoint(model):
@@ -26,6 +27,7 @@ except ImportError:
         weights, ckpt = _load_checkpoint_raw(model)
         return weights, ckpt
 from ultralytics.utils import DEFAULT_CFG, LOGGER, RANK, IterableSimpleNamespace
+
 try:
     from ultralytics.utils import yaml_load  # ultralytics < 8.4
 except ImportError:

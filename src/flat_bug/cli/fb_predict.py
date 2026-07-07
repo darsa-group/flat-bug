@@ -77,7 +77,7 @@ def cli_args():
         help="The result directory"
     )
     args_parse.add_argument(
-        "-w", "--model-weights", type=str, dest="model_weights", default="flat_bug_M.pt",
+        "-w", "--model-weights", type=str, dest="model_weights", default="flat_bug_M_v2.pt",
         help="The .pt file"
     )
     args_parse.add_argument(

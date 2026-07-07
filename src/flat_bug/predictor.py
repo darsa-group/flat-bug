@@ -191,9 +191,14 @@ class TensorPredictions:
     mask_height = None
     device = None
     dtype = None
-    CONSTANTS = ("image", "image_path", "device", "dtype", "time", "mask_height", "mask_width", "CONSTANTS",
-                 "BOX_IS_EQUAL_MARGIN",
-                 "PREFER_POLYGONS")  # Attributes that should not be changed after initialization - should 'contours' be here?
+    CONSTANTS = (
+        "image", "image_path", 
+        "device", "dtype", 
+        "time", 
+        "mask_height", "mask_width", 
+        "BOX_IS_EQUAL_MARGIN",
+        "PREFER_POLYGONS"
+    )
 
     def __init__(
             self, 
@@ -219,13 +224,10 @@ class TensorPredictions:
             kwargs: Additional configuration arguments.
 
         """
-        # Set option flags
         self.time = time
         start = end = None
 
-        # Timing could probably be hidden in a decorator...
         if self.time and predictions is not None and len(predictions) > 0:
-            # Initialize timing calculations
             start = torch.cuda.Event(enable_timing=True)
             end = torch.cuda.Event(enable_timing=True)
             start.record()
@@ -255,7 +257,6 @@ class TensorPredictions:
         else:
             self.device, self.dtype = torch.device("cpu"), torch.float32
 
-        # Set attributes
         self.image_path = image_path
         if image is None:
             if self.image_path is None:
@@ -304,12 +305,12 @@ class TensorPredictions:
         """
         start = end = end_duplication_removal = end_mask_combination = None
         if self.time:
-            # Initialize timing calculations
             start = torch.cuda.Event(enable_timing=True)
             end = torch.cuda.Event(enable_timing=True)
             end_duplication_removal = torch.cuda.Event(enable_timing=True)
             end_mask_combination = torch.cuda.Event(enable_timing=True)
             start.record()
+        
         self.boxes = torch.cat([torch.as_tensor(p.boxes) for p in predictions])  # Nx4
         self.confs = torch.cat([torch.as_tensor(p.confs) for p in predictions])  # N
         self.scales = [p.scale for p in predictions for _ in range(len(p))]  # N
@@ -1132,20 +1133,12 @@ class TensorPredictions:
     @property
     def json_data(self):
         """JSON-compatible dictionary with instance state data."""
-        ## Clean up the data
-        # 1. Convert the boxes to list
         boxes = self.boxes.cpu().tolist()
-        # 2. Convert the masks to contours as lists 
         contours = [c.T.cpu().tolist() for c in self.contours]
-        # 3. Convert the confidences to floats in a list
         confs = self.confs.float().cpu().tolist()
-        # 4. Convert the classes to integers in a list
         classes = self.classes.cpu().long().tolist()
-        # 5. Get the scales (already floats in a list)
         scales = self.scales
-        # 6. Get the areas (already floats in a list)
         areas = self.areas
-        # 7. Get mask data
         mdata = self.masks.data
         return {
             "boxes": boxes,
@@ -1192,14 +1185,12 @@ class TensorPredictions:
         else:
             outpath = f"{outpath}{ext}"
 
-        # Add the basename to the outpath
         pt_path = f'{outpath}.pt'
         json_path = f'{outpath}.json'
 
         if save_pt:
             if os.path.exists(pt_path):
                 logger.warning(f"Pickle ({pt_path}) already exists, overwriting!")
-            ### First serialize as .pt file
             torch.save(self, pt_path)
 
         if save_json:
@@ -1330,7 +1321,7 @@ class TensorPredictions:
                 raise ValueError("Unable to save prediction with unknown source file, when `basename` is not supplied.")
             # Get the base name of the image
             basename = os.path.splitext(os.path.basename(self.image_path))[0]
-        # Construct the prediction directory path
+        
         prediction_directory = os.path.join(output_directory, basename)
         # Create the prediction directory if it does not exist and it is needed 
         # (i.e. if we are saving crops, overview, or metadata to a standard location)
@@ -1344,10 +1335,7 @@ class TensorPredictions:
             overview_directory = overview if isinstance(overview, str) else prediction_directory
             os.makedirs(overview_directory, exist_ok=True)
             assert os.path.isdir(overview_directory), RuntimeError(f"Invalid path for overview: {overview_directory}")
-            # The overview path is then constructed as a .jpg file
-            # in the overview directory with the name overview_{base_name}.jpg
             overview_path = os.path.join(overview_directory, f"overview_{basename}_UUID_{identifier}.jpg")
-            # Save the overview image to the overview path
             scale, linewidth = 1, 2
             if fast:
                 scale = min(1 / 2, 3072 / max(self.image.shape[1:]))
@@ -1360,7 +1348,6 @@ class TensorPredictions:
             crop_directory = crops if isinstance(crops, str) else os.path.join(prediction_directory, "crops") 
             os.makedirs(crop_directory, exist_ok=True)
             assert os.path.isdir(crop_directory), RuntimeError(f"Invalid path for crops: {crop_directory}")
-            # Save the crops to the crops path
             self.save_crops(outdir=crop_directory, basename=basename, mask=mask_crops, identifier=identifier)
 
         # Save json
@@ -1369,11 +1356,7 @@ class TensorPredictions:
             metadata_directory = metadata if isinstance(metadata, str) else prediction_directory
             os.makedirs(metadata_directory, exist_ok=True)
             assert os.path.isdir(metadata_directory), RuntimeError(f"Invalid path for metadata: {metadata_directory}")
-            # The metadata path is then constructed as a .json file 
-            # in the metadata directory with the name metadata_{base_name}_id_{identifier}.<EXT>
             metadata_path = os.path.join(metadata_directory, f'metadata_{basename}_UUID_{identifier}')
-            # Serialize the data to the metadata path 
-            # (we don't do this as a future since it is fast, and then we don't need to copy data)
             self.serialize(outpath=metadata_path, identifier=identifier)
 
         if wait:
@@ -1396,46 +1379,37 @@ def _process_batch(
     start_batch_event = end_fetch_event = end_forward_event = \
         end_batch_event = start_batch_event = current_device_stream = None
     if time:
-        # Initialize batch timing calculations
         start_batch_event = torch.cuda.Event(enable_timing=True)
         end_fetch_event = torch.cuda.Event(enable_timing=True)
         end_forward_event = torch.cuda.Event(enable_timing=True)
         end_batch_event = torch.cuda.Event(enable_timing=True)
         current_device_stream = torch.cuda.current_stream(device=device)
-        # Record batch start
         start_batch_event.record(current_device_stream)
     
     # Get the offsets for the current batch and extract and stack the corresponding tiles
     batch = torch.stack([
-                image[:, o[0]: (o[0] + tile_size), o[1]: (o[1] + tile_size)] 
-                for (m, n), o in offsets[batch_start_idx:min((batch_start_idx + batch_size), len(offsets))]
-            ], dim=0)
+        image[:, o[0]: (o[0] + tile_size), o[1]: (o[1] + tile_size)] 
+        for (m, n), o in offsets[batch_start_idx:min((batch_start_idx + batch_size), len(offsets))]
+    ], dim=0)
     if time:
-        # Record end of fetch
         assert current_device_stream is not None and end_fetch_event is not None
         end_fetch_event.record(current_device_stream)
+
     # Forward pass the model on the batch tiles
-    with torch.no_grad():
+    with torch.inference_mode():
         batch_outputs = getattr(model, callback)(batch)
+    
     if time:
-        # Record end of forward
         assert current_device_stream is not None and end_forward_event is not None
         end_forward_event.record(current_device_stream)
-        # Record batch end
         assert current_device_stream is not None and end_batch_event is not None
         end_batch_event.record(current_device_stream)
-
-        # Calculate timing
         torch.cuda.synchronize(device=device)
         assert current_device_stream is not None and start_batch_event is not None and end_fetch_event is not None
         batch_time = start_batch_event.elapsed_time(end_batch_event) / 1000  # Convert to seconds
         fetch_time = start_batch_event.elapsed_time(end_fetch_event) / 1000  # Convert to seconds
         forward_time = end_fetch_event.elapsed_time(end_forward_event) / 1000  # Convert to seconds
-        # loggger.info(
-        #   f'Batch time: {batch_time:.3f}s,'
-        #   f' fetch time: {fetch_time:.3f}s,'
-        #   f' forward time: {forward_time:.3f}s'
-        # )
+
     # Return the postprocessed batch outputs and optionally the timing
     if time:
         return batch, batch_outputs, (batch_time, fetch_time, forward_time)  # type: ignore
@@ -1536,7 +1510,7 @@ class Predictor:
 
     def __init__(
             self, 
-            model : str | pathlib.Path="flat_bug_M.pt", 
+            model : str | pathlib.Path="flat_bug_M_v2.pt", 
             cfg : dict | str | Path | None=None, 
             device : str | torch.device | int | list[str | torch.device | int]=torch.device("cpu"), 
             dtype : torch.types._dtype | str=torch.float32
@@ -1617,7 +1591,6 @@ class Predictor:
             this_EDGE_CASE_MARGIN = 0
 
         if self.TIME:
-            # Initialize timing calculations
             start_detect = torch.cuda.Event(enable_timing=True)
             end_detect = torch.cuda.Event(enable_timing=True)
             main_stream = torch.cuda.current_stream(device=self._device)
@@ -1751,27 +1724,19 @@ class Predictor:
         MASK_TO_IMG_RATIO = MASK_SIZE / torch.tensor(
             [TILE_SIZE, TILE_SIZE], dtype=torch.float32, device=self._device
         ).unsqueeze(0)
-        # For the boxes, we can simply add the offsets (and possibly subtract the padding)
+        
         box_offsetters = torch.tensor(
             [[o[1][0] - pad_lrtb[2], o[1][1] - pad_lrtb[0]] for o in offsets], 
             dtype=torch.float32, device=self._device
         )
-        # However for the masks, we need to create a new mask which can contain every tile, 
-        #   and then add the masks from each tile to the correct area
-        #   - this will of course use some memory, but it's probably not too bad
-        # Since the masks do not have the same size as the tiles, we need to scale the offsets
-        mask_offsetters = box_offsetters * MASK_TO_IMG_RATIO
-        # We also need to round the offsets, since they may not line up with the pixel-grid
-        # RE: Now they do since I made sure the offsets are multiples of 4
-        mask_offsetters = torch.round(mask_offsetters).long()
-        # The padding must also be scaled and subtracted from the new mask size
+        mask_offsetters = torch.round(box_offsetters * MASK_TO_IMG_RATIO).long()
         new_mask_size = (
             (mask_offsetters.max(dim=0).values + MASK_SIZE) - 
             torch.tensor(pad_lrtb[1::2][::-1], dtype=torch.long, device=self._device) * MASK_TO_IMG_RATIO[0]
         ).tolist()
-        # Finally, we can merge the results - this function basically just does what I described above
         orig_img = image[:, pad_lrtb[2]:(-pad_lrtb[3] if pad_lrtb[3] != 0 else None),
                    pad_lrtb[0]:(-pad_lrtb[1] if pad_lrtb[1] != 0 else None)] if padded else image
+
         merged_results = merge_tile_results(
             results = postprocessed_results, 
             orig_img = orig_img.permute(1, 2, 0), 
@@ -1847,7 +1812,6 @@ class Predictor:
 
         """
         if self.TIME:
-            # Initialize timing calculations
             start_pyramid, end_pyramid = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
             start_pyramid.record()
 
@@ -1875,7 +1839,6 @@ class Predictor:
             resize = transforms.Resize((h, w), antialias=True)
             transform_list.append(resize)
 
-        # Check if the image has an integer data type
         if tensor_image.dtype in [torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64]:
             transform_list.append(transforms.ConvertImageDtype(self._dtype))
 
@@ -1892,9 +1855,6 @@ class Predictor:
                 fill=0,
                 padding_mode='constant'
             )
-            # padding_for_edge_cases = InpaintPad(
-            #   padding=self.EDGE_CASE_MARGIN * edge_case_margin_padding_multiplier
-            # )
             transform_list.append(padding_for_edge_cases)
         else:
             padding_offset[:] = 0
@@ -1903,11 +1863,9 @@ class Predictor:
             transforms.Compose(transform_list)(tensor_image) if transform_list else tensor_image
         ).to(device=self._device,  dtype=self._dtype)
 
-        # Check correct dimensions
         assert len(transformed_image.shape) == 3, RuntimeError(
             f"transformed_image.shape {transformed_image.shape} != 3"
         ) 
-        # Check correct number of channels
         assert transformed_image.shape[0] == 3, RuntimeError(
             f"transformed_image.shape[0] {transformed_image.shape[0]} != 3. "
             "The image is probably supplied in WxHxC instead of CxWxH, try image.permute(2, 1, 0) before passing it."

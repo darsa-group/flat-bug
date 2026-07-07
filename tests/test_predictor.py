@@ -14,7 +14,7 @@ from flat_bug import logger
 from flat_bug.predictor import Predictor, TensorPredictions
 from tests.remote_lfs_fallback import check_file_with_remote_fallback
 
-TEST_MODEL_NAME = "flat_bug_M.pt"
+TEST_MODEL_NAME = "flat_bug_M_v2.pt"
 PYRAMID_SCALE_BEFORE = 0.6
 ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")
 ASSET_NAME = "ALUS_Non-miteArachnids_Unknown_2020_11_03_4545"

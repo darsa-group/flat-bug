@@ -19,14 +19,18 @@ classifiers = [
 dependencies = [
     "torch>=2.11",
     "torchvision>=0.17.0",
-    "ultralytics>=8.2.16,<=8.4.49",
+    "ultralytics>=8.4.0,<=8.4.90",
     "shapely>=2.0.2",
     "scikit-optimize>=0.10.1",
-    "scipy>=1.14.1"
+    "scipy>=1.14.1",
+    "tqdm>=4.0.0",
 ]
 keywords=['deep learning', 'object detection', 'instance segmentation', 'arthropods']
 
 [project.optional-dependencies]
+eval = [
+    "pandas",
+]
 erda = [
     "pyremotedata>=0.0.16"
 ]
@@ -48,19 +52,18 @@ fb_prepare_data = "flat_bug.cli.fb_prepare_data:main"
 fb_clone_data = "flat_bug.cli.fb_clone_data:main"
 
 [dependency-groups]
+dev = [
+    "ipykernel>=7.2.0",
+    "ipywidgets>=8.1.8",
+    "jupyter>=1.0.0",
+    "pytest>=9.0.3",
+    "ruff>=0.15.12",
+]
 docs = [
     "furo>=2025.12.19",
     "myst-parser>=5.0.0",
     "sphinx>=9.0.4",
-]
-notebook = [
-    "ipykernel>=7.2.0",
-    "ipywidgets>=8.1.8",
-    "jupyter>=1.0.0",
-]
-tests = [
-    "pytest>=9.0.3",
-    "ruff>=0.15.12",
+    "sphinx_rtd_theme"
 ]
 
 [tool.ruff]

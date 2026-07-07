@@ -402,6 +402,7 @@ def scale_labels(  # noqa: D103
 
 class FlatBugRandomPerspective(RandomPerspective):  # noqa: D101
     fill_value = (0, 0, 0)
+    size : tuple[int, int]
 
     def __init__(self, imgsz : int, *args, **kwargs):  # noqa: D107
         super().__init__(*args, **kwargs)
@@ -466,10 +467,9 @@ class FlatBugRandomPerspective(RandomPerspective):  # noqa: D101
             labels: a dict of `bboxes`, `segments`, `keypoints`.
 
         """
-        if self.pre_transform and "mosaic_border" not in labels:
-            labels = self.pre_transform(labels)
-        # labels.pop("ratio_pad", None)  # do not need ratio pad
-
+        # if self.pre_transform and "mosaic_border" not in labels:
+        #     labels = self.pre_transform(labels)
+        labels.pop("ratio_pad", None)  # do not need ratio pad
         img = labels["img"]
         cls = labels["cls"]
         instances : Instances = labels.pop("instances")
@@ -479,7 +479,7 @@ class FlatBugRandomPerspective(RandomPerspective):  # noqa: D101
         if instances.normalized:
             instances.denormalize(*img.shape[:2][::-1])
 
-        border = labels.pop("mosaic_border", self.border)
+        border = labels.pop("mosaic_border", (0, 0))
         self.size = img.shape[1] + border[1] * 2, img.shape[0] + border[0] * 2  # w, h
         # M is affine matrix
         # Scale for func:`box_candidates`
@@ -495,7 +495,7 @@ class FlatBugRandomPerspective(RandomPerspective):  # noqa: D101
             bboxes, segments = apply_segments(segments, M)
 
         if keypoints is not None:
-            keypoints = self.apply_keypoints(keypoints, M)
+            keypoints = self.apply_keypoints(keypoints, M, self.size)
         new_instances = Instances(bboxes, segments, keypoints, bbox_format="xyxy", normalized=False)
 
         # Filter instances
