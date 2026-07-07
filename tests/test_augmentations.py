@@ -1,4 +1,5 @@
 """Tests for flatbug augmentations (including their integration into the dataloader)."""
+
 import math
 import os
 from copy import deepcopy
@@ -29,7 +30,7 @@ TEST_HYP = {
     "min_size": 4,
     "imgsz": 1024,
     "use_segments": True,
-    "use_keypoints": False
+    "use_keypoints": False,
 }
 
 ASSET_DIR = os.path.join(os.path.dirname(__file__), "assets")
@@ -40,6 +41,7 @@ TEST_LABEL = os.path.join(ASSET_DIR, ASSET_NAME + ".txt")
 check_file_with_remote_fallback(TEST_IMG)
 check_file_with_remote_fallback(TEST_LABEL)
 
+
 def generate_train_augmentation_pipeline(hyp):  # noqa: D103
     hyp = IterableSimpleNamespace(**hyp)
     return train_augmentation_pipeline(
@@ -48,17 +50,16 @@ def generate_train_augmentation_pipeline(hyp):  # noqa: D103
         max_instances=hyp.max_instances,
         min_size=hyp.min_size,
         use_segments=hyp.use_segments,
-        use_keypoints=hyp.use_keypoints
+        use_keypoints=hyp.use_keypoints,
     )
+
 
 def generate_validation_augmentation_pipeline(hyp):  # noqa: D103
     hyp = IterableSimpleNamespace(**hyp)
     return validation_augmentation_pipeline(
-        image_size=hyp.imgsz,
-        min_size=hyp.min_size,
-        use_segments=hyp.use_segments,
-        use_keypoints=hyp.use_keypoints
+        image_size=hyp.imgsz, min_size=hyp.min_size, use_segments=hyp.use_segments, use_keypoints=hyp.use_keypoints
     )
+
 
 def mock_verify_image_label(image_path, label_path):  # noqa: D103
     try:
@@ -70,7 +71,7 @@ def mock_verify_image_label(image_path, label_path):  # noqa: D103
     label = {
         "im_file": im_file,
         "shape": shape,
-        "cls": lb[:, 0:1],  
+        "cls": lb[:, 0:1],
         "bboxes": lb[:, 1:],
         "segments": segments,
         "keypoints": keypoint,
@@ -78,13 +79,14 @@ def mock_verify_image_label(image_path, label_path):  # noqa: D103
         "bbox_format": "xywh",
     }
     label["instances"] = Instances(
-        np.array(label["bboxes"]), 
+        np.array(label["bboxes"]),
         np.array(resample_segments(label["segments"])),
         label["keypoints"],
         bbox_format=label["bbox_format"],
-        normalized=label["normalized"]
+        normalized=label["normalized"],
     )
     return label
+
 
 def mock_yolo_base_dataset_load_image(image_path, imgsz, rect_mode=False):  # noqa: D103
     """Load an image from the given path and resize it if necessary.
@@ -102,16 +104,16 @@ def mock_yolo_base_dataset_load_image(image_path, imgsz, rect_mode=False):  # no
 
     """
     f = Path(image_path)
-    
+
     if not f.exists():
         raise FileNotFoundError(f"Image Not Found {f}")
 
     im = cv2.imread(str(f))  # Read image using OpenCV
     if im is None:
         raise FileNotFoundError(f"Image Not Found {f}")
-    
+
     h0, w0 = im.shape[:2]  # Original height and width
-    
+
     if rect_mode:  # Resize while maintaining aspect ratio
         r = imgsz / max(h0, w0)  # Ratio
         if r != 1:  # If sizes are not equal
@@ -119,10 +121,11 @@ def mock_yolo_base_dataset_load_image(image_path, imgsz, rect_mode=False):  # no
             im = cv2.resize(im, (w, h), interpolation=cv2.INTER_LINEAR)
     elif not (h0 == w0 == imgsz):  # Resize by stretching image to square imgsz
         im = cv2.resize(im, (imgsz, imgsz), interpolation=cv2.INTER_LINEAR)
-    
+
     return im, (h0, w0), im.shape[:2]
 
-def make_empty(obj : Any) -> Any:  # noqa: D103
+
+def make_empty(obj: Any) -> Any:  # noqa: D103
     if isinstance(obj, np.ndarray):
         obj = np.empty((0, *obj.shape[1:]), dtype=obj.dtype)
     elif isinstance(obj, torch.Tensor):
@@ -130,6 +133,7 @@ def make_empty(obj : Any) -> Any:  # noqa: D103
     elif isinstance(obj, list):
         obj = []
     return obj
+
 
 class TestMockYOLOHelpers:  # noqa: D101
     def test_mock_yolo_base_dataset_load_image(self):  # noqa: D102
@@ -142,7 +146,7 @@ class TestMockYOLOHelpers:  # noqa: D101
     def test_mock_verify_image_label(self):  # noqa: D102
         result = mock_verify_image_label(TEST_IMG, TEST_LABEL)
         assert isinstance(result, dict), f"Expected dict, got {type(result).__name__}"
-        correct : dict[str, type | None] = {
+        correct: dict[str, type | None] = {
             "im_file": str,
             "shape": tuple,
             "cls": np.ndarray,
@@ -151,7 +155,7 @@ class TestMockYOLOHelpers:  # noqa: D101
             "keypoints": None,
             "normalized": bool,
             "bbox_format": str,
-            "instances": Instances
+            "instances": Instances,
         }
         for k, v in correct.items():
             assert k in result, f"Missing key '{k}' in result"
@@ -160,6 +164,7 @@ class TestMockYOLOHelpers:  # noqa: D101
             assert isinstance(result[k], v), (
                 f"Invalid type for key '{k}'. Expected {v.__name__}, got {type(result[k]).__name__}"
             )
+
 
 class TestAugmentations:  # noqa: D101
     def test_generate_train_augmentation_pipeline(self):  # noqa: D102
@@ -196,11 +201,11 @@ class TestAugmentations:  # noqa: D101
                 continue
             if isinstance(v, Instances):
                 empty_pipeline_input[k] = Instances(
-                    make_empty(v.bboxes), 
+                    make_empty(v.bboxes),
                     make_empty(v.segments),
                     make_empty(v.keypoints),
                     bbox_format=empty_pipeline_input["bbox_format"],
-                    normalized=v.normalized
+                    normalized=v.normalized,
                 )
             else:
                 empty_pipeline_input[k] = make_empty(v)
@@ -234,7 +239,7 @@ class TestAugmentations:  # noqa: D101
                     make_empty(v.segments),
                     make_empty(v.keypoints),
                     bbox_format=empty_pipeline_input["bbox_format"],
-                    normalized=v.normalized
+                    normalized=v.normalized,
                 )
             else:
                 empty_pipeline_input[k] = make_empty(v)

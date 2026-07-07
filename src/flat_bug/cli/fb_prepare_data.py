@@ -25,12 +25,10 @@ def collapse_in_parent_dir(child):
     shutil.rmtree(child)
 
 
-
 OUT_COCO_CONVERTER = "labels/default/"
 OUT_COCO_CONVERTER_IMAGES = "images/default/"
 JSON_FILE_BASENAME = "instances_default.json"
 DATASET_NAME = "insects"
-
 
 
 # A help sting
@@ -54,7 +52,7 @@ def merge_cocos(files, out_file, delete=False):
     for c in files:
         with open(c) as f:
             coco = json.load(f)
-        id_map = {} ## old: new
+        id_map = {}  ## old: new
         new_images = []
         for i in coco["images"]:
             id_map[i["id"]] = im_id
@@ -79,6 +77,7 @@ def merge_cocos(files, out_file, delete=False):
         for c in files:
             os.remove(c)
 
+
 def prepare_coco_file(source_file, image_list, out):
     with open(source_file) as f:
         coco = json.load(f)
@@ -94,7 +93,6 @@ def prepare_coco_file(source_file, image_list, out):
             new_image.append(i)
     assert len(images_to_keep) > 0
 
-
     new_annots = []
     for a in coco["annotations"]:
         if a["image_id"] in image_ids_to_keep:
@@ -104,6 +102,7 @@ def prepare_coco_file(source_file, image_list, out):
     coco["images"] = images_to_keep
     with open(out, "w") as f:
         json.dump(coco, f)
+
 
 def main():
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
@@ -137,8 +136,6 @@ def main():
     args = args_parse.parse_args()
     option_dict = vars(args)
 
-
-
     data_yaml = {"path": DATASET_NAME,
                  "train": "images/train",
                  "val": "images/val",
@@ -159,7 +156,7 @@ def main():
 
     with open(os.path.join(PREPARED_DATA_TARGET, "data.yaml"), "w") as f:
         yaml.dump(data_yaml, f)
-    datasets = [] # [d for d in os.listdir(COCO_DATA_ROOT) if os.path.isdir(os.path.join(COCO_DATA_ROOT, d))]
+    datasets = []  # [d for d in os.listdir(COCO_DATA_ROOT) if os.path.isdir(os.path.join(COCO_DATA_ROOT, d))]
     for d in os.listdir(COCO_DATA_ROOT):
         source_dir = os.path.join(COCO_DATA_ROOT, d)
         if os.path.isdir(source_dir):
@@ -174,11 +171,9 @@ def main():
         shutil.rmtree(tmp_dir)
 
         try:
-
-            coco_files = [f for f in sorted(glob.glob(os.path.join( source_dir, "*.json")))]
-            #,"Multiple label files, only supporting one"
+            coco_files = [f for f in sorted(glob.glob(os.path.join(source_dir, "*.json")))]
+            # ,"Multiple label files, only supporting one"
             assert len(coco_files) == 1, os.path.join(source_dir, "*.json")
-
 
             convert_coco(labels_dir=source_dir, save_dir=tmp_dir, use_segments=True)
             os.makedirs(os.path.join(tmp_dir, OUT_COCO_CONVERTER, "train"), exist_ok=True)
@@ -197,7 +192,7 @@ def main():
 
             validation_files = {}
             training_files = {}
-            for f in sorted(glob.glob(os.path.join(tmp_dir,OUT_COCO_CONVERTER, "*.txt"))):
+            for f in sorted(glob.glob(os.path.join(tmp_dir, OUT_COCO_CONVERTER, "*.txt"))):
                 basename_sans_ext = os.path.splitext(os.path.basename(f))[0]
 
                 image_matches = [
@@ -219,9 +214,8 @@ def main():
                 im_path = os.path.join(source_dir, im_basename)
                 assert os.path.isfile(im_path)
 
-                with open(im_path, 'rb') as file_obj:
+                with open(im_path, "rb") as file_obj:
                     file_hash = hashlib.md5(file_obj.read()).hexdigest()
-
 
                 new_bn_se = f"{d}_{basename_sans_ext}"
                 p = int(file_hash[0:4], 16) / int("ffff", 16)
@@ -233,14 +227,8 @@ def main():
                     training_files[im_basename] = new_bn_se + ".jpg"
                 logging.info(f"{im_basename} -> {subset}")
 
-                shutil.move(
-                    f,
-                    os.path.join(tmp_dir, OUT_COCO_CONVERTER, os.path.join(subset, new_bn_se + ".txt"))
-                )
-                shutil.copy(
-                    im_path,
-                    os.path.join(tmp_dir, OUT_COCO_CONVERTER_IMAGES, subset, new_bn_se + ".jpg")
-                )
+                shutil.move(f, os.path.join(tmp_dir, OUT_COCO_CONVERTER, os.path.join(subset, new_bn_se + ".txt")))
+                shutil.copy(im_path, os.path.join(tmp_dir, OUT_COCO_CONVERTER_IMAGES, subset, new_bn_se + ".jpg"))
 
             if len(validation_files) == 0:
                 logging.warning(f"No validation files for {d}")
@@ -248,7 +236,7 @@ def main():
                 prepare_coco_file(
                     coco_files[0],
                     validation_files,
-                    os.path.join(tmp_dir, OUT_COCO_CONVERTER, "val", f"{d}"+JSON_FILE_BASENAME)
+                    os.path.join(tmp_dir, OUT_COCO_CONVERTER, "val", f"{d}" + JSON_FILE_BASENAME),
                 )
 
             if len(validation_files) == 0:
@@ -256,22 +244,24 @@ def main():
             else:
                 prepare_coco_file(
                     coco_files[0],
-                    training_files, 
-                    os.path.join(tmp_dir, OUT_COCO_CONVERTER, "train", f"{d}"+JSON_FILE_BASENAME)
+                    training_files,
+                    os.path.join(tmp_dir, OUT_COCO_CONVERTER, "train", f"{d}" + JSON_FILE_BASENAME),
                 )
 
             collapse_in_parent_dir(os.path.join(tmp_dir, OUT_COCO_CONVERTER))
-            collapse_in_parent_dir(os.path.join(tmp_dir,  OUT_COCO_CONVERTER_IMAGES))
-            #fixme here should add a subdir like "insects/" same as the name in data.yaml
+            collapse_in_parent_dir(os.path.join(tmp_dir, OUT_COCO_CONVERTER_IMAGES))
+            # fixme here should add a subdir like "insects/" same as the name in data.yaml
             shutil.copytree(tmp_dir, PREPARED_DATA_TARGET_SUBDIR, dirs_exist_ok=True)
         finally:
             if os.path.isdir(tmp_dir):
                 shutil.rmtree(tmp_dir)
 
-
     for subset in {"val", "train"}:
         all_json = [f for f in sorted(glob.glob(os.path.join(PREPARED_DATA_TARGET_SUBDIR, "labels", subset, "*.json")))]
-        merge_cocos(all_json, os.path.join(PREPARED_DATA_TARGET_SUBDIR, "labels", subset,JSON_FILE_BASENAME), delete=True)
+        merge_cocos(
+            all_json, os.path.join(PREPARED_DATA_TARGET_SUBDIR, "labels", subset, JSON_FILE_BASENAME), delete=True
+        )
+
 
 if __name__ == "__main__":
     main()

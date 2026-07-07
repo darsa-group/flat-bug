@@ -9,14 +9,16 @@ from tqdm.auto import tqdm
 REMOTE_REPOSITORY = "https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/"
 # GUI access: https://anon.erda.au.dk/cgi-sid/ls.py?share_id=Bb0CR1FHG6
 
+
 # Thanks to: https://stackoverflow.com/a/53877507/19104786
 class DownloadProgressBar(tqdm):  # noqa: D101
-    def update_to(self, b : int=1, bsize : int=1, tsize : int | None=None):  # noqa: D102
+    def update_to(self, b: int = 1, bsize: int = 1, tsize: int | None = None):  # noqa: D102
         if tsize is not None:
             self.total = tsize
         self.update(b * bsize - self.n)
 
-def download_from_repository(url : str, output_path : str | None=None, strict : bool=True, progress : bool=True):
+
+def download_from_repository(url: str, output_path: str | None = None, strict: bool = True, progress: bool = True):
     """Download a file from the flatbug "repository."""
     if output_path is None:
         output_path = url
@@ -24,11 +26,13 @@ def download_from_repository(url : str, output_path : str | None=None, strict : 
     tmp_dl_file = output_path + ".tmp"
     try:
         if progress:
-            with DownloadProgressBar(unit='B', unit_scale=True, miniters=1, desc=f'Downloading {url} to {output_path}') as t:
+            with DownloadProgressBar(
+                unit="B", unit_scale=True, miniters=1, desc=f"Downloading {url} to {output_path}"
+            ) as t:
                 urllib.request.urlretrieve(url, filename=tmp_dl_file, reporthook=t.update_to)
         else:
-                urllib.request.urlretrieve(url,  filename=tmp_dl_file)
-        
+            urllib.request.urlretrieve(url, filename=tmp_dl_file)
+
         os.rename(tmp_dl_file, output_path)
 
     except Exception as e:
@@ -42,16 +46,16 @@ def download_from_repository(url : str, output_path : str | None=None, strict : 
 
     return True
 
-# TODO: Improve this perhaps using https://gist.github.com/aldur/f356f245014523330a7070ab12bcfb1f, 
+
+# TODO: Improve this perhaps using https://gist.github.com/aldur/f356f245014523330a7070ab12bcfb1f,
 # as I have done in PyRemoteData https://github.com/asgersvenning/pyremotedata/blob/f0e3506c1abe2bb20106ffa2a1c3fc0f380f3dd8/src/pyremotedata/__init__.py
 logging.basicConfig(
-    level=logging.WARNING, 
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', 
-    datefmt='%Y-%m-%d %H:%M:%S'
+    level=logging.WARNING, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
 )
 
 logger = logging.getLogger(__name__)
 
+
 def set_log_level(level):  # noqa: D103
     logger.setLevel(level)
-    logger.info(f'Log level set to {level}')
+    logger.info(f"Log level set to {level}")

@@ -1,4 +1,5 @@
 """Geometric helper functions for flatbug."""
+
 import math
 from collections.abc import Sequence
 from itertools import accumulate
@@ -16,22 +17,24 @@ V = TypeVar("V", torch.Tensor, np.ndarray, covariant=True)
 
 
 def equal_allocate_overlaps(total: int, segments: int, size: int) -> list[int]:
-    """Generate cumulative positions for placing segments of a given size within a total length, with controlled overlaps.
+    """Generate cumulative positions for placing fixed-length segments within a total length with controlled overlaps.
 
-    This function divides the specified `total` length into `segments` positions, ensuring each segment (of given `size`) fits
-    evenly by introducing a small overlap between adjacent segments. The overlap is distributed uniformly, with the first few gaps 
-    adjusted slightly to ensure the segments collectively sum to `total`.
+    This function divides the specified `total` length into `segments` positions,
+    ensuring each segment (of given `size`) fits evenly by introducing a small overlap between adjacent segments.
+    The overlap is distributed uniformly, with the first few gaps adjusted slightly
+    to ensure the segments collectively sum to `total`.
 
     Args:
-        total: The total length to be covered by the segments. This is the target cumulative length the segments should fit into.
+        total: The total length to be covered by the segments.
+            This is the target cumulative length the segments should fit into.
         segments: The number of segments to place within the total length.
             Must be greater than or equal to 2.
         size: The desired size of each segment, used to determine the ideal spacing between segments.
-        
+
     Returns:
-        A listt of cumulative positions (starting from 0) where each segment should be placed.
+        A list of cumulative positions (starting from 0) where each segment should be placed.
         These positions are spaced with controlled overlaps to ensure they collectively cover the `total` length.
-            
+
     Example:
         >>> equal_allocate_overlaps(1000, 5, 250)
         [0, 187, 374, 562, 750]
@@ -39,31 +42,28 @@ def equal_allocate_overlaps(total: int, segments: int, size: int) -> list[int]:
     """
     if segments < 2:
         return [0] * segments
-    
+
     overlap = segments * size - total
     partial_overlap, remainder = divmod(overlap, segments - 1)
     distance = size - partial_overlap
 
     return list(accumulate([distance - (1 if i < remainder else 0) for i in range(segments - 1)], initial=0))
 
+
 def calculate_tile_offsets(  # noqa: D103
-        image_size : tuple[int, int],
-        tile_size : int,
-        minimum_overlap : int
-    ) -> list[tuple[tuple[int, int], tuple[int, int]]]:
+    image_size: tuple[int, int], tile_size: int, minimum_overlap: int
+) -> list[tuple[tuple[int, int], tuple[int, int]]]:
     w, h = image_size
     x_n_tiles = math.ceil((w - minimum_overlap) / (tile_size - minimum_overlap)) if w != tile_size else 1
     y_n_tiles = math.ceil((h - minimum_overlap) / (tile_size - minimum_overlap)) if h != tile_size else 1
-    
+
     x_range = equal_allocate_overlaps(w, x_n_tiles, tile_size)
     y_range = equal_allocate_overlaps(h, y_n_tiles, tile_size)
 
     return [((m, n), (j, i)) for n, j in enumerate(y_range) for m, i in enumerate(x_range)]
 
-def create_contour_mask(
-        mask: torch.Tensor, 
-        width: int=1
-    ) -> torch.Tensor:
+
+def create_contour_mask(mask: torch.Tensor, width: int = 1) -> torch.Tensor:
     """Convert a binary mask for a filled polygon to a binary mask for the non-filled polygon.
 
     ```
@@ -78,13 +78,13 @@ def create_contour_mask(
         # (here dashes "-" represent 0s and hashes "#" represent 1s)
     ```
 
-    We call the result ("After") the "contour mask". 
-    
+    We call the result ("After") the "contour mask".
+
     Optionally, the "linewidth" of the contour mask can be increased.
-    
+
     Args:
         mask: a NxM binary tensor with 1s inside the "polygon".
-        width: Width of the contour in the result. 
+        width: Width of the contour in the result.
             Reasonable values are >= 1; Setting to 0 will result in all 0s in the output. Defaults to 1.
 
     Returns:
@@ -105,28 +105,30 @@ def create_contour_mask(
     elif width == 1:
         return contour_mask
     elif width > 1:
-        # Expand the contour mask to include the neighbors (with a distance of less than or equal to width in either direction)
+        # Expand the contour mask to include the neighbors
+        # (with a distance of less than or equal to width in either direction)
         expansion_kernel = torch.ones((1, 1, 1 + 2 * width, 1 + 2 * width), dtype=torch.float, device=device)
-        expanded_contour_mask = F.conv2d(contour_mask.float().unsqueeze(0).unsqueeze(0), expansion_kernel, padding=width).squeeze() > 0.5
+        expanded_contour_mask = (
+            F.conv2d(contour_mask.float().unsqueeze(0).unsqueeze(0), expansion_kernel, padding=width).squeeze() > 0.5
+        )
         return expanded_contour_mask
     else:
         raise ValueError(f"Invalid width: {width}")
 
 
 @overload
-def find_contours(mask : V, largest_only : Literal[True]=True, simplify : bool=True) -> V: ...
+def find_contours(mask: V, largest_only: Literal[True] = True, simplify: bool = True) -> V: ...
 @overload
-def find_contours(mask : V, largest_only : Literal[False]=False, simplify : bool=True) -> list[V]: ...
-def find_contours(
-        mask : V, 
-        largest_only : bool=True, 
-        simplify : bool=True
-    ) -> V | list[V]:
+def find_contours(mask: V, largest_only: Literal[False] = False, simplify: bool = True) -> list[V]: ...
+def find_contours(mask: V, largest_only: bool = True, simplify: bool = True) -> V | list[V]:
     """Extract polygons from a boolean mask."""
-    contour = list(cv2.findContours(
-        mask.to(torch.uint8).cpu().numpy() if isinstance(mask, torch.Tensor) else mask.astype(np.uint8), 
-        cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
-    ))[0]
+    contour = list(
+        cv2.findContours(
+            mask.to(torch.uint8).cpu().numpy() if isinstance(mask, torch.Tensor) else mask.astype(np.uint8),
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_NONE,
+        )
+    )[0]
     if len(contour) == 0:
         logger.info("No contours found; mask shape:", mask.shape, "mask sum:", mask.sum())
         if isinstance(mask, torch.Tensor):
@@ -140,7 +142,7 @@ def find_contours(
         contour = contour[np.argmax(areas).item()]
     if simplify:
         contour = simplify_contour(contour, tolerance=1 if isinstance(simplify, bool) else simplify)
-    
+
     # Convert to tensor
     if isinstance(contour, list):
         contour = [np.asarray(c).squeeze(axis=1) for c in contour]
@@ -153,19 +155,17 @@ def find_contours(
     else:
         return torch.tensor(contour, dtype=torch.long, device=mask.device)
 
+
 @overload
-def simplify_contour(contour : V, tolerance : float=1.0) -> V: ...
+def simplify_contour(contour: V, tolerance: float = 1.0) -> V: ...
 @overload
-def simplify_contour(contour : Sequence[V], tolerance : float=1.0) -> list[V]: ...
-def simplify_contour(
-        contour : V | Sequence[V], 
-        tolerance : float=1.0
-    ) -> V | list[V]:
-    """Simplify one or more polygons via cv2.approxPolyDP.
-    
-    Wrapper for cv2.approxPolyDP that simplifies a contour by reducing the number of points while keeping the shape of the contour.
-    Only works for simple closed contours without holes.
-    
+def simplify_contour(contour: Sequence[V], tolerance: float = 1.0) -> list[V]: ...
+def simplify_contour(contour: V | Sequence[V], tolerance: float = 1.0) -> V | list[V]:
+    """Simplify one or more polygons via `cv2.approxPolyDP`.
+
+    Wrapper for `cv2.approxPolyDP` that simplifies a contour by reducing the number of points
+    while keeping the shape of the contour. Only works for simple closed contours without holes.
+
     Args:
         contour: The contour to simplify, represented as a Nx2 tensor or a Nx1x2 tensor.
         tolerance: The maximum distance between the original contour and the simplified contour. Defaults to 1.0.
@@ -186,29 +186,20 @@ def simplify_contour(
         elif isinstance(contour, np.ndarray):
             return np.asarray(cv2.approxPolyDP(contour, tolerance, True))
     raise TypeError(
-        f'Unable to simplify contour of type {type(contour).__name__}, '
-        'expected a torch.Tensor or np.ndarray or an iterable of such.'
+        f"Unable to simplify contour of type {type(contour).__name__}, "
+        "expected a torch.Tensor or np.ndarray or an iterable of such."
     )
 
+
+@overload
+def contours_to_masks(contours: Sequence[V], height: int | torch.Tensor, width: int | torch.Tensor) -> V: ...
 @overload
 def contours_to_masks(
-        contours : Sequence[V], 
-        height : int | torch.Tensor, 
-        width : int | torch.Tensor
-    ) -> V: ...
-@overload
-def contours_to_masks(
-        contours : Sequence[Never],
-        height : int | torch.Tensor, 
-        width : int | torch.Tensor
-    ) -> torch.Tensor: ...
-def contours_to_masks(
-        contours : Sequence[V], 
-        height : int | torch.Tensor, 
-        width : int | torch.Tensor
-    ) -> V | torch.Tensor:
+    contours: Sequence[Never], height: int | torch.Tensor, width: int | torch.Tensor
+) -> torch.Tensor: ...
+def contours_to_masks(contours: Sequence[V], height: int | torch.Tensor, width: int | torch.Tensor) -> V | torch.Tensor:
     """Rasterize a list of countors to a NxHxW boolean tensor/array stack.
-    
+
     Contours should be represented as (i, j) index-coordinates in a Xx2 tensor.
 
     Args:
@@ -221,28 +212,28 @@ def contours_to_masks(
 
     """
     N = len(contours)
-    
+
     if isinstance(height, torch.Tensor):
         assert height.numel() == 1, f"Height must be a scalar tensor not {height.shape}"
         int_height = int(height.item())
     else:
         int_height = int(height)
-        
+
     if isinstance(width, torch.Tensor):
         assert width.numel() == 1, f"Width must be a scalar tensor not {width.shape}"
         int_width = int(width.item())
     else:
         int_width = int(width)
-        
+
     assert int_height > 0 and int_width > 0, f"Height and width must be positive not {int_height} and {int_width}"
 
     # Initialize the masks as UMATs
     masks = np.zeros((N, int_height, int_width), dtype=np.uint8)
-    
+
     # If there are no contours, return the empty masks gracefully
     if N == 0:
         return torch.as_tensor(masks, dtype=torch.bool)
-        
+
     is_tensor = isinstance(contours[0], torch.Tensor)
 
     # Type checking
@@ -263,24 +254,25 @@ def contours_to_masks(
         return torch.as_tensor(masks, dtype=torch.bool, device=contours[0].device)
     return masks.astype(bool)
 
+
 @torch.compile(fullgraph=True, mode="max-autotune-no-cudagraphs")
-def _poly_area_tensor(poly : torch.Tensor):
+def _poly_area_tensor(poly: torch.Tensor):
     if len(poly) < 10e4:
         poly = poly.cpu()
     poly_r = poly.roll(1, 0)
     return (poly[:, 0] @ poly_r[:, 1] - poly[:, 1] @ poly_r[:, 0]) / 2.0
 
 
-def poly_area(poly : torch.Tensor | np.ndarray) -> float:
-    """Calculate the area of a 2D simple polygon represented by a positively oriented (counter clock wise) sequence of points.
+def poly_area(poly: torch.Tensor | np.ndarray) -> float:
+    """Calculate the area of a simple 2D polygon.
 
+    The polygon must be represented by a positively oriented (counter clock-wise) sequence of points.
     See https://en.wikipedia.org/wiki/Shoelace_formula#Shoelace_formula for details.
 
     Args:
-        poly: A tensor or array of shape (n, 2), 
-            where n is the number of vertices 
+        poly: A tensor or array of shape (n, 2), where n is the number of vertices
             and the 2 columns are the x and y coordinates of the vertices.
-    
+
     Returns:
         The area of the polygon
 
@@ -291,11 +283,13 @@ def poly_area(poly : torch.Tensor | np.ndarray) -> float:
         poly_r = np.roll(poly, 1, axis=0)
         return float((poly[:, 0] @ poly_r[:, 1] - poly[:, 1] @ poly_r[:, 0]) / 2.0)
 
-def _poly_normals_arr(polygon : np.ndarray) -> np.ndarray:
+
+def _poly_normals_arr(polygon: np.ndarray) -> np.ndarray:
     v = np.roll(polygon, -1, axis=0) - polygon
     n = np.column_stack([v[:, 1], -v[:, 0]])
     n = (n + np.roll(n, 1, axis=0)) / 2
     return n
+
 
 @torch.compile(fullgraph=True, mode="max-autotune-no-cudagraphs")
 def _poly_normals_tensor(polygon: torch.Tensor) -> torch.Tensor:
@@ -304,14 +298,16 @@ def _poly_normals_tensor(polygon: torch.Tensor) -> torch.Tensor:
     n = (n + torch.roll(n, shifts=1, dims=0)) / 2
     return n
 
-def poly_normals(polygon : V) -> V:
+
+def poly_normals(polygon: V) -> V:
     """Calculate the normals of a polygon.
 
     Args:
-        polygon: A tensor of shape (n, 2), where n is the number of vertices and the 2 columns are the x and y coordinates of the vertices.
+        polygon: A tensor or array of shape `(n, 2)`,
+            where `n` is the number of vertices and the 2 columns are the x and y coordinates of the vertices.
 
     Returns:
-        A tensor of shape (n, 2), where n is the number of vertices and the 2 columns are the x and y coordinates of the normals.
+        A tensor or array equivalent to the input `polygon`.
 
     """
     if isinstance(polygon, torch.Tensor):
@@ -330,9 +326,10 @@ def _linear_interpolate_arr(poly: np.ndarray, scale: int) -> np.ndarray:
 
     new_poly = np.zeros((poly.shape[0] * scale, 2), dtype=np.float32)
     for i in range(poly.shape[0] - 1):
-        new_poly[i*scale:(i+1)*scale] = np.linspace(poly[i], poly[i+1], scale, endpoint=False)
+        new_poly[i * scale : (i + 1) * scale] = np.linspace(poly[i], poly[i + 1], scale, endpoint=False)
     new_poly[-scale:] = np.linspace(poly[-1], poly[0], scale, endpoint=False)
     return new_poly[~(new_poly == np.roll(new_poly, -1, axis=0)).all(axis=1)]
+
 
 @torch.compile(fullgraph=True, mode="max-autotune-no-cudagraphs")
 def _linear_interpolate_tensor(poly: torch.Tensor, scale: int) -> torch.Tensor:
@@ -347,16 +344,14 @@ def _linear_interpolate_tensor(poly: torch.Tensor, scale: int) -> torch.Tensor:
     # Using vector math to precisely replicate np.linspace(..., endpoint=False)
     weights = torch.arange(scale, dtype=torch.float32, device=poly.device).unsqueeze(1) / scale
     for i in range(poly.shape[0] - 1):
-        new_poly[i*scale:(i+1)*scale] = poly[i] + (poly[i+1] - poly[i]) * weights
+        new_poly[i * scale : (i + 1) * scale] = poly[i] + (poly[i + 1] - poly[i]) * weights
     new_poly[-scale:] = poly[-1] + (poly[0] - poly[-1]) * weights
-    
+
     mask = ~(new_poly == torch.roll(new_poly, shifts=-1, dims=0)).all(dim=1)
     return new_poly[mask]
 
-def linear_interpolate(
-        poly: V, 
-        scale: int | np.ndarray | torch.Tensor
-    ) -> V:
+
+def linear_interpolate(poly: V, scale: int | np.ndarray | torch.Tensor) -> V:
     """Linearly interpolates a N x 2 polygon to have N x scale vertices."""
     if not isinstance(scale, int):
         scale = int(scale.item())
@@ -367,16 +362,16 @@ def linear_interpolate(
 
 
 def _scale_contour_arr(
-        contour: np.ndarray, 
-        scale: Sequence[float | int] | np.ndarray | torch.Tensor | float | int, 
-        expand_by_one: bool=False
-    ) -> np.ndarray:
+    contour: np.ndarray,
+    scale: Sequence[float | int] | np.ndarray | torch.Tensor | float | int,
+    expand_by_one: bool = False,
+) -> np.ndarray:
     if len(contour.shape) != 2 or contour.shape[1] != 2:
         if contour.shape[0] == 2:
             contour = contour.reshape(1, 2)
         else:
             raise ValueError(f"Contour must be a Nx2 array, not {contour.shape}")
-            
+
     if isinstance(scale, (int, float)):
         scale = [scale, scale]
     scale = np.asarray(scale, dtype=np.float32)
@@ -390,46 +385,47 @@ def _scale_contour_arr(
         return np.round(contour * scale).astype(np.int32)
     if np.all(scale == 1):
         return contour
-        
+
     contour = contour * scale
     centroid = contour.mean(axis=0)
     n_interp = max(1, int(np.ceil(scale.max())) * 2)
-    
+
     contour = _linear_interpolate_arr(contour, n_interp)
     contour_normals = _poly_normals_arr(contour)
-    
+
     if expand_by_one:
         expand_one = np.sign(contour_normals) * (np.abs(contour_normals) > 0)
         contour -= expand_one
-    
+
     if scale[0] < 1:
         contour[:, 0] += contour_normals[:, 0] / scale[0] / 2
     if scale[1] < 1:
         contour[:, 1] += contour_normals[:, 1] / scale[1] / 2
-    
+
     contour[contour_normals > 0] = np.floor(contour[contour_normals > 0])
     contour[contour_normals < 0] = np.ceil(contour[contour_normals < 0])
     contour = contour.round()
     drift = centroid - contour.mean(axis=0)
-    
-    return (contour + drift).round().astype(np.int32)[(n_interp // 2)::n_interp].copy()
+
+    return (contour + drift).round().astype(np.int32)[(n_interp // 2) :: n_interp].copy()
+
 
 def _scale_contour_tensor(
-        contour: torch.Tensor, 
-        scale: Sequence[float | int] | np.ndarray | torch.Tensor | float | int, 
-        expand_by_one: bool=False
-    ) -> torch.Tensor:
+    contour: torch.Tensor,
+    scale: Sequence[float | int] | np.ndarray | torch.Tensor | float | int,
+    expand_by_one: bool = False,
+) -> torch.Tensor:
     if len(contour.shape) != 2 or contour.shape[1] != 2:
         if contour.shape[0] == 2:
             contour = contour.reshape(1, 2)
         else:
             raise ValueError(f"Contour must be a Nx2 tensor, not {contour.shape}")
-            
+
     if isinstance(scale, (int, float)):
         scale = [scale, scale]
 
     scale = torch.as_tensor(scale, dtype=torch.float32, device=contour.device)
-        
+
     if len(scale) != 2:
         raise ValueError(f"Scale must be a scalar or a list of 2 scalars, not {scale}")
 
@@ -439,46 +435,43 @@ def _scale_contour_tensor(
         return torch.round(contour * scale).to(torch.int32)
     if torch.all(scale == 1):
         return contour
-        
+
     contour = contour * scale
     centroid = contour.mean(dim=0)
     n_interp = max(1, int(torch.ceil(scale.max()).item()) * 2)
-    
+
     contour = _linear_interpolate_tensor(contour, n_interp)
     contour_normals = _poly_normals_tensor(contour)
-    
+
     if expand_by_one:
         expand_one = torch.sign(contour_normals) * (torch.abs(contour_normals) > 0)
         contour -= expand_one
-    
+
     if scale[0] < 1:
         contour[:, 0] += contour_normals[:, 0] / scale[0] / 2
     if scale[1] < 1:
         contour[:, 1] += contour_normals[:, 1] / scale[1] / 2
-    
+
     contour[contour_normals > 0] = torch.floor(contour[contour_normals > 0])
     contour[contour_normals < 0] = torch.ceil(contour[contour_normals < 0])
     contour = contour.round()
     drift = centroid - contour.mean(dim=0)
-    
-    return torch.round(contour + drift).to(torch.int32)[(n_interp // 2)::n_interp].clone()
+
+    return torch.round(contour + drift).to(torch.int32)[(n_interp // 2) :: n_interp].clone()
+
 
 def scale_contour(  # noqa: D103
-        contour: V, 
-        scale: Sequence[float | int] | np.ndarray | torch.Tensor | float | int, 
-        expand_by_one: bool=False
-    ) -> V:
+    contour: V, scale: Sequence[float | int] | np.ndarray | torch.Tensor | float | int, expand_by_one: bool = False
+) -> V:
     if isinstance(contour, torch.Tensor):
         return _scale_contour_tensor(contour, scale, expand_by_one)
     else:
         return _scale_contour_arr(contour, scale, expand_by_one)
 
-def resize_masks(
-        masks : torch.Tensor, 
-        new_shape : tuple[int, int] | list[int] | int
-    ) -> torch.Tensor:
+
+def resize_masks(masks: torch.Tensor, new_shape: tuple[int, int] | list[int] | int) -> torch.Tensor:
     """Resize a mask (or a batch of masks) by scaling the contour coordinates and snapping to the integer grid.
-    
+
     Ensures that snapping is always done towards the outside of the mask.
 
     Args:
@@ -499,14 +492,13 @@ def resize_masks(
     if not isinstance(new_shape, int) and (new_shape[0] <= 1 or new_shape[1] <= 1):
         raise ValueError(f"Target shape must be at least 2x2, not {new_shape}")
     # Resize the mask
-    return F.interpolate(masks.float()[None], new_shape, mode='nearest-exact', antialias=False)[0] > 0.5
+    return F.interpolate(masks.float()[None], new_shape, mode="nearest-exact", antialias=False)[0] > 0.5
+
 
 _to_uint8 = torchvision.transforms.ConvertImageDtype(torch.uint8)
 
-def chw2hwc_uint8(
-        crop : torch.Tensor, 
-        mask : torch.Tensor | None
-    ) -> torch.Tensor:
+
+def chw2hwc_uint8(crop: torch.Tensor, mask: torch.Tensor | None) -> torch.Tensor:
     """Convert a crop from CHW to HWC format, and adds the mask as an alpha channel if it exists.
 
     Args:

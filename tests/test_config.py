@@ -1,4 +1,5 @@
 """Tests for flatbug config submodule."""
+
 import copy
 import os
 import tempfile
@@ -16,7 +17,7 @@ TEST_OBJECTS = {
     "list of ints": [1, 2, 3],
     "tuple of ints": (1, 2, 3),
     "mixed list": [1, "string", True],
-    "list of mixed list and mixed tuple": [[1, "a"], ("b", 2)]
+    "list of mixed list and mixed tuple": [[1, "a"], ("b", 2)],
 }
 
 TEST_OBJECTS_TYPES_LIST_TUPLE_NOT_INTERCHANGEABLE = {
@@ -28,7 +29,7 @@ TEST_OBJECTS_TYPES_LIST_TUPLE_NOT_INTERCHANGEABLE = {
     "list of ints": [list, [int, int, int]],
     "tuple of ints": [tuple, [int, int, int]],
     "mixed list": [list, [int, str, bool]],
-    "list of mixed list and mixed tuple": [list, [[list, [int, str]], [tuple, [str, int]]]]
+    "list of mixed list and mixed tuple": [list, [[list, [int, str]], [tuple, [str, int]]]],
 }
 
 TEST_OBJECTS_TYPES_LIST_TUPLE_INTERCHANGEABLE = {
@@ -40,8 +41,9 @@ TEST_OBJECTS_TYPES_LIST_TUPLE_INTERCHANGEABLE = {
     "list of ints": [(tuple, list), [int, int, int]],
     "tuple of ints": [(tuple, list), [int, int, int]],
     "mixed list": [(tuple, list), [int, str, bool]],
-    "list of mixed list and mixed tuple": [(tuple, list), [[(tuple, list), [int, str]], [(tuple, list), [str, int]]]]
+    "list of mixed list and mixed tuple": [(tuple, list), [[(tuple, list), [int, str]], [(tuple, list), [str, int]]]],
 }
+
 
 def check_equals_recursive(obj1, obj2):  # noqa: D103
     if isinstance(obj1, (tuple, list)):
@@ -53,6 +55,7 @@ def check_equals_recursive(obj1, obj2):  # noqa: D103
         return True
     return obj1 == obj2
 
+
 class TestConfig:  # noqa: D101
     def test_check_types(self):  # noqa: D102
         for i, (key, obj) in enumerate(TEST_OBJECTS.items()):
@@ -60,7 +63,7 @@ class TestConfig:  # noqa: D101
             check_types(obj, expected_type, f"Object '{key}' ({i})")
             check_types(obj, TEST_OBJECTS_TYPES_LIST_TUPLE_NOT_INTERCHANGEABLE[key], f"Object '{key}' ({i})")
             check_types(obj, TEST_OBJECTS_TYPES_LIST_TUPLE_INTERCHANGEABLE[key], f"Object '{key}' ({i})")
-    
+
     def test_check_cfg_types(self):  # noqa: D102
         try:
             check_cfg_types(DEFAULT_CFG, strict=True)
@@ -76,13 +79,13 @@ class TestConfig:  # noqa: D101
             raise type(e)("Error raised when checking config with unknown key and strict=False:\n" + str(e))
 
     def test_get_type_def(self):  # noqa: D102
-        error_msg = \
-        """
+        error_msg = """
         Failed to generate the correct type definitions for the test objects with tuple_list_interchangeable={}.
         
         TEST_OBJECTS_TYPES should be a dictionary with:
             - keys: same as TEST_OBJECTS, 
-            - values: the type definitions of the corresponding values in TEST_OBJECTS, that pass the check_types function.
+            - values: the type definitions of the corresponding values in TEST_OBJECTS, 
+                that pass the check_types function.
         
         Either TEST_OBJECTS_TYPES is incorrect, 
             get_type_def is not generating the correct type definitions or test_check_types did not pass.
@@ -107,7 +110,7 @@ class TestConfig:  # noqa: D101
                 obj = TEST_OBJECTS[key]
                 type_def = get_type_def(obj, tuple_list_interchangeable=True)
                 # Check that the generated type definition is the same as the expected type definition
-                assert check_equals_recursive(type_def, expected_type), ( 
+                assert check_equals_recursive(type_def, expected_type), (
                     f"\nFailed on object:\n'{key}' => {obj}\n"
                     f"with generated type definition:\n{type_def}"
                     f"\nand expected type definition:\n{expected_type}"
@@ -145,7 +148,8 @@ class TestConfig:  # noqa: D101
             except Exception as e:
                 type(e)("Error raised when reading a config file with unknown key and strict=False:\n" + str(e))
         assert check_types(new_cfg, get_type_def(orig_cfg), "Reconstructed Config", strict=False), (
-            "Failed to reconstruct the original config with comparable types after writing and reading.")
+            "Failed to reconstruct the original config with comparable types after writing and reading."
+        )
         assert check_equals_recursive(orig_cfg, new_cfg), (
             "Failed to reconstruct the values of the original config after writing and reading. "
             "Although the types are comparable, the values are not equal."

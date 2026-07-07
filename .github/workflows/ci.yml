@@ -43,7 +43,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       
       - name: Install the project
-        run: uv sync --locked --all-extras --group tests
+        run: uv sync --locked --all-extras
 
       - name: Lint with Ruff
         run: uv run ruff check . --ignore E501
