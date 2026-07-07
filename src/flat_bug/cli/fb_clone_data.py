@@ -15,6 +15,7 @@ from cvat_sdk import make_client
 
 try:
     from tqdm import tqdm
+
     _HAVE_TQDM = True
 except Exception:
     _HAVE_TQDM = False
@@ -39,16 +40,16 @@ s3:
 """
 
 
-
-
 # TARGET_DIR = Path("/home/quentin/Desktop/flat-bug/flat-bug-data/pre-pro")
 FORMAT_NAME = "COCO 1.0"
 # ------------------ Secrets ------------------
+
 
 # ------------------ Load secrets from YAML ------------------
 def load_secrets_yaml(path):
     with open(path) as f:
         return yaml.safe_load(f)
+
 
 # ------------------ Helpers ------------------
 def safe_segment(name: str) -> str:
@@ -57,6 +58,7 @@ def safe_segment(name: str) -> str:
     cleaned = "".join(c if c in allowed else "_" for c in name).strip()
     # avoid empty folder names
     return cleaned or "unnamed_task"
+
 
 def md5_file(path: Path, chunk=1024 * 1024) -> str:
     """Compute MD5 hex digest of a file (for ETag comparison if single-part)."""
@@ -69,9 +71,10 @@ def md5_file(path: Path, chunk=1024 * 1024) -> str:
             h.update(b)
     return h.hexdigest()
 
+
 def task_is_completed(task) -> bool:
     """Check if a task is done.
-    
+
     Consider a task completed if either:
         - task.status == 'completed', OR
         - all of its jobs are in state == 'completed'
@@ -88,6 +91,7 @@ def task_is_completed(task) -> bool:
     except Exception:
         return False
 
+
 def build_s3_client(s3_access_key, s3_secret_key, s3_region, s3_endpoint):
     session = boto3.session.Session(
         aws_access_key_id=s3_access_key,
@@ -102,6 +106,7 @@ def build_s3_client(s3_access_key, s3_secret_key, s3_region, s3_endpoint):
             s3={"addressing_style": "virtual"},  # or "path" if your bucket has dots
         ),
     )
+
 
 def list_s3_objects_with_prefix(s3, bucket: str, prefix: str):
     """Yield dicts with 'Key', 'Size', 'ETag' (no quotes), and 'LastModified'."""
@@ -127,13 +132,16 @@ def list_s3_objects_with_prefix(s3, bucket: str, prefix: str):
         else:
             break
 
+
 def ensure_parent(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
+
+
 #
 # ------------------ COCO Export ------------------
 def export_coco_annotations_for_task(task, output_json_path: Path, s3_prefix):
     """Export COCO for task.
-    
+
     Export task dataset (COCO 1.0, annotations only) to a temp zip,
     then extract the COCO annotations json to output_json_path.
     """
@@ -144,7 +152,6 @@ def export_coco_annotations_for_task(task, output_json_path: Path, s3_prefix):
         FORMAT_NAME,
         filename=str(tmp_zip),
         include_images=False,
-
     )
 
     # Find the annotations JSON inside the zip (usually 'annotations/instances_default.json')
@@ -157,7 +164,11 @@ def export_coco_annotations_for_task(task, output_json_path: Path, s3_prefix):
         except KeyError:
             for zi in zf.infolist():
                 name = zi.filename.replace("\\", "/")
-                if name.lower().startswith("annotations/") and name.lower().endswith(".json") and "instance" in name.lower():
+                if (
+                    name.lower().startswith("annotations/")
+                    and name.lower().endswith(".json")
+                    and "instance" in name.lower()
+                ):
                     info = zi
                     break
         if info is None:
@@ -175,7 +186,6 @@ def export_coco_annotations_for_task(task, output_json_path: Path, s3_prefix):
 
         with zf.open(info, "r") as src:
             coco = json.load(src)
-
 
         for im in coco.get("images", []):
             orig = im.get("file_name", "")
@@ -196,6 +206,7 @@ def _iter_s3_keys(s3, bucket, prefix):
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
         for obj in page.get("Contents", []):
             yield obj["Key"]
+
 
 def sync_s3_prefix_to_local(
     s3,
@@ -218,7 +229,7 @@ def sync_s3_prefix_to_local(
     # 1) Index upstream
     upstream = {}
     for obj in list_s3_objects_with_prefix(s3, bucket, prefix):
-        rel = obj["Key"][len(prefix):].lstrip("/")
+        rel = obj["Key"][len(prefix) :].lstrip("/")
         if not rel:
             continue
         upstream[rel] = obj
@@ -258,7 +269,7 @@ def sync_s3_prefix_to_local(
                         # Single-part ETag is MD5 (no '-')
                         if remote_etag and "-" not in remote_etag:
                             try:
-                                need_dl = (md5_file(dest) != remote_etag)
+                                need_dl = md5_file(dest) != remote_etag
                             except Exception:
                                 need_dl = True
                         else:
@@ -303,14 +314,12 @@ def sync_s3_prefix_to_local(
                 side.unlink(missing_ok=True)
 
     return True
-def _process_one_task(task_id: int,
-                      task_name: str,
-                      cfg_cvat: dict,
-                      s3,
-                      s3_bucket: str,
-                      s3_prefix_root: str,
-                      target_dir: Path):
-    """Runs in a thread. Returns (task_id, ok, msg).""" # noqa: D401
+
+
+def _process_one_task(
+    task_id: int, task_name: str, cfg_cvat: dict, s3, s3_bucket: str, s3_prefix_root: str, target_dir: Path
+):
+    """Runs in a thread. Returns (task_id, ok, msg)."""  # noqa: D401
     CVAT_HOST = cfg_cvat.get("host", "https://app.cvat.ai")
     USERNAME = cfg_cvat["username"]
     PASSWORD = cfg_cvat["password"]
@@ -344,7 +353,7 @@ def _process_one_task(task_id: int,
         with make_client(host=CVAT_HOST, credentials=(USERNAME, PASSWORD)) as client:
             if ORG_SLUG:
                 client.organization_slug = ORG_SLUG
-            t = client.tasks.retrieve(task_id)   # get fresh task handle
+            t = client.tasks.retrieve(task_id)  # get fresh task handle
             t.fetch()
             if not task_is_completed(t):
                 return task_id, False, "Skipping: not completed"
@@ -357,24 +366,22 @@ def _process_one_task(task_id: int,
     except Exception as e:
         return task_id, False, f"error: {e}"
 
+
 # ------------------ Main ------------------
 def main():
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-
     args_parse.add_argument(
         "-s", "--secrets-file", dest="secrets_file",
         help=(
             "A YAML files containing credentials for s3 and cvat. It has the following structure"
             f"{secrets_structure}"
     ))
-
     args_parse.add_argument(
         "-o", "--output-dir", dest="output_dir",
         help=(
             "The output directory where all subdatasets are stored. "
             "Each subdirectory is a coco dataset, with a JSON file and a list of images"
     ))
-
     args_parse.add_argument(
         "-f", "--force", dest="delete_target_before",
         help="Delete output directory before, this avoids duplicating data etc",

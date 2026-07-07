@@ -1,4 +1,5 @@
 """Tests for the custom flatbug datasets used for training."""
+
 import glob
 import os
 import tempfile
@@ -40,7 +41,8 @@ RANK = -1
 TEST_CFG = deepcopy(DEFAULT_CFG)
 setattr(TEST_CFG, "task", "segment")
 
-def mock_verify_image_label(image_path : str, label_path : str) -> dict:  # noqa: D103
+
+def mock_verify_image_label(image_path: str, label_path: str) -> dict:  # noqa: D103
     try:
         args = (image_path, label_path, "unit_test", False, 1, 0, 0)
         im_file, lb, shape, segments, keypoint, nm_f, nf_f, ne_f, nc_f, msg = verify_image_label(args)
@@ -50,7 +52,7 @@ def mock_verify_image_label(image_path : str, label_path : str) -> dict:  # noqa
     label = {
         "im_file": im_file,
         "shape": shape,
-        "cls": lb[:, 0:1],  
+        "cls": lb[:, 0:1],
         "bboxes": lb[:, 1:],
         "segments": segments,
         "keypoints": keypoint,
@@ -62,11 +64,12 @@ def mock_verify_image_label(image_path : str, label_path : str) -> dict:  # noqa
         np.array(resample_segments(label["segments"])),
         label["keypoints"],
         bbox_format=label["bbox_format"],
-        normalized=label["normalized"]
+        normalized=label["normalized"],
     )
     return label
 
-def create_train_dataset(args : IterableSimpleNamespace) -> FlatBugYOLODataset:  # noqa: D103
+
+def create_train_dataset(args: IterableSimpleNamespace) -> FlatBugYOLODataset:  # noqa: D103
     return FlatBugYOLODataset(
         data=ASSET_DATA,
         img_path=ASSET_DIR,
@@ -80,10 +83,11 @@ def create_train_dataset(args : IterableSimpleNamespace) -> FlatBugYOLODataset: 
         single_cls=args.single_cls or False,
         max_instances=None,
         task="segment",
-        subset_args={"n" : 1, "pattern" : ASSET_NAME}
+        subset_args={"n": 1, "pattern": ASSET_NAME},
     )
 
-def create_validation_dataset(args : IterableSimpleNamespace) -> FlatBugYOLOValidationDataset:  # noqa: D103
+
+def create_validation_dataset(args: IterableSimpleNamespace) -> FlatBugYOLOValidationDataset:  # noqa: D103
     return FlatBugYOLOValidationDataset(
         data=ASSET_DATA,
         img_path=ASSET_DIR,
@@ -97,8 +101,9 @@ def create_validation_dataset(args : IterableSimpleNamespace) -> FlatBugYOLOVali
         single_cls=args.single_cls or False,
         max_instances=np.inf,
         task="segment",
-        subset_args={"n" : 1, "pattern" : ASSET_NAME}
+        subset_args={"n": 1, "pattern": ASSET_NAME},
     )
+
 
 def _test_plot_batch(batch, ni):  # noqa: D103
     with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as f:
@@ -110,6 +115,7 @@ def _test_plot_batch(batch, ni):  # noqa: D103
             on_plot=os.remove,
         )
 
+
 @pytest.mark.filterwarnings("ignore:.*argument is set as true but no accelerator is found.*:UserWarning")
 class TestDataset:  # noqa: D101
     def test_train_dataset(self):  # noqa: D102
@@ -119,7 +125,7 @@ class TestDataset:  # noqa: D101
         dataloader_iter = dataloader.iterator
 
         for batch, _ in zip(dataloader_iter, range(1)):
-            assert batch["img"].shape[0] ==  BATCH_SIZE
+            assert batch["img"].shape[0] == BATCH_SIZE
 
         _test_plot_batch(batch, 0)
 

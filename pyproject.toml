@@ -68,7 +68,7 @@ docs = [
 
 [tool.ruff]
 target-version = "py311"
-line-length = 140
+line-length = 120
 extend-exclude = [
     "utils",
     "scripts",

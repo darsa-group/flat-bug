@@ -76,12 +76,7 @@ from flat_bug import logger
 #     }
 
 
-
-
-def fb_to_coco(
-        d: dict, 
-        coco: dict
-    ) -> dict:
+def fb_to_coco(d: dict, coco: dict) -> dict:
     """Convert a FlatBug dataset to a COCO dataset.
 
     Args:
@@ -135,7 +130,10 @@ def fb_to_coco(
     # identifier = d["identifier"]
     image_path = d["image_path"]
     image_width, image_height, mask_width, mask_height = (
-        d["image_width"], d["image_height"], d["mask_width"], d["mask_height"]
+        d["image_width"],
+        d["image_height"],
+        d["mask_width"],
+        d["mask_height"],
     )
 
     # Image
@@ -147,7 +145,7 @@ def fb_to_coco(
         "license": 0,
         "flickr_url": "",
         "coco_url": "",
-        "date_captured": 0
+        "date_captured": 0,
     }
     coco["images"].append(image)
 
@@ -156,8 +154,8 @@ def fb_to_coco(
         box, contour, conf = boxes[i], contours[i], confs[i]
         # class_, scale = classes[i], scales[i]
         x1, y1, x2, y2 = box
-        x,y,w,h = x1, y1, x2 - x1, y2 - y1
-        box=[x,y,w,h]
+        x, y, w, h = x1, y1, x2 - x1, y2 - y1
+        box = [x, y, w, h]
 
         # Scale and restructure the contour
         m2i = [(mask_width - 1) / (image_width - 1), (mask_height - 1) / (image_height - 1)]  # Mask to image ratio
@@ -173,14 +171,14 @@ def fb_to_coco(
             "area": 0.0,
             "bbox": box,
             "iscrowd": 0,
-            "conf": conf
+            "conf": conf,
         }
         coco["annotations"].append(annotation)
 
     return coco
 
 
-def format_contour(c : list) -> np.ndarray:
+def format_contour(c: list) -> np.ndarray:
     """Format a contour to the OpenCV format.
 
     Args:
@@ -201,24 +199,22 @@ def contour_bbox(c: np.ndarray) -> np.ndarray:
         c: Contour.
 
     Returns:
-        oyut: Bounding box.
+        Bounding box.
 
     """
     return np.array([c[:, 0].min(), c[:, 1].min(), c[:, 0].max(), c[:, 1].max()])
 
 
-def split_annotations(
-        coco: dict, 
-        strip_directories: bool = True
-    ) -> dict[str, list]:
+def split_annotations(coco: dict, strip_directories: bool = True) -> dict[str, list]:
     """Split COCO annotations by image ID.
 
     Args:
         coco: COCO dataset.
-        strip_directories: Flag to indicate whether only the basename of the images should be included in the result. Defaults to True.
+        strip_directories: Flag indicating whether only the basename of the images should be included in the result.
+            Defaults to `True`.
 
     Returns:
-        Dict of COCO datasets, split by image ID and keyed by image name.
+        `dict` of COCO datasets, split by image ID and keyed by image name.
 
     """
     img_id = np.array([i["image_id"] for i in coco["annotations"]])
@@ -230,13 +226,13 @@ def split_annotations(
             coco["images"][i]["file_name"] = os.path.basename(coco["images"][i]["file_name"])
 
     result = {coco["images"][id - 1]["file_name"]: [coco["annotations"][i] for i in g] for id, g in zip(ids, groups)}
-    
+
     # Ensure that all images are included in the result, even if they have no annotations/predictions
     for i in range(len(coco["images"])):
         image_name = coco["images"][i]["file_name"]
         if image_name not in result:
             result[image_name] = []
-    
+
     return result
 
 
@@ -286,12 +282,8 @@ def annotations_to_numpy(annotations: list[dict[str, list[int]]]) -> tuple[np.nd
     bboxes = np.array([contour_bbox(c) for c in contours])
     return bboxes, contours
 
-def filter_coco(
-        coco : dict, 
-        confidence : float | None=None, 
-        area : int | None=None, 
-        verbose : bool=False
-    ) -> dict:
+
+def filter_coco(coco: dict, confidence: float | None = None, area: int | None = None, verbose: bool = False) -> dict:
     """Filter COCO annotations by confidence.
 
     Args:
@@ -322,5 +314,5 @@ def filter_coco(
         "licenses": coco["licenses"],
         "images": coco["images"],
         "annotations": filtered_annotations,
-        "categories": coco["categories"]
+        "categories": coco["categories"],
     }

@@ -15,4 +15,3 @@ if __name__ == "__main__":
         with open(asset, "w") as f:
             f.write("ERDA Pointer")
     print("-------------------------- Test assets restored! --------------------------")
-    

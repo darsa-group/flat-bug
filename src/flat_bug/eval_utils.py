@@ -1,4 +1,5 @@
 """Utilities for flatbug evaluation."""
+
 import csv
 import os
 import time
@@ -12,24 +13,23 @@ from flat_bug import logger
 from flat_bug.coco_utils import annotations_to_numpy, contour_area, contour_bbox
 
 
-def isfloat(num : str) -> bool:  # noqa: D103
+def isfloat(num: str) -> bool:  # noqa: D103
     try:
         fnum = float(num)
         return not fnum.is_integer()
     except Exception:
         return False
 
-def ispath(path : str) -> bool:  # noqa: D103
+
+def ispath(path: str) -> bool:  # noqa: D103
     return "/" in path or "\\" in path
-    
-def format_cell(
-        cell : str, 
-        digits : int = 3, 
-        max_length : int = 30
-    ) -> str:
+
+
+def format_cell(cell: str, digits: int = 3, max_length: int = 30) -> str:
     """Autoformat a cell for a table.
 
-    Standardizes the number of decimals if the cell is coercible to a float, and truncates the cell if it exceeds the maximum length.
+    Standardizes the number of decimals if the cell is coercible to a float,
+    and truncates the cell if it exceeds the maximum length.
 
     Args:
         cell: The cell to format.
@@ -48,17 +48,15 @@ def format_cell(
         return f"{cell[:left_size]}...{cell[-right_size:]}"
     return cell
 
-def format_row(
-        cells : list[Any], 
-        widths : list[int], 
-        align : str = "center"
-    ) -> str:
+
+def format_row(cells: list[Any], widths: list[int], align: str = "center") -> str:
     """Format a row of a table.
 
     Args:
         cells: The cells of the row. Elements should be compatible with f-strings (`__format__`).
         widths: The widths of each column.
-        align: Alignment of the cell content within each column. Valid options are "center"/"left"/"right". Defaults to "center".
+        align: Alignment of the cell content within each column. Valid options are "center"/"left"/"right".
+            Defaults to "center".
 
     Returns:
         The formatted row.
@@ -75,10 +73,8 @@ def format_row(
                 row += f" {cell:>{width}} |"
     return row
 
-def pretty_print_csv(
-        csv_file : str, 
-        delimiter : str = ","
-    ):
+
+def pretty_print_csv(csv_file: str, delimiter: str = ","):
     """Pretty print the CSV file.
 
     Args:
@@ -95,9 +91,10 @@ def pretty_print_csv(
             print("pretty_print_csv: Empty CSV file.")
             return
         max_lengths = [len(h) for h in headers]
-        rows = []
-        for row in csv_reader:
-            rows.append([format_cell(cell, digits=3, max_length=min(30, header_width * 4)) for cell, header_width in zip(row, max_lengths)])
+        rows = [[
+            format_cell(cell, digits=3, max_length=min(30, header_width * 4))
+            for cell, header_width in zip(row, max_lengths)
+        ] for row in csv_reader]
     # Get the maximum length of each column
     for row in rows:
         for i, cell in enumerate(row):
@@ -108,13 +105,11 @@ def pretty_print_csv(
     print(header)
     print(horizontal_line)
     for row in rows:
-        print(format_row(row, max_lengths, align="right"))   
-    print(horizontal_line)   
+        print(format_row(row, max_lengths, align="right"))
+    print(horizontal_line)
 
-def bbox_intersect(
-        b1 : np.ndarray, 
-        b2s : np.ndarray
-    ) -> np.ndarray:
+
+def bbox_intersect(b1: np.ndarray, b2s: np.ndarray) -> np.ndarray:
     """Calculate the intersecting rectangle between two rectangles. The rectangles must be aligned with the axes.
 
     Args:
@@ -137,11 +132,10 @@ def bbox_intersect(
     return ix
 
 
-def bbox_intersect_area(
-        b1 : np.ndarray, 
-        b2s : np.ndarray
-    ) -> np.ndarray:
-    """Calculate the area of the intersecting rectangle between two rectangles. The rectangles must be aligned with the axes.
+def bbox_intersect_area(b1: np.ndarray, b2s: np.ndarray) -> np.ndarray:
+    """Calculate the area of the intersecting rectangle between two rectangles.
+
+    The rectangles must be aligned with the axes.
 
     Args:
         b1: Bounding box 1.
@@ -158,12 +152,7 @@ def bbox_intersect_area(
     return np.prod((ix_min - ix_max).clip(0), axis=1)
 
 
-def contour_intersection(
-        contour1: np.ndarray, 
-        contour2: np.ndarray, 
-        box1: np.ndarray, 
-        box2: np.ndarray
-    ):
+def contour_intersection(contour1: np.ndarray, contour2: np.ndarray, box1: np.ndarray, box2: np.ndarray):
     """Calculate the intersection of two contours.
 
     Contours should be providedd as [x1, y1, x2, y2, ..., xn, yn]
@@ -212,18 +201,19 @@ def contour_intersection(
 
 
 def pairwise_contour_intersection(
-        contours1: list[np.ndarray], 
-        contours2: list[np.ndarray] | None = None,
-        bboxes1: np.ndarray | None = None, 
-        bboxes2: np.ndarray | None = None,
-        areas1: np.ndarray | None = None,
-        areas2: np.ndarray | None = None
-    ) -> np.ndarray:
+    contours1: list[np.ndarray],
+    contours2: list[np.ndarray] | None = None,
+    bboxes1: np.ndarray | None = None,
+    bboxes2: np.ndarray | None = None,
+    areas1: np.ndarray | None = None,
+    areas2: np.ndarray | None = None,
+) -> np.ndarray:
     """Calculate the pairwise intersection of two groups of contours.
 
     Args:
         contours1: Contours in group 1.
-        contours2: Contours in group 2. If None provided, symmetric intersection is calculated for contours1 instead. Defaults to None.
+        contours2: Contours in group 2.
+            If None provided, symmetric intersection is calculated for contours1 instead. Defaults to None.
         areas1: Areas of contours in group 1. Computed if not None. Defaults to None
         areas2: Areas of contours in group 2. Computed if not None. Defaults to None
         bboxes1: Bounding boxes of contours in group 1. Computed if not None. Defaults to None
@@ -264,18 +254,20 @@ def pairwise_contour_intersection(
 
 
 def match_geoms(
-        contours1: list[np.ndarray], 
-        contours2: list[np.ndarray], 
-        threshold: float = 1 / 4,
-        iou_mat: np.ndarray | None = None, 
-        areas1: np.ndarray | None = None,
-        areas2: np.ndarray | None = None
-    ) -> tuple[np.ndarray, int]:
+    contours1: list[np.ndarray],
+    contours2: list[np.ndarray],
+    threshold: float = 1 / 4,
+    iou_mat: np.ndarray | None = None,
+    areas1: np.ndarray | None = None,
+    areas2: np.ndarray | None = None,
+) -> tuple[np.ndarray, int]:
     """Match geometries (polygons) in group 1 to geometries in group 2.
 
     Args:
-        contours1: Geometries (polygons) in group 1. List of length N, where each element is a Xx2 array of contour coordinates.
-        contours2: Geometries (polygons) in group 2. List of length M, where each element is a Xx2 array of contour coordinates.
+        contours1: Geometries (polygons) in group 1.
+            List of length N, where each element is a Xx2 array of contour coordinates.
+        contours2: Geometries (polygons) in group 2.
+            List of length M, where each element is a Xx2 array of contour coordinates.
         threshold: IoU threshold. Defaults to 1/4.
         iou_mat: IoU matrix of size NxM. Computed if None. Defaults to None.
         areas1: Areas of polygons in group 1. Computed if None. Defaults to None.
@@ -300,7 +292,7 @@ def match_geoms(
         iou = iou_mat.copy()
     # Check the shape of the IoU matrix
     if iou.shape != (n, m):
-        raise ValueError(f'Expected IoU matrix of shape {(n, m)}, got {iou.shape}')
+        raise ValueError(f"Expected IoU matrix of shape {(n, m)}, got {iou.shape}")
     # Initialize the match array
     matches = np.zeros((n, 2), dtype=np.int32)
     matches[:, 0] = np.arange(n, dtype=np.int32)
@@ -310,14 +302,14 @@ def match_geoms(
     # Match the geometries in group 1 to the geometries in group 2
     if n > 0 and m > 0:
         for focus in np.argsort(iou.max(axis=1)):
-            best_match = np.argsort(iou[focus])[::-1][:np.sum(iou[focus] > threshold)]
+            best_match = np.argsort(iou[focus])[::-1][: np.sum(iou[focus] > threshold)]
             if len(best_match) == 0:
                 continue
             # Check if the potential matches have a better focus
             best_match = best_match[iou[:, best_match].argmax(axis=0) == focus]
             if len(best_match) == 0:
                 continue
-            best_match = best_match[0] 
+            best_match = best_match[0]
             if iou[focus, best_match] > threshold:
                 matches[focus, 1] = best_match.astype(np.int32)
                 # Set the intersection to 0 so it doesn't get matched again
@@ -333,18 +325,18 @@ def match_geoms(
     matches = np.concatenate([matches, matches_2], axis=0)
     # Check the shape of the matches array
     if matches.shape != (n + len(unmatched), 2):
-        raise ValueError(f'Expected matches of shape {(n + len(unmatched), 2)}, got {matches.shape}')
+        raise ValueError(f"Expected matches of shape {(n + len(unmatched), 2)}, got {matches.shape}")
     return matches, len(unmatched)
 
 
 def plot_heatmap(
-        mat: np.ndarray, 
-        axis_labels: Sequence[str] | None = None, 
-        breaks: int = 25,
-        dimensions: tuple[int, int] | None = None, 
-        output_path: str | None = None, 
-        scale: float = 1
-    ):
+    mat: np.ndarray,
+    axis_labels: Sequence[str] | None = None,
+    breaks: int = 25,
+    dimensions: tuple[int, int] | None = None,
+    output_path: str | None = None,
+    scale: float = 1,
+):
     """Plot a heatmap of a matrix using OpenCV.
 
     Args:
@@ -363,21 +355,21 @@ def plot_heatmap(
             scale_dims = 1000 / min_dim
             dimensions = tuple([int(d * scale_dims) for d in dimensions])  # type: ignore
     if mat.shape[0] == 0 or mat.shape[1] == 0:
-        logger.warning('Empty matrix. Cannot plot heatmap.')
+        logger.warning("Empty matrix. Cannot plot heatmap.")
         return
     assert dimensions is not None
 
     # Create a colormap for viridis
     colormap = cv2.applyColorMap(
-        src = (mat / (mat.max() or 1) * 255).astype(np.uint8), 
-        colormap = cv2.COLORMAP_VIRIDIS
+        src=(mat / (mat.max() or 1) * 255).astype(np.uint8), 
+        colormap=cv2.COLORMAP_VIRIDIS
     )
     # Expand colormap to 1000x1000
     colormap = cv2.resize(
-        src = colormap, 
-        dsize = dimensions, 
-        dst = colormap,
-        interpolation = cv2.INTER_NEAREST_EXACT
+        src=colormap, 
+        dsize=dimensions, 
+        dst=colormap,
+        interpolation=cv2.INTER_NEAREST_EXACT
     )
     # Get the height of the colormap
     cheight, cwidth = colormap.shape[:2]
@@ -386,25 +378,28 @@ def plot_heatmap(
     # Add numbers to the colorbar
     cmin, cmax = mat.min(), mat.max()
 
-    cmin, cmax = 10 ** np.floor(np.log10(cmin)) if cmin > 0 else cmin, 10 ** np.ceil(np.log10(cmax)) if cmax > 0 else cmax
+    cmin, cmax = (
+        10 ** np.floor(np.log10(cmin)) if cmin > 0 else cmin,
+        10 ** np.ceil(np.log10(cmax)) if cmax > 0 else cmax,
+    )
     cmin, cmax = int(cmin), int(cmax)
     if cmin == cmax:
         nice_breaks = np.array([cmin])
     else:
-        # Add semi-equally spaced numbers to the colorbar at "nice" values, 
-        # "nice" values are defined as integer multiples of powers of 10 
+        # Add semi-equally spaced numbers to the colorbar at "nice" values,
+        # "nice" values are defined as integer multiples of powers of 10
         # to the power of the maximum value - the integer rounded 10 logarithm of the number of breaks
         raw_breaks = np.linspace(cmin, cmax, breaks)
         nice_multiple = 10 ** (np.log10(cmax) - np.ceil(np.log10(breaks)))
         nice_breaks = (raw_breaks / nice_multiple).round() * nice_multiple
         nice_breaks = nice_breaks[nice_breaks <= cmax]
-        # Ensure that the minimum and maximum values are included, 
+        # Ensure that the minimum and maximum values are included,
         # and remove the breaks if they are within 1 "nice_multiple" of any other break
         nice_breaks = nice_breaks[np.abs(nice_breaks - cmin) >= (nice_multiple * 0.9)]
         nice_breaks = nice_breaks[np.abs(nice_breaks - cmax) >= (nice_multiple * 0.9)]
         nice_breaks = np.concatenate([[cmin], nice_breaks, [cmax]])
     # Create the labels
-    labels = [f'{(i * 100):.3g}%' for i in nice_breaks]
+    labels = [f"{(i * 100):.3g}%" for i in nice_breaks]
 
     # Define a target font height
     font_height_target = int(min(min(cheight, cwidth) / 50, max(1, ((cheight * 0.5) / breaks))))
@@ -419,15 +414,15 @@ def plot_heatmap(
 
     # Create a colorbar
     colorbar = cv2.applyColorMap(
-        src = np.arange(256, dtype=np.uint8).reshape(256, 1).repeat(colorbar_width, 1),
-        colormap = cv2.COLORMAP_VIRIDIS
+        src=np.arange(256, dtype=np.uint8).reshape(256, 1).repeat(colorbar_width, 1),
+        colormap=cv2.COLORMAP_VIRIDIS
     )
     # Stretch the colorbar to the height of the colormap
     colorbar = cv2.resize(
-        src = colorbar, 
-        dsize = (colorbar.shape[1], cheight), 
-        dst = colorbar,
-        interpolation = cv2.INTER_LINEAR_EXACT
+        src=colorbar, 
+        dsize=(colorbar.shape[1], cheight), 
+        dst=colorbar,
+        interpolation=cv2.INTER_LINEAR_EXACT
     )
     cbheight = colorbar.shape[0]
     # Add the breaks to the colorbar
@@ -435,30 +430,24 @@ def plot_heatmap(
         label = labels[i]
         text_width, font_height = label_sizes[i]
         cv2.putText(
-            img = colorbar, 
-            text = label, 
-            org = (
-                (colorbar_width - text_width) // 2, 
-                int((i + 0.5) * cbheight / len(nice_breaks) + font_height / 2)
-            ),
-            fontFace = cv2.FONT_HERSHEY_SIMPLEX, 
-            fontScale = font_size, 
-            color = (0, 0, 0), 
-            thickness = (3 * font_height_target) // 15, 
-            lineType = cv2.LINE_AA
+            img=colorbar,
+            text=label,
+            org=((colorbar_width - text_width) // 2, int((i + 0.5) * cbheight / len(nice_breaks) + font_height / 2)),
+            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+            fontScale=font_size,
+            color=(0, 0, 0),
+            thickness=(3 * font_height_target) // 15,
+            lineType=cv2.LINE_AA,
         )
         cv2.putText(
-            img = colorbar, 
-            text = label, 
-            org = (
-                (colorbar_width - text_width) // 2, 
-                int((i + 0.5) * cbheight / len(nice_breaks) + font_height / 2)
-            ),
-            fontFace = cv2.FONT_HERSHEY_SIMPLEX, 
-            fontScale = font_size, 
-            color = (255, 255, 255), 
-            thickness = font_height_target // 15, 
-            lineType = cv2.LINE_AA
+            img=colorbar,
+            text=label,
+            org=((colorbar_width - text_width) // 2, int((i + 0.5) * cbheight / len(nice_breaks) + font_height / 2)),
+            fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+            fontScale=font_size,
+            color=(255, 255, 255),
+            thickness=font_height_target // 15,
+            lineType=cv2.LINE_AA,
         )
 
     # Concatenate the colormap and the colorbar
@@ -472,9 +461,9 @@ def plot_heatmap(
         # Calculate the font size
         axis_label_font_size = cv2.getFontScaleFromHeight(cv2.FONT_HERSHEY_COMPLEX, axis_box_size // 2, 3)
 
-        # First create the x-axis box
+        # Create the x-axis box
         x_axis_box = np.zeros((axis_box_size, dimensions[0] + colorbar_width, 3), dtype=np.uint8) + 255
-        # Then create the y-axis box, remembering to take into account the extra vertical space taken up by the x-axis label. 
+        # Create the y-axis box, remembering to take into account the extra vertical space taken up by the x-axis label.
         # It is instantiated in the flipped orientation.
         y_axis_box = np.zeros((axis_box_size, dimensions[1] + axis_box_size, 3), dtype=np.uint8) + 255
         # Calculate the midpoint on each box with respect to the heatmap
@@ -485,25 +474,25 @@ def plot_heatmap(
         center_offset = axis_box_size // 2 + axis_box_size // 4
         # Add the x-axis label
         cv2.putText(
-            img = x_axis_box, 
-            text = x_label, 
-            org = (x_midpoint, center_offset), 
-            fontFace = cv2.FONT_HERSHEY_COMPLEX, 
-            fontScale = axis_label_font_size,
-            color = (0, 0, 0), 
-            thickness = axis_box_size // 15, 
-            lineType = cv2.LINE_AA
+            img=x_axis_box,
+            text=x_label,
+            org=(x_midpoint, center_offset),
+            fontFace=cv2.FONT_HERSHEY_COMPLEX,
+            fontScale=axis_label_font_size,
+            color=(0, 0, 0),
+            thickness=axis_box_size // 15,
+            lineType=cv2.LINE_AA,
         )
         # Add the y-axis label
         cv2.putText(
-            img = y_axis_box, 
-            text = y_label, 
-            org = (y_midpoint, center_offset), 
-            fontFace = cv2.FONT_HERSHEY_COMPLEX, 
-            fontScale = axis_label_font_size,
-            color = (0, 0, 0), 
-            thickness = axis_box_size // 15, 
-            lineType = cv2.LINE_AA
+            img=y_axis_box,
+            text=y_label,
+            org=(y_midpoint, center_offset),
+            fontFace=cv2.FONT_HERSHEY_COMPLEX,
+            fontScale=axis_label_font_size,
+            color=(0, 0, 0),
+            thickness=axis_box_size // 15,
+            lineType=cv2.LINE_AA,
         )
         # Flip the y-axis box
         y_axis_box = cv2.rotate(y_axis_box, cv2.ROTATE_90_CLOCKWISE)
@@ -514,31 +503,28 @@ def plot_heatmap(
     if scale != 1:
         # Rescale the colormap to 2x lower resolution
         colormap = cv2.resize(
-            src = colormap, 
-            dsize = (int(colormap.shape[1] * scale), int(colormap.shape[0] * scale)),
-            dst = colormap,
-            interpolation = cv2.INTER_LINEAR
+            src=colormap,
+            dsize=(int(colormap.shape[1] * scale), int(colormap.shape[0] * scale)),
+            dst=colormap,
+            interpolation=cv2.INTER_LINEAR,
         )
 
     if output_path is not None:
         # Save the image
         cv2.imwrite(
-            filename = output_path, 
-            img = colormap, 
-            params = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
+            filename=output_path, 
+            img=colormap, 
+            params=[int(cv2.IMWRITE_JPEG_QUALITY), 95]
         )
     else:
         compatible_display(colormap)
 
-def equal_spaced_cuts(
-        k : int, 
-        start : float | int, 
-        end : float | int
-    ) -> np.ndarray:
+
+def equal_spaced_cuts(k: int, start: float | int, end: float | int) -> np.ndarray:
     """Generate k equal spaced cuts between start and end.
-    
-    The edges are not included, and the distance between the left-most and 
-    right-most cut to the edges is half the distance between the cuts. 
+
+    The edges are not included, and the distance between the left-most and
+    right-most cut to the edges is half the distance between the cuts.
 
     Args:
         k: Number of cuts.
@@ -553,57 +539,57 @@ def equal_spaced_cuts(
 
 
 def plot_matches(
-        matches: np.ndarray, 
-        contours1: list[np.ndarray], 
-        contours2: list[np.ndarray],
-        group_labels: Sequence[str] | None = None, 
-        image_path: str | None = None,
-        output_path: str | None = None, 
-        scale: float = 1, 
-        boxes: bool = True
-    ):
+    matches: np.ndarray,
+    contours1: list[np.ndarray],
+    contours2: list[np.ndarray],
+    group_labels: Sequence[str] | None = None,
+    image_path: str | None = None,
+    output_path: str | None = None,
+    scale: float = 1,
+    boxes: bool = True,
+):
     """Plot the matches between two groups of contours using OpenCV.
 
     Args:
         matches: Matches between group 1 and 2.
         contours1: Contours of group 1.
         contours2: Contours of group 2.
-        group_labels: Labels of the two groups (should have a length of 2). If None the groups are labelled as "1" and "2". 
-            Defaults to None.
+        group_labels: Labels of the two groups (should have a length of 2).
+            If None the groups are labelled as "1" and "2". Defaults to None.
         image_path: Path to the image. If None the matches are plotted on a black background. Defaults to None.
-        output_path: Output path of plot. 
-            If None the rasterized result is displayed or returned as an array, depending in the context. 
+        output_path: Output path of plot.
+            If None the rasterized result is displayed or returned as an array, depending in the context.
             Defaults to None.
         scale: Scale of the output image. Defaults to 1.
-        boxes: Flag to indicate whether to plot bounding boxes. Defaults to True.
+        boxes: Flag indicating whether to plot bounding boxes. Defaults to True.
 
     """
     GROUP_COLORS = [(184, 126, 55), (28, 26, 228)]
     # Type check the input
     if not isinstance(matches, np.ndarray):
-        raise ValueError(f'Expected matches to be a NumPy array, got {type(matches)}')
+        raise ValueError(f"Expected matches to be a NumPy array, got {type(matches)}")
     for i, c1 in enumerate(contours1):
         if not isinstance(c1, np.ndarray):
-            raise ValueError(f'Expected contours1[{i}] to be a NumPy array, got {type(c1).__name__}')
+            raise ValueError(f"Expected contours1[{i}] to be a NumPy array, got {type(c1).__name__}")
     for i, c2 in enumerate(contours2):
         if not isinstance(c2, np.ndarray):
-            raise ValueError(f'Expected contours2[{i}] to be a NumPy array, got {type(c2).__name__}')
+            raise ValueError(f"Expected contours2[{i}] to be a NumPy array, got {type(c2).__name__}")
     if not isinstance(group_labels, list) and group_labels is not None:
-        raise ValueError(f'Expected group_labels to be a list or None, got {type(group_labels)}')
+        raise ValueError(f"Expected group_labels to be a list or None, got {type(group_labels)}")
     elif isinstance(group_labels, list):
         for i, lab in enumerate(group_labels):
             if not isinstance(lab, str):
-                raise ValueError(f'Expected group_labels[{i}] to be a string, got {type(lab).__name__}')
+                raise ValueError(f"Expected group_labels[{i}] to be a string, got {type(lab).__name__}")
     elif group_labels is None:
         group_labels = ["1", "2"]
     if not isinstance(image_path, str) and image_path is not None:
-        raise ValueError(f'Expected image_path to be a string or None, got {type(image_path).__name__}')
+        raise ValueError(f"Expected image_path to be a string or None, got {type(image_path).__name__}")
     elif isinstance(image_path, str) and not os.path.exists(image_path):
-        raise ValueError(f'Expected image_path to be a valid file, got {image_path}')
+        raise ValueError(f"Expected image_path to be a valid file, got {image_path}")
     if not isinstance(output_path, str) and output_path is not None:
-        raise ValueError(f'Expected output_path to be a string or None, got {type(output_path).__name__}')
+        raise ValueError(f"Expected output_path to be a string or None, got {type(output_path).__name__}")
     elif isinstance(output_path, str) and not os.path.exists(os.path.dirname(output_path)):
-        raise ValueError(f'Output directory does not exist: {os.path.dirname(output_path)}')
+        raise ValueError(f"Output directory does not exist: {os.path.dirname(output_path)}")
 
     # If a output path is provided the image is saved, otherwise it is displayed with IPython
     save_plot = isinstance(output_path, str)
@@ -611,12 +597,12 @@ def plot_matches(
         # Check the output path extension
         _, out_ext = os.path.splitext(output_path)
         if out_ext not in [".jpg", ".jpeg", ".JPG", ".JPEG"]:
-            raise ValueError(f'Expected output path to have a .JPG/.jpg/.JPEG/.jpeg extension, got {out_ext}')
+            raise ValueError(f"Expected output path to have a .JPG/.jpg/.JPEG/.jpeg extension, got {out_ext}")
 
     # If the is image path is provided
     if isinstance(image_path, str):
         # Load the image
-        image = cv2.imread(filename = image_path)
+        image = cv2.imread(filename=image_path)
         assert image is not None
     else:
         # Otherwise, create a blank image. The dimensions are dynamically calculated to fit the contours
@@ -646,71 +632,49 @@ def plot_matches(
     for idx, (i, j) in enumerate(matches):
         if i != -1:
             # Draw the first contour mask on the first copy
-            cv2.fillPoly(
-                img = cimg1, 
-                pts = [contours1[i]], 
-                color = GROUP_COLORS[0]
-            )
+            cv2.fillPoly(img=cimg1, pts=[contours1[i]], color=GROUP_COLORS[0])
             cv2.drawContours(
-                image = image, 
-                contours = [contours1[i]], 
-                contourIdx = -1,
-                color = GROUP_COLORS[0],
-                thickness = 4,
-                lineType=cv2.LINE_AA
+                image=image,
+                contours=[contours1[i]],
+                contourIdx=-1,
+                color=GROUP_COLORS[0],
+                thickness=4,
+                lineType=cv2.LINE_AA,
             )
             if boxes:
                 # Draw boxes around the contours on the original image
                 cv2.rectangle(
-                    img = image, 
-                    pt1 = (bboxes1[i][0], bboxes1[i][1]), 
-                    pt2 = (bboxes1[i][2], bboxes1[i][3]), 
-                    color = GROUP_COLORS[0], 
-                    thickness = 8
+                    img=image,
+                    pt1=(bboxes1[i][0], bboxes1[i][1]),
+                    pt2=(bboxes1[i][2], bboxes1[i][3]),
+                    color=GROUP_COLORS[0],
+                    thickness=8,
                 )
         if j != -1:
             # Draw the second contour mask on the second copy
-            cv2.fillPoly(
-                img = cimg2, 
-                pts = [contours2[j]], 
-                color = GROUP_COLORS[1]
-            )
+            cv2.fillPoly(img=cimg2, pts=[contours2[j]], color=GROUP_COLORS[1])
             cv2.drawContours(
-                image = image, 
-                contours = [contours2[j]],
-                contourIdx=-1, 
-                color = GROUP_COLORS[1],
+                image=image,
+                contours=[contours2[j]],
+                contourIdx=-1,
+                color=GROUP_COLORS[1],
                 thickness=4,
-                lineType=cv2.LINE_AA
+                lineType=cv2.LINE_AA,
             )
             if boxes:
                 # Draw boxes around the contours on the original image
                 cv2.rectangle(
-                    img = image, 
-                    pt1 = (bboxes2[j][0], bboxes2[j][1]), 
-                    pt2 = (bboxes2[j][2], bboxes2[j][3]), 
-                    color = GROUP_COLORS[1], 
-                    thickness = 8
+                    img=image,
+                    pt1=(bboxes2[j][0], bboxes2[j][1]),
+                    pt2=(bboxes2[j][2], bboxes2[j][3]),
+                    color=GROUP_COLORS[1],
+                    thickness=8,
                 )
 
     # Blend the image copies with the contour masks together (makes the contours semi-transparent - alpha=0.5)
-    cv2.addWeighted(
-        src1 = cimg1, 
-        alpha = 0.5, 
-        src2 = cimg2, 
-        beta = 0.5, 
-        gamma = 0, 
-        dst = cimg1
-    )
+    cv2.addWeighted(src1=cimg1, alpha=0.5, src2=cimg2, beta=0.5, gamma=0, dst=cimg1)
     # Blend with the blended copies with original image
-    cv2.addWeighted(
-        src1 = image, 
-        alpha = 0.5, 
-        src2 = cimg1, 
-        beta = 0.5, 
-        gamma = 0, 
-        dst = image
-    )
+    cv2.addWeighted(src1=image, alpha=0.5, src2=cimg1, beta=0.5, gamma=0, dst=image)
 
     # Downscale the image
     image = cv2.resize(image, (image.shape[1] // 2, image.shape[0] // 2))
@@ -728,8 +692,9 @@ def plot_matches(
         label_font_color = []
         if i != -1:
             # Draw a text label next to the box
-            label_width = \
-                cv2.getTextSize(f"{idx}", cv2.FONT_HERSHEY_SIMPLEX, label_font_scale, label_font_thickness)[0][0]
+            label_width = cv2.getTextSize(
+                f"{idx}", cv2.FONT_HERSHEY_SIMPLEX, label_font_scale, label_font_thickness
+            )[0][0]
             label_font_color.append(GROUP_COLORS[0])
             label_coord.append((bboxes1[i][0] - label_width, bboxes1[i][1] + label_font_height))
         if j != -1:
@@ -738,41 +703,41 @@ def plot_matches(
             label_coord.append((bboxes2[j][0], bboxes2[j][1] - label_font_height // 4))
         for coord, color in zip(label_coord, label_font_color):
             cv2.putText(
-                img = image, 
-                text = str(idx), 
-                org = coord, 
-                fontFace = cv2.FONT_HERSHEY_SIMPLEX, 
-                fontScale = label_font_scale, 
-                color = (2, 210, 238) if no_match else (0, 0, 0),
-                thickness = label_font_thickness * 3, 
-                lineType = cv2.LINE_8
+                img=image,
+                text=str(idx),
+                org=coord,
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=label_font_scale,
+                color=(2, 210, 238) if no_match else (0, 0, 0),
+                thickness=label_font_thickness * 3,
+                lineType=cv2.LINE_8,
             )
             cv2.putText(
-                img = image, 
-                text = str(idx), 
-                org = coord, 
-                fontFace = cv2.FONT_HERSHEY_SIMPLEX, 
-                fontScale = label_font_scale, 
-                color = (147, 20, 255) if no_match else color,
-                thickness = label_font_thickness, 
-                lineType = cv2.LINE_AA
+                img=image,
+                text=str(idx),
+                org=coord,
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                fontScale=label_font_scale,
+                color=(147, 20, 255) if no_match else color,
+                thickness=label_font_thickness,
+                lineType=cv2.LINE_AA,
             )
-            
 
     # Create a legend
-    LEGEND_TEXT_Y_JUST = 1/2
+    LEGEND_TEXT_Y_JUST = 1 / 2
     legend_font_height = max(min(6, image.shape[0] // 40), 24)
     legend_margin = max(1, int(image.shape[0] * 0.01))
     legend_font_size = cv2.getFontScaleFromHeight(cv2.FONT_HERSHEY_COMPLEX, legend_font_height, 3)
-    legend_label_widths = \
-        [cv2.getTextSize(glabel, cv2.FONT_HERSHEY_COMPLEX, legend_font_size, 3)[0][0] for glabel in group_labels]
+    legend_label_widths = [
+        cv2.getTextSize(glabel, cv2.FONT_HERSHEY_COMPLEX, legend_font_size, 3)[0][0] for glabel in group_labels
+    ]
     legend_font_width = max(legend_label_widths)
     legend_box_height = int((legend_font_height * 1.6) * len(group_labels))
     legend_box_width = int(legend_font_width * 1.25)
     # Extract the legend box
     legend_box = image[
         legend_margin:(legend_box_height + legend_margin),
-        -(legend_box_width + legend_margin):-legend_margin, 
+        -(legend_box_width + legend_margin):-legend_margin,
         :
     ]
     # Whiten legend box
@@ -781,25 +746,25 @@ def plot_matches(
     legend_box += whiten_amount
     # Add a black border to the legend box
     cv2.rectangle(
-        img = legend_box, 
-        pt1 = (1, 1), 
-        pt2 = (legend_box_width - legend_font_height // 15 - 1, legend_box_height - legend_font_height // 15 - 1), 
-        color = (0, 0, 0), 
-        thickness = legend_font_height // 15,
-        lineType=cv2.LINE_AA
+        img=legend_box,
+        pt1=(1, 1),
+        pt2=(legend_box_width - legend_font_height // 15 - 1, legend_box_height - legend_font_height // 15 - 1),
+        color=(0, 0, 0),
+        thickness=legend_font_height // 15,
+        lineType=cv2.LINE_AA,
     )
     # Add the legend labels and items
-    legend_attributes = []
+    legend_attributes: list[tuple[str, int, tuple[int, int, int], int, int]] = []
     item_cut_ys = equal_spaced_cuts(len(group_labels), 0, legend_box_height)
     for i, (glabel, label_width, item_cut_y) in enumerate(zip(group_labels, legend_label_widths, item_cut_ys)):
         item_label_y = int(item_cut_y + legend_font_height * LEGEND_TEXT_Y_JUST)
         # Labels
         label_x = int(legend_box_width * 0.975) - label_width
-        
+
         # Items - positioned to the left of the labels with a margin of 'legend_margin'
         item_x = label_x // 2
         item_color = GROUP_COLORS[i]
-        
+
         # Add the attributes to the legend_attributes list
         legend_attributes.append((glabel, item_x, item_color, label_x, item_label_y))
 
@@ -809,50 +774,52 @@ def plot_matches(
     for glabel, _, item_color, label_x, item_label_y in legend_attributes:
         # Draw the legend item label
         cv2.putText(
-            img = legend_box, 
-            text = glabel, 
-            org = (label_x, item_label_y), 
-            fontFace = cv2.FONT_HERSHEY_COMPLEX, 
-            fontScale = legend_font_size, 
-            color = (0, 0, 0),
-            thickness = legend_font_height // 15, 
-            lineType = cv2.LINE_AA
+            img=legend_box,
+            text=glabel,
+            org=(label_x, item_label_y),
+            fontFace=cv2.FONT_HERSHEY_COMPLEX,
+            fontScale=legend_font_size,
+            color=(0, 0, 0),
+            thickness=legend_font_height // 15,
+            lineType=cv2.LINE_AA,
         )
         # Fill the item circle with the color of the group
         cv2.circle(
-            img = legend_box, 
-            center = (min_item_x, item_label_y - legend_font_height // 2), 
-            radius = legend_font_height // 2, 
-            color = item_color,
-            thickness=cv2.FILLED
+            img=legend_box,
+            center=(min_item_x, item_label_y - legend_font_height // 2),
+            radius=legend_font_height // 2,
+            color=item_color,
+            thickness=cv2.FILLED,
         )
         # Add a black border to the item circle
         cv2.circle(
-            img = legend_box,
-            center = (min_item_x, item_label_y - legend_font_height // 2), 
-            radius = legend_font_height // 2, 
-            color = (0, 0, 0),
-            thickness = legend_font_height // 30,
-            lineType=cv2.LINE_AA
+            img=legend_box,
+            center=(min_item_x, item_label_y - legend_font_height // 2),
+            radius=legend_font_height // 2,
+            color=(0, 0, 0),
+            thickness=legend_font_height // 30,
+            lineType=cv2.LINE_AA,
         )
 
     # Add the legend to the image
-    image[legend_margin:(legend_box_height + legend_margin), -(legend_box_width + legend_margin):-legend_margin, :] = legend_box
+    image[
+        legend_margin : (legend_box_height + legend_margin), -(legend_box_width + legend_margin) : -legend_margin, :
+    ] = legend_box
 
     if scale != 1:
         # Scale the image
         cv2.resize(
-            src = image, 
-            dsize = (int(image.shape[1] * scale), int(image.shape[0] * scale)), 
-            dst = image
+            src=image, 
+            dsize=(int(image.shape[1] * scale), int(image.shape[0] * scale)), 
+            dst=image
         )
 
     if save_plot:
         # Save the image
         cv2.imwrite(
-            filename = output_path, 
-            img = image, 
-            params = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
+            filename=output_path, 
+            img=image, 
+            params=[int(cv2.IMWRITE_JPEG_QUALITY), 95]
         )
     else:
         compatible_display(image)
@@ -861,8 +828,7 @@ def plot_matches(
 def compatible_display(image: np.ndarray):  # noqa: D103
     TIMEOUT = 5  # seconds
     # Check if the image is displayed in a Jupyter notebook
-    if 'get_ipython' in globals():
-        # Only import the necessary modules if the image is displayed in a Jupyter notebook, ensures they are optional dependencies
+    if "get_ipython" in globals():
         import ipywidgets as widgets  # type: ignore
         from IPython.display import clear_output, display  # type: ignore
 
@@ -883,7 +849,7 @@ def compatible_display(image: np.ndarray):  # noqa: D103
         button.on_click(on_button_clicked)
 
         # Display the image
-        display(widgets.Image(value=cv2.imencode('.jpg', image_rgb)[1].tobytes(), format='jpg'))
+        display(widgets.Image(value=cv2.imencode(".jpg", image_rgb)[1].tobytes(), format="jpg"))
         # Display the button
         display(button)
 
@@ -891,30 +857,30 @@ def compatible_display(image: np.ndarray):  # noqa: D103
         start_time = time.time()
         while not button_clicked and (time.time() - start_time) < TIMEOUT:
             time.sleep(0.01)
-        logger.info('Image display closed')
+        logger.info("Image display closed")
     else:
         # Check if a display is available
-        if os.environ.get('DISPLAY', '') == '':
-            logger.info('No display found, unable to display the image')
+        if os.environ.get("DISPLAY", "") == "":
+            logger.info("No display found, unable to display the image")
         else:
             # Display the image
-            cv2.imshow('Matches', image)
+            cv2.imshow("Matches", image)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
 
 
 def compare_groups(
-        group1: list, 
-        group2: list, 
-        threshold: float=0.1,
-        group_labels: Sequence[str] | None=("Ground Truth", "Predictions"), 
-        plot: bool=False, 
-        plot_scale: float=1, 
-        plot_boxes: bool=True,
-        image_path: str | None=None, 
-        output_identifier: str | None=None, 
-        output_directory: str | None=None
-    ) -> str | dict:
+    group1: list,
+    group2: list,
+    threshold: float = 0.1,
+    group_labels: Sequence[str] | None = ("Ground Truth", "Predictions"),
+    plot: bool = False,
+    plot_scale: float = 1,
+    plot_boxes: bool = True,
+    image_path: str | None = None,
+    output_identifier: str | None = None,
+    output_directory: str | None = None,
+) -> str | dict:
     """Compare group 1 to group 2.
 
     Output is saved to a CSV file with the following columns:
@@ -924,10 +890,10 @@ def compare_groups(
         - contourArea_1 (`int`) is the area of the contour in group 1
         - contourArea_2 (`int`) is the area of the contour in group 2, or 0 if there is no match
         - bbox_1 (`list[int, int, int, int : xmin, ymin, xmax, ymax]`) is the bounding box of the geometry in group 1
-        - bbox_2 (`list[int, int, int, int : xmin, ymin, xmax, ymax]`) is the bounding box of the 
+        - bbox_2 (`list[int, int, int, int : xmin, ymin, xmax, ymax]`) is the bounding box of the
             matched geometry in group 2, or an empty list if there is no match
         - contour_1 (`list[list[int, int : x_i, y_i]]`) is the contour of the geometry in group 1
-        - contour_2 (`list[list[int, int : x_i, y_i]]`) is the contour of the matched geometry in group 2, 
+        - contour_2 (`list[list[int, int : x_i, y_i]]`) is the contour of the matched geometry in group 2,
             or an empty list if there is no match
 
     Args:
@@ -935,7 +901,7 @@ def compare_groups(
         group2: Group 2.
         threshold: IoU threshold for matching elements between groups. Defaults to 0.1.
         group_labels: Group labels. Defaults to `["Ground Truth", "Predictions"]`.
-        plot: Whether to plot the matches and the IoU matrix, 
+        plot: Whether to plot the matches and the IoU matrix,
             usually this is much slower than simply comparing the groups. Defaults to False.
         plot_scale: Scale of the plot. Defaults to 1. Lower values will make the plot smaller, but may be faster.
         plot_boxes: Whether to plot the bounding boxes. Defaults to True.
@@ -944,28 +910,31 @@ def compare_groups(
         output_directory: Output directory. Defaults to None.
 
     Returns:
-        Path to the CSV file or the data that would have been saved to the CSV file as a dictionary, 
+        Path to the CSV file or the data that would have been saved to the CSV file as a dictionary,
         where the keys are the column names and the values are the column values.
 
     """
     # Type check the input
     if not isinstance(group1, list) or not isinstance(group2, list):
-        raise ValueError(f'Expected group1 and group2 to be lists, got {type(group1)} and {type(group2)}')
+        raise ValueError(f"Expected group1 and group2 to be lists, got {type(group1)} and {type(group2)}")
     if not all([isinstance(i, dict) for i in group1]) or not all([isinstance(i, dict) for i in group2]):
         raise ValueError(
-            f'Expected group1 and group2 to be lists of dictionaries, got {type(group1[0])} and {type(group2[0])}')
+            f"Expected group1 and group2 to be lists of dictionaries, got {type(group1[0])} and {type(group2[0])}"
+        )
     if not isinstance(threshold, float):
-        raise ValueError(f'Expected threshold to be a float, got {type(threshold)}')
+        raise ValueError(f"Expected threshold to be a float, got {type(threshold)}")
     if not isinstance(plot, bool):
-        raise ValueError(f'Expected plot to be a bool, got {type(plot)}')
+        raise ValueError(f"Expected plot to be a bool, got {type(plot)}")
     if not (isinstance(image_path, str) or image_path is None):
-        raise ValueError(f'Expected image_path to be a string or None, got {type(image_path)}')
+        raise ValueError(f"Expected image_path to be a string or None, got {type(image_path)}")
     if not isinstance(output_directory, str) and output_directory is not None:
-        raise ValueError(f'Expected output_directory to be a string or None, got {type(output_directory)}')
+        raise ValueError(f"Expected output_directory to be a string or None, got {type(output_directory)}")
     elif isinstance(output_directory, str) and not os.path.isdir(output_directory):
-        raise ValueError(f'Expected output_directory to be a valid directory, got {output_directory}')
+        raise ValueError(f"Expected output_directory to be a valid directory, got {output_directory}")
     if not isinstance(output_identifier, str) and (plot or output_directory is not None):
-        raise ValueError(f'Expected output_identifier to be a string when saving to file or plotting, got {type(output_identifier)}')
+        raise ValueError(
+            f"Expected output_identifier to be a string when saving to file or plotting, got {type(output_identifier)}"
+        )
 
     # Convert the annotations to NumPy arrays, and calculate bounding boxes and areas
     b1, c1 = annotations_to_numpy(group1)
@@ -983,25 +952,29 @@ def compare_groups(
     # Plot the matches and the IoU matrix
     if plot:
         if not isinstance(image_path, str):
-            raise ValueError(f'Expected path to be a string, got {type(image_path)}')
+            raise ValueError(f"Expected path to be a string, got {type(image_path)}")
         elif not os.path.isfile(image_path):
-            raise ValueError(f'Expected path to be a valid file, got {image_path}')
+            raise ValueError(f"Expected path to be a valid file, got {image_path}")
         plot_matches(
-            matches = matches, 
-            contours1 = c1, 
-            contours2 = c2, 
-            group_labels = group_labels, 
-            image_path = image_path,
-            output_path = os.path.join(output_directory, f'{output_identifier}_matches.jpg') if output_directory is not None else None,
-            scale = plot_scale, 
-            boxes = plot_boxes
+            matches=matches,
+            contours1=c1,
+            contours2=c2,
+            group_labels=group_labels,
+            image_path=image_path,
+            output_path=os.path.join(output_directory, f"{output_identifier}_matches.jpg")
+            if output_directory is not None
+            else None,
+            scale=plot_scale,
+            boxes=plot_boxes,
         )
         if not any([dim == 0 for dim in iou.shape]):
             plot_heatmap(
-                mat = iou, 
-                axis_labels = group_labels[::-1] if group_labels is not None else None,
-                output_path = os.path.join(output_directory, f'{output_identifier}_heatmap.jpg') if output_directory is not None else None,
-                scale = plot_scale
+                mat=iou,
+                axis_labels=group_labels[::-1] if group_labels is not None else None,
+                output_path=os.path.join(output_directory, f"{output_identifier}_heatmap.jpg")
+                if output_directory is not None
+                else None,
+                scale=plot_scale,
             )
 
     ## Gather the data for the output
@@ -1063,14 +1036,29 @@ def compare_groups(
     len_boxes1, len_boxes2 = len(boxes1), len(boxes2)
     len_contours1, len_contours2 = len(contours1), len(contours2)
     # Check that the lengths are all the same
-    data_length = set(
-        [len_idx1, len_idx2, len_matched_iou, len_careas1, len_careas2, len_boxes1, len_boxes2, len_contours1,
-         len_contours2])
+    data_length = set([
+        len_idx1,
+        len_idx2,
+        len_matched_iou,
+        len_careas1,
+        len_careas2,
+        len_boxes1,
+        len_boxes2,
+        len_contours1,
+        len_contours2,
+    ])
     if len(data_length) != 1:
         raise ValueError(
             "Lengths of the data are not all the same: {}, {}, {}, {}, {}, {}, {}, {}, {}".format(  # noqa: UP032
-                len_idx1, len_idx2, len_matched_iou, len_careas1, 
-                len_careas2, len_boxes1, len_boxes2, len_contours1, len_contours2
+                len_idx1,
+                len_idx2,
+                len_matched_iou,
+                len_careas1,
+                len_careas2,
+                len_boxes1,
+                len_boxes2,
+                len_contours1,
+                len_contours2,
             )
         )
 
@@ -1086,7 +1074,7 @@ def compare_groups(
         "bbox_1": boxes1,
         "bbox_2": boxes2,
         "contour_1": contours1,
-        "contour_2": contours2
+        "contour_2": contours2,
     }
 
     if output_directory is not None:
@@ -1106,6 +1094,7 @@ def compare_groups(
     else:
         return output
 
+
 def generate_block(min: int, max: int, size: int) -> np.ndarray:
     """Generate a block of integers centered around a random start value within a given range.
 
@@ -1120,12 +1109,12 @@ def generate_block(min: int, max: int, size: int) -> np.ndarray:
     """
     if size <= 0 or min >= max:
         raise ValueError("Size must be positive and min must be less than max.")
-    
+
     start = np.random.randint(min, max)
     left = np.random.randint(0, size)
     right = size - left
     block = np.arange(start - left, start + right)
-    
+
     return block[np.logical_and(block >= min, block < max)]
 
 
@@ -1145,12 +1134,16 @@ def generate_bootstraps(s: int, n: int, block: bool = False) -> list[np.ndarray]
         raise ValueError("The size 's' and the number 'n' of bootstraps must be positive.")
 
     if block:
-        blocks = int(max(1, (s ** 0.5) // 2))
-        return [np.concatenate([generate_block(min=0, max=s, size=s // blocks) for _ in range(blocks)]) for _ in range(n)]
+        blocks = int(max(1, (s**0.5) // 2))
+        return [
+            np.concatenate([generate_block(min=0, max=s, size=s // blocks) for _ in range(blocks)])
+            for _ in range(n)
+        ]
     else:
         return [np.random.choice(s, s, replace=True) for _ in range(n)]
 
-def f1_score(GT : np.ndarray, MP : np.ndarray) -> float:
+
+def f1_score(GT: np.ndarray, MP: np.ndarray) -> float:
     """Calculate the F1 score for a binary classification problem.
 
     Args:
@@ -1163,7 +1156,7 @@ def f1_score(GT : np.ndarray, MP : np.ndarray) -> float:
     """
     if len(GT) != len(MP):
         raise ValueError("Lengths of GT and MP must match.")
-    
+
     TP = np.sum(MP & GT)
     FP = np.sum(MP & ~GT)
     FN = np.sum(~MP & GT)
@@ -1173,17 +1166,13 @@ def f1_score(GT : np.ndarray, MP : np.ndarray) -> float:
 
     return float(2 * precision * recall / (precision + recall) if precision + recall > 0 else 0)
 
-def optimal_threshold_f1(
-    y: np.ndarray,
-    iou: np.ndarray,
-    confidence: np.ndarray,
-    num_thresholds: int = 100
-) -> float:
+
+def optimal_threshold_f1(y: np.ndarray, iou: np.ndarray, confidence: np.ndarray, num_thresholds: int = 100) -> float:
     """Find the optimal threshold for F1 score by iterating over possible thresholds.
 
     Args:
         y: Ground truth binary labels.
-        iou: IoU values, 
+        iou: IoU values,
         confidence: Confidence scores for predictions.
         num_thresholds: Number of thresholds to test. Defaults to 100.
 
@@ -1193,14 +1182,14 @@ def optimal_threshold_f1(
     """
     if len(y) != len(iou) or len(y) != len(confidence):
         raise ValueError("Lengths of y, iou, and confidence must match.")
-    
+
     y = np.asarray(y, dtype=bool)
     best_threshold, best_f1 = 0, 0
 
     for i in range(num_thresholds + 1):
         threshold = i / num_thresholds
         MP = confidence >= threshold
-        
+
         f1 = f1_score(y, MP)
 
         if f1 > best_f1:
@@ -1211,10 +1200,7 @@ def optimal_threshold_f1(
 
 
 def best_confidence_threshold(
-    y: list[int] | np.ndarray,
-    iou: list[float] | np.ndarray,
-    confidence: list[float] | np.ndarray,
-    n: int = 100
+    y: list[int] | np.ndarray, iou: list[float] | np.ndarray, confidence: list[float] | np.ndarray, n: int = 100
 ) -> float:
     """Find the best confidence threshold using bootstrapping and F1 score optimization.
 
@@ -1235,4 +1221,7 @@ def best_confidence_threshold(
     iou = np.asarray([i if isinstance(i, float) else 0 for i in iou], dtype=float)
     confidence = np.asarray([c if isinstance(c, float) else 0 for c in confidence], dtype=float)
 
-    return float(np.mean([optimal_threshold_f1(y[boot], iou[boot], confidence[boot]) for boot in generate_bootstraps(len(iou), n, True)]))
+    return float(np.mean([
+        optimal_threshold_f1(y[boot], iou[boot], confidence[boot])
+        for boot in generate_bootstraps(len(iou), n, True)
+    ]))
