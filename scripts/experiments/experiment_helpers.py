@@ -11,8 +11,8 @@ import threading
 import time
 import zipfile
 from argparse import Namespace
-from typing import (IO, Any, Callable, Dict, Iterable, List, Optional, Self,
-                    Tuple, Union)
+from collections.abc import Callable, Iterable
+from typing import IO, Any, Self
 
 import submitit
 import torch
@@ -58,10 +58,10 @@ def set_default_config(config : str):
     DEFAULT_CONFIG = config
     assert os.path.exists(DEFAULT_CONFIG), f"Default config file not found: {DEFAULT_CONFIG}"
 
-def get_config() -> Dict[str, Any]:
+def get_config() -> dict[str, Any]:
     if DEFAULT_CONFIG == "<UNSET>":
         raise RuntimeError("The default config file has not been set. Use `experiment__helpers.set_default_config()` to set it.")
-    with open(DEFAULT_CONFIG, "r") as conf:
+    with open(DEFAULT_CONFIG) as conf:
         config = yaml.load(conf, Loader=yaml.FullLoader)
     if PROJECT_DIR != "<UNSET>":
         config["project"] = PROJECT_DIR
@@ -82,8 +82,8 @@ def print_and_sleep(text : str):
     time.sleep(3)
 
 def run_command(
-        command : Union[str | Callable], 
-        python_binary : Optional[str]=None
+        command : str | Callable, 
+        python_binary : str | None=None
     ) -> bool:
     if callable(command):
         command = command()
@@ -115,8 +115,7 @@ def remove_directory(
         directory : str, 
         recursive : bool=False
     ):
-    """
-    Safely removes a directory containing files, no nested directories.
+    """Safely removes a directory containing files, no nested directories.
     """
     if not os.path.exists(directory):
         return
@@ -137,9 +136,8 @@ def remove_directory(
 
 SAMPLE_SANITIZE_PATTERN = re.compile(r"^[^_]+_(.+)(_heatmap|_matches|\.csv)")
 
-def split_by_sample(files : List[str]) -> Dict[str, List[str]]:
-    """
-    Splits the files by sample.
+def split_by_sample(files : list[str]) -> dict[str, list[str]]:
+    """Splits the files by sample.
     """
     samples = {}
     for file in files:
@@ -226,7 +224,7 @@ class ZipOrDirectory:
         if isinstance(self._zip, zipfile.ZipFile):
             mode = mode.replace("t", "")
             raw_file = self._zip.open(self._zip_prep_path(path), mode=mode, *args, **kwargs)
-            if not "b" in mode:
+            if "b" not in mode:
                 return io.TextIOWrapper(raw_file)
             return raw_file
         else:
@@ -251,17 +249,17 @@ class HelpfulArgumentParser(argparse.ArgumentParser):
         self.print_help(sys.stderr)
         self.exit(2, f"\n\n{self.prog}: error: {message}\n")
 
-def parse_unknown_arguments(extra : List[str]) -> Dict[str, Any]:
-    """
-    Parses unknown arguments from the command line.
+def parse_unknown_arguments(extra : list[str]) -> dict[str, Any]:
+    """Parses unknown arguments from the command line.
 
     Unknown arguments must be named arguments in the form `--key value`, `-key value` or `key=value`.
 
     Args:
-        extra (List[str]): The list of extra arguments.
+        extra: The list of extra arguments.
 
     Returns:
         Dict[str, Any]: The parsed unknown arguments.
+
     """
     unknown_args = {}
     i = 0
@@ -288,9 +286,8 @@ def parse_unknown_arguments(extra : List[str]) -> Dict[str, Any]:
         i += 1
     return unknown_args
 
-def get_cmd_args(name : Optional[str] = None, additional_args : Optional[List[Tuple[List[str], Dict[str, Any]]]] = None) -> Tuple[Namespace, Dict[str, str]]:
-    """
-    A simple wrapper for shared command line arguments and parsing between experiment orchestration scripts.
+def get_cmd_args(name : str | None = None, additional_args : list[tuple[list[str], dict[str, Any]]] | None = None) -> tuple[Namespace, dict[str, str]]:
+    """A simple wrapper for shared command line arguments and parsing between experiment orchestration scripts.
 
     Command line arguments:
         -i, --datadir: The directory containing the data.
@@ -304,6 +301,7 @@ def get_cmd_args(name : Optional[str] = None, additional_args : Optional[List[Tu
         
     Returns:
         argparse.Namespace: The parsed command line arguments.
+
     """
     args_parse = HelpfulArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     args_parse.add_argument("-i", "--datadir", help="The directory containing the data.", required=True)
@@ -335,7 +333,7 @@ def get_cmd_args(name : Optional[str] = None, additional_args : Optional[List[Tu
                 f"Error parsing extra arguments: `{' '.join(extra)}`. {e}\n\n"
                 f"{args_parse.format_help()}"
             )
-    if not args.extra is None:
+    if args.extra is not None:
         probable_desired_command = sys.executable + " " + " ".join([arg for arg in sys.argv if arg != "--do-not-specify-extra"])
         raise ValueError(
                 f"DO NOT ACTUALLY SPECIFY --do-not-specify-extra, just pass the extra arguments after known.\n\n"
@@ -343,9 +341,9 @@ def get_cmd_args(name : Optional[str] = None, additional_args : Optional[List[Tu
                 f"\t{probable_desired_command}\n\n"
                 f"{args_parse.format_help()}"
             )
-    if not args.output is None:
+    if args.output is not None:
         args.output = os.path.normpath(os.path.expanduser(args.output))
-    if not args.output is None:
+    if args.output is not None:
         project_dir = args.output
     else:
         project_dir = os.path.abspath("./runs/segment")
@@ -366,29 +364,29 @@ def get_cmd_args(name : Optional[str] = None, additional_args : Optional[List[Tu
                 )
         extra.update({"cpus_per_task" : n_workers})
 
-    if not "job_name" in extra:
+    if "job_name" not in extra:
         extra.update({"job_name" : name if name is not None else "fb_unnamed_experiment"})
 
     return args, extra
 
 def read_slurm_params(
-        path : Optional[str] = os.path.join(os.path.dirname(__file__), "default_slurm_params.yaml"),
+        path : str | None = os.path.join(os.path.dirname(__file__), "default_slurm_params.yaml"),
         **kwargs
-    ) -> Dict[str, Any]:
-    """
-    Simple wrapper to read SLURM parameters from a YAML file, or use the default SLURM parameters if not supplied.
+    ) -> dict[str, Any]:
+    """Simple wrapper to read SLURM parameters from a YAML file, or use the default SLURM parameters if not supplied.
 
     Args:
-        path (Optional[str]): The path to the SLURM parameters YAML file. Default and None is "default_slurm_params.yaml" in the same directory as this script.
+        path: The path to the SLURM parameters YAML file. Default and None is "default_slurm_params.yaml" in the same directory as this script.
         **kwargs: Additional keyword arguments to pass to the SLURM parameters (e.g. partition). These will override the parameters in the YAML file if they are also present.
 
     Returns:
         Dict[str, Any]: The SLURM parameters. The keys are prefixed with 'slurm_', necessary for the submitit executor.
+
     """
     if path is None:
         path = os.path.join(os.path.dirname(__file__), "default_slurm_params.yaml")
-    with open(path, "r") as f:
-        params : Dict = yaml.safe_load(f)
+    with open(path) as f:
+        params : dict = yaml.safe_load(f)
     params.update(kwargs)
 
     ## THIS IS NOT NECESSARY AFTER SWITCHING FROM `submitit.AutoExecutor` TO `submitit.SlurmExecutor`
@@ -414,11 +412,11 @@ def read_slurm_params(
         slurm_setup_path = os.path.join(os.path.dirname(__file__), "slurm_config", additional_params.pop("slurm_setup"))
         if not (isinstance(slurm_setup_path, str) and os.path.exists(slurm_setup_path)):
             raise FileNotFoundError(f"Invalid SLURM setup file specified: {slurm_setup_path}.")
-        with open(slurm_setup_path, "r") as f:
+        with open(slurm_setup_path) as f:
             slurm_setup_commands = f.read().strip().split("\n")
         if slurm_setup_commands[0] == 0:
             slurm_setup_commands.pop(0) 
-        assert len(slurm_setup_commands) > 0, f"Empty SLURM setup file specified." 
+        assert len(slurm_setup_commands) > 0, "Empty SLURM setup file specified." 
         params["setup"] = additional_params.get("setup", []) + slurm_setup_commands
     
     # Submit additional parameters via the "additional_parameters" parameter
@@ -428,24 +426,24 @@ def read_slurm_params(
     return params
 
 def do_yolo_train_run(
-        config : Dict, 
+        config : dict, 
         attempt_resume : bool=False,
         dry_run : bool=False, 
         execute : bool=True, 
-        device : Optional[Union[int, str, List[Union[int, str]]]]=None
-    ) -> Optional[str]:
-    """
-    Wrapper for conducting a Flat-Bug YOLO training run, with `fb_train`.
+        device : int | str | list[int | str] | None=None
+    ) -> str | None:
+    """Wrapper for conducting a Flat-Bug YOLO training run, with `fb_train`.
 
     Args:
-        config (Dict): The configuration dictionary.
-        attempt_resume (bool): Whether to attempt to restart cancelled training runs with the same name and project (if they exist).
-        dry_run (bool): Whether to print the command without running it. Defaults to False.
-        execute (bool): Whether to run the command. Defaults to True.
-        device (Optional[Union[int, str]]): The GPU to use for the experiment. Defaults to None.
+        config: The configuration dictionary.
+        attempt_resume: Whether to attempt to restart cancelled training runs with the same name and project (if they exist).
+        dry_run: Whether to print the command without running it. Defaults to False.
+        execute: Whether to run the command. Defaults to True.
+        device: The GPU to use for the experiment. Defaults to None.
 
     Returns:
         Optional[str]: The (executed) command (to run) or None if training is already completed.
+
     """
     if DATA_DIR == "<UNSET>":
         raise RuntimeError("The data directory has not been set. Use `experiment_helpers.set_datadir(<path>)` to set it.")
@@ -497,7 +495,7 @@ def do_yolo_train_run(
     print(f"Running experiment: {config['name']} with config:{ITEMIZE + ITEMIZE.join([f'{k}: {v}' for k, v in config.items()])}")
     command = f'fb_train -c "{config_path}" -d "{DATA_DIR}"'
     if attempt_resume:
-        command += f' -r'
+        command += ' -r'
     if execute:
         if dry_run:
             print(f'Dry run would executed: {command}')
@@ -508,23 +506,22 @@ def do_yolo_train_run(
 
 class ExperimentRunner:
     def __init__(
-            self : Self, 
+            self, 
             experiment_fn : Callable = do_yolo_train_run, 
             inputs : Iterable = [], 
-            devices : Optional[Union[List[Union[int, str]], int, str]] = None, 
+            devices : list[int | str] | int | str | None = None, 
             slurm : bool=False, 
-            slurm_params : Optional[Dict[str, Any]] = None, 
+            slurm_params : dict[str, Any] | None = None, 
             **kwargs
         ):
-        """
-        A class to handle running multiple experiments, either sequentially, in parallel on multiple GPUs, or on a SLURM cluster.
+        """A class to handle running multiple experiments, either sequentially, in parallel on multiple GPUs, or on a SLURM cluster.
 
         Args:
-            experiment_fn (Callable): The function to run the experiment. Must accept a single element from inputs and a dictionary of keyword arguments, as well as the argument `execute` that defaults to True, which determines whether the function should execute the command or just return a bash command string.
-            inputs (Iterable): The inputs to the experiment function.
-            devices (Optional[Union[List[Union[int, str]], int, str]]): The GPU(s) to use for the experiments. Defaults to None.
-            slurm (bool): Whether to run the experiments on a SLURM cluster. Defaults to False.
-            slurm_params (Optional[Dict[str, Any]]): The parameters to pass to the SLURM executor. Defaults to None.
+            experiment_fn: The function to run the experiment. Must accept a single element from inputs and a dictionary of keyword arguments, as well as the argument `execute` that defaults to True, which determines whether the function should execute the command or just return a bash command string.
+            inputs: The inputs to the experiment function.
+            devices: The GPU(s) to use for the experiments. Defaults to None.
+            slurm: Whether to run the experiments on a SLURM cluster. Defaults to False.
+            slurm_params: The parameters to pass to the SLURM executor. Defaults to None.
             **kwargs: Additional keyword arguments to pass to the experiment function.
         
         Methods:
@@ -545,6 +542,7 @@ class ExperimentRunner:
         runner.run()
         runner.wait()
         ```
+
         """
         self.experiment_fn = experiment_fn
         self.kwargs = kwargs
@@ -562,8 +560,8 @@ class ExperimentRunner:
             self.executor.update_parameters(**slurm_params)
 
         # Initialize consumer/job lists
-        self.consumer_threads : List[threading.Thread] = []
-        self.slurm_jobs : List[submitit.Job] = []
+        self.consumer_threads : list[threading.Thread] = []
+        self.slurm_jobs : list[submitit.Job] = []
         
     def __len__(self):
         return self._length
@@ -599,14 +597,14 @@ class ExperimentRunner:
         return "\n".join([line[:max_char_per_line] for line in lines])
 
     @property
-    def slurm_job_ids(self : Self) -> List[str]:
+    def slurm_job_ids(self) -> list[str]:
         if not self.slurm:
             return []
         else:
             return [job.job_id for job in self.slurm_jobs]
     
     @property
-    def slurm_job_id(self : Self) -> Optional[str]:
+    def slurm_job_id(self) -> str | None:
         ids = list(set([re.search(r"^(\d+)", job.job_id).group(1) for job in self.slurm_jobs]))
         if len(ids) == 0:
             return None
@@ -614,7 +612,7 @@ class ExperimentRunner:
             raise ValueError(f"Multiple job IDs found: {ids}")
         return ids[0]
 
-    def run(self : Self) -> Self:
+    def run(self) -> Self:
         # Check that the consumer threads and slurm jobs are empty
         assert not self.consumer_threads, "Consumer threads list is not empty."
         assert not self.slurm_jobs, "Slurm jobs list is not empty."
@@ -651,7 +649,7 @@ class ExperimentRunner:
         
         return self
 
-    def wait(self : Self) -> Self:
+    def wait(self) -> Self:
         # Wait for the consumer threads to finish
         [self.consumer_threads.pop().join() for _ in range(len(self.consumer_threads))]
         # Wait for the slurm jobs to finish
@@ -659,7 +657,7 @@ class ExperimentRunner:
 
         return self
 
-    def complete(self : Self) -> Self:
+    def complete(self) -> Self:
         if self.slurm:
             # When using SLURM, the experiments are submitted as an array job and the script exits immediately, so we don't need to have a process alive for the duration of the experiments
             print(f"All (n={len(self)}) experiments submitted as SLURM array job.")

@@ -1,13 +1,14 @@
-To build the docs you need to install `sphinx`, `furo` and `myst-parser`:
+# Build docs
+
+Simply install with the `docs` dependency group:
 
 ```sh
-micromamba install sphinx
-micromamba install furo
-micromamba install myst-parser
+uv sync --all-extras --group docs 
 ```
 
 And then run:
 
 ```sh
-make html
+# cd ./docs
+uv run make html
 ```

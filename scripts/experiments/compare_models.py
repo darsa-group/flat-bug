@@ -1,51 +1,63 @@
-import os, sys
-import glob, argparse, re
+import argparse
+import csv
+import glob
+import os
+import re
 import subprocess
-import csv, yaml
+import sys
+from typing import Any
 
-from typing import Union, Optional, List, Tuple, Dict, Any
+import yaml
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from scripts.experiments.experiment_helpers import run_command, remove_directory, split_by_sample, parse_unknown_arguments, read_slurm_params, ExperimentRunner, ZipOrDirectory
 from flat_bug.datasets import get_datasets
 from flat_bug.eval_utils import pretty_print_csv
+from scripts.experiments.experiment_helpers import (
+    ExperimentRunner,
+    ZipOrDirectory,
+    parse_unknown_arguments,
+    read_slurm_params,
+    remove_directory,
+    run_command,
+    split_by_sample,
+)
 
 RESULT_DIR = os.path.join(os.path.dirname(__file__), "results")
 
 def eval_model(
         weights : str, 
-        config : Optional[str], 
+        config : str | None, 
         directory : str, 
         output_directory : str, 
         local_directory : str=None,
-        tmp_directory : Optional[str]=None, 
-        device : Optional[str]=None, 
-        pattern : Optional[str]=None, 
+        tmp_directory : str | None=None, 
+        device : str | None=None, 
+        pattern : str | None=None, 
         store_all : bool=False, 
         dry_run : bool = False, 
         execute : bool=True,
         strict : bool=True
     ) -> str:
-    """
-    Evaluate a model on a dataset.
+    """Evaluate a model on a dataset.
 
     Args:
-        weights (str): The path to the weights file.
-        config (str): The path to the config file. Should be a YAML file either ending in '.yaml' or '.yml'.
-        directory (str): The directory where the data is located and where the results will be saved the directory should have a 'reference' directory with the ground truth json in 'instances_default.json' and the matching images'.
-        output_directory (str): The path to the output directory where the results will be saved. If not supplied, it is assumed to be the same as the directory. Defaults to None.
-        local_directory (str, optional): The path to the local directory where the ground truth json is located. If not supplied, it is assumed to be the same as the directory. Defaults to None.
-        tmp_directory (str, optional): Path to a temporary directory to use as the output directory, where the contents will then be copied to the actual output directory at the end of the evaluation.
-        device (str, optional): The PyTorch device string to use for inference. If not supplied, it is assumed to be cuda:0. Defaults to None.
-        pattern (str, optional): The regex pattern to use for selecting the inference files. If not supplied, it is assumed to be the default pattern. Defaults to None.
-        store_all (bool, optional): If set, all results will be saved. Defaults to False.
-        dry_run (bool, optional): If set, the evaluation will not be run. If the command would be executed it is printed instead. Defaults to False.
-        execute (bool, optional): If set, the evaluation will be run, otherwise the command will be returned. Defaults to True.
-        strict (bool, optional): If set, the files and directories must exist when this function is called. Defaults to True.
+        weights: The path to the weights file.
+        config: The path to the config file. Should be a YAML file either ending in '.yaml' or '.yml'.
+        directory: The directory where the data is located and where the results will be saved the directory should have a 'reference' directory with the ground truth json in 'instances_default.json' and the matching images'.
+        output_directory: The path to the output directory where the results will be saved. If not supplied, it is assumed to be the same as the directory. Defaults to None.
+        local_directory: The path to the local directory where the ground truth json is located. If not supplied, it is assumed to be the same as the directory. Defaults to None.
+        tmp_directory: Path to a temporary directory to use as the output directory, where the contents will then be copied to the actual output directory at the end of the evaluation.
+        device: The PyTorch device string to use for inference. If not supplied, it is assumed to be cuda:0. Defaults to None.
+        pattern: The regex pattern to use for selecting the inference files. If not supplied, it is assumed to be the default pattern. Defaults to None.
+        store_all: If set, all results will be saved. Defaults to False.
+        dry_run: If set, the evaluation will not be run. If the command would be executed it is printed instead. Defaults to False.
+        execute: If set, the evaluation will be run, otherwise the command will be returned. Defaults to True.
+        strict: If set, the files and directories must exist when this function is called. Defaults to True.
 
     Returns:
         str: The (executed) command (to run).
+
     """
     # Fix paths 
     weights, config, directory, output_directory, local_directory, tmp_directory = [
@@ -68,7 +80,7 @@ def eval_model(
             assert os.path.exists(local_directory), f"Local directory not found: {local_directory}"
     do_transfer_results = False
     dst_dir = output_directory
-    if not tmp_directory is None:
+    if tmp_directory is not None:
         if not os.path.isdir(tmp_directory) and strict:
             if os.path.exists(tmp_directory):
                 raise FileExistsError(f"Specified {tmp_directory} already exists, and is not a directory.")
@@ -139,8 +151,8 @@ def eval_model(
 def eval_model_wrapper(
         params : dict, 
         execute : bool=True, 
-        device : Optional[str]=None, 
-        dry_run : Optional[bool]=None
+        device : str | None=None, 
+        dry_run : bool | None=None
     ) -> str:
     if device is not None:
         params.pop("device", None)
@@ -149,15 +161,15 @@ def eval_model_wrapper(
         print("Executing evaluation as dry run.")
     return eval_model(**params, execute=execute, device=device)
 
-def get_weights_in_directory(directory : str) -> List[str]:
-    """
-    Get the weights file in the directory. The weights may be stored in arbitrarily nested subdirectories.
+def get_weights_in_directory(directory : str) -> list[str]:
+    """Get the weights file in the directory. The weights may be stored in arbitrarily nested subdirectories.
 
     Args:
-        directory (str): The directory where weights are located.
+        directory: The directory where weights are located.
 
     Returns:
         str: The path to the best weight file.
+
     """
     # Check if the directory exists
     assert os.path.exists(directory) and os.path.isdir(directory), f"Directory not found: {directory}"
@@ -173,12 +185,12 @@ def get_weights_in_directory(directory : str) -> List[str]:
     
     return sorted(weight_files, key=os.path.getmtime)
 
-def get_gpus() -> List[str]:
-    """
-    Get the available GPUs.
+def get_gpus() -> list[str]:
+    """Get the available GPUs.
 
     Returns:
         list: The available GPUs.
+
     """
     # Get the GPU information
     gpu_info = subprocess.Popen("nvidia-smi --query-gpu=index --format=csv,noheader,nounits", shell=True, stdout=subprocess.PIPE).stdout.read().decode("utf-8")
@@ -187,23 +199,23 @@ def get_gpus() -> List[str]:
     return gpus
 
 def combine_result_csvs(
-        result_directories : List[str], 
+        result_directories : list[str], 
         dst_path : str, 
         dry_run : bool=False
     ) -> str:
-    """
-    Combines the result CSVs in the result directories. The result CSVs are assumed to be in the 'results' subdirectory of the result directories and named 'results.csv'.
+    """Combines the result CSVs in the result directories. The result CSVs are assumed to be in the 'results' subdirectory of the result directories and named 'results.csv'.
 
     The function simply creates a new csv file in the new directory with the combined results. The combined results contains all the rows from all the result CSVs, with a new column added: 'model'.
 
     The 'model' column is populated with the name of the model directory.
     
     Args:
-        result_directories (list of str): A list of result directories.
-        dst_path (str): The path of the combined results output CSV.
+        result_directories: A list of result directories.
+        dst_path: The path of the combined results output CSV.
 
     Returns:
         str: The path to the combined results CSV.
+
     """
     # Check if the destination is a directory
     if os.path.isdir(dst_path):
@@ -274,7 +286,7 @@ class DeferredCall:
     def __repr__(self):
         return str(self)
 
-def combine_result_csvs_wrapper(args : Union[List, Tuple, Dict], execute : bool=True, device : Any=None, **kwargs) -> str:
+def combine_result_csvs_wrapper(args : list | tuple | dict, execute : bool=True, device : Any=None, **kwargs) -> str:
     if isinstance(args, (list, tuple)):
         deferred_call = DeferredCall(combine_result_csvs, *args)
     elif isinstance(args, dict):
@@ -313,7 +325,7 @@ if __name__ == "__main__":
                 f"Error parsing extra arguments: `{' '.join(extra)}`. {e}\n\n"
                 f"{arg_parse.format_help()}"
         )
-    if not args.output is None and not args.soft:
+    if args.output is not None and not args.soft:
         assert os.path.exists(args.output) and os.path.isdir(args.output), f'Output directory not found: {args.output}'
     RESULT_DIR = args.output 
 
@@ -362,7 +374,7 @@ if __name__ == "__main__":
             # Get the result directory path for the current model and weight file
             this_weight_id_subdir = os.path.join(args.name, os.path.basename(model_directory), id)
             this_result_dir = os.path.join(RESULT_DIR, this_weight_id_subdir)
-            if not args.temporary_output_directory is None:
+            if args.temporary_output_directory is not None:
                 this_tmp_output_dir = os.path.join(os.path.expanduser(args.temporary_output_directory), this_weight_id_subdir)
             else:
                 this_tmp_output_dir = None
@@ -395,7 +407,7 @@ if __name__ == "__main__":
     all_result_directories = []
     [all_result_directories.extend(dirs) for dirs in result_directories.values()]
 
-    if not "job_name" in extra:
+    if "job_name" not in extra:
         extra.update({"job_name" : f'compare_models{"_" if args.name else ""}{args.name}'})
 
     runner = ExperimentRunner(eval_model_wrapper, all_eval_params, devices=args.device, dry_run=args.dry_run, slurm=args.slurm, slurm_params=read_slurm_params(**extra))

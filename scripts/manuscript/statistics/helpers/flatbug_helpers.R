@@ -284,7 +284,7 @@ get_data <- function(name, file="experiment_results_latex.tex") {
   if (!file.exists(file)) stop(str_c("Latex data file (", file, ") does not exist. Perhaps call `make_data_file`."))
   lines <- read_lines(file)
   SE <- find_group(name, lines)
-  return(lines[(SE[1] + 1):(SE[2] - 1)])
+  return:(SE[2] - 1)])
 }
 
 write_data <- function(name, data, file="experiment_results_latex.tex") {

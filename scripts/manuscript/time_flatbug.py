@@ -42,7 +42,7 @@ def time_model(size : str, files : list[str], device="cuda:0" if torch.cuda.is_a
             timings[os.path.basename(path)] = (start.elapsed_time(end) / 1000, instances, tuple(image.shape[1:])) 
             del image
     totals = list(map(sum, list(zip(*timings.values()))[:2]))
-    print('Found {} instances in {} images in {:.1f} seconds'.format(totals[1], len(tmpfiles), totals[0]))
+    print(f'Found {totals[1]} instances in {len(tmpfiles)} images in {totals[0]:.1f} seconds')
     
     del model, tmpfiles
     torch.cuda.empty_cache()
@@ -52,8 +52,7 @@ def time_model(size : str, files : list[str], device="cuda:0" if torch.cuda.is_a
 ### Plotting functions
 # --- A simple lowess implementation using only NumPy ---
 def lowess(x, y, frac=0.3):
-    """
-    A simple lowess smoother using a tricube weighting kernel.
+    """A simple lowess smoother using a tricube weighting kernel.
     x and y must be 1D arrays of the same length.
     frac is the fraction of points used for local regression.
     Returns an array of smoothed y-values.
@@ -98,8 +97,7 @@ def plot_results(results: dict[str, tuple[float, int, tuple[int, int]]],
                  scale_inv=lambda x: x ** 2,
                  min_area=5,
                  max_area=300):
-    """
-    Plots the scatter points for one model.
+    """Plots the scatter points for one model.
     
     results: dict mapping keys to (seconds, instances, (height, width))
     ax: matplotlib Axes object
@@ -112,6 +110,7 @@ def plot_results(results: dict[str, tuple[float, int, tuple[int, int]]],
         x: array of x-values (sqrt(pixel area))
         y: array of y-values (seconds)
         instances: list of instance counts
+
     """
     # Unpack data: seconds, instance count, (height, width)
     seconds, instances, dimensions = list(zip(*results.values()))

@@ -1,5 +1,5 @@
 batch: 8
-model: "yolov8m-seg.pt"
+model: "yolo26m-seg.pt"
 epochs: 500
 device: 0
 patience: 9999

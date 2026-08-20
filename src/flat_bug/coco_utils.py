@@ -1,9 +1,6 @@
-"""
-Evaluation functions for FlatBug datasets.
-"""
+"""Evaluation functions for FlatBug datasets."""
 
 import os
-from typing import Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -79,23 +76,17 @@ from flat_bug import logger
 #     }
 
 
-
-
-def fb_to_coco(
-        d: Dict, 
-        coco: Dict
-    ) -> Dict:
-    """
-    Converts a FlatBug dataset to a COCO dataset.
+def fb_to_coco(d: dict, coco: dict) -> dict:
+    """Convert a FlatBug dataset to a COCO dataset.
 
     Args:
-        d (`dict`): FlatBug dataset.
-        coco (`dict`): An instantiated COCO dataset or an empty dictionary.
+        d: FlatBug dataset.
+        coco: An instantiated COCO dataset or an empty dictionary.
 
     Returns:
-        out (`dict`): COCO dataset.
-    """
+        COCO dataset.
 
+    """
     if len(coco) == 0:
         image_id = 1
         object_id_offset = 0
@@ -134,10 +125,16 @@ def fb_to_coco(
         else:
             object_id_offset = coco["annotations"][-1]["id"] + 1
 
-    boxes, contours, confs, classes, scales = d["boxes"], d["contours"], d["confs"], d["classes"], d["scales"]
-    identifier, image_path = d["identifier"], d["image_path"]
-    image_width, image_height, mask_width, mask_height = d["image_width"], d["image_height"], d["mask_width"], d[
-        "mask_height"]
+    # classes, scales = d["classes"], d["scales"]
+    boxes, contours, confs = d["boxes"], d["contours"], d["confs"]
+    # identifier = d["identifier"]
+    image_path = d["image_path"]
+    image_width, image_height, mask_width, mask_height = (
+        d["image_width"],
+        d["image_height"],
+        d["mask_width"],
+        d["mask_height"],
+    )
 
     # Image
     image = {
@@ -148,16 +145,17 @@ def fb_to_coco(
         "license": 0,
         "flickr_url": "",
         "coco_url": "",
-        "date_captured": 0
+        "date_captured": 0,
     }
     coco["images"].append(image)
 
     # Boxes, contours, confs, classes, scales
     for i in range(len(boxes)):
-        box, contour, conf, class_, scale = boxes[i], contours[i], confs[i], classes[i], scales[i]
+        box, contour, conf = boxes[i], contours[i], confs[i]
+        # class_, scale = classes[i], scales[i]
         x1, y1, x2, y2 = box
-        x,y,w,h = x1, y1, x2 - x1, y2 - y1
-        box=[x,y,w,h]
+        x, y, w, h = x1, y1, x2 - x1, y2 - y1
+        box = [x, y, w, h]
 
         # Scale and restructure the contour
         m2i = [(mask_width - 1) / (image_width - 1), (mask_height - 1) / (image_height - 1)]  # Mask to image ratio
@@ -173,53 +171,51 @@ def fb_to_coco(
             "area": 0.0,
             "bbox": box,
             "iscrowd": 0,
-            "conf": conf
+            "conf": conf,
         }
         coco["annotations"].append(annotation)
 
     return coco
 
 
-def format_contour(c : List) -> np.ndarray:
-    """
-    Formats a contour to the OpenCV format.
+def format_contour(c: list) -> np.ndarray:
+    """Format a contour to the OpenCV format.
 
     Args:
-        c (`list`): Contour.
+        c: Contour.
 
     Returns:
-        out (`np.ndarray`): Formatted contour.
+        Formatted contour.
+
     """
     c = c[0]
     return np.array([[c[i], c[i + 1]] for i in range(0, len(c), 2)], dtype=np.int32)
 
 
 def contour_bbox(c: np.ndarray) -> np.ndarray:
-    """
-    Calculates the bounding box of a contour.
+    """Calculate the bounding box of a contour.
 
     Args:
-        c (`np.ndarray`): Contour.
+        c: Contour.
 
     Returns:
-        oyut (`np.ndarray`): Bounding box.
+        Bounding box.
+
     """
     return np.array([c[:, 0].min(), c[:, 1].min(), c[:, 0].max(), c[:, 1].max()])
 
 
-def split_annotations(
-        coco: dict, 
-        strip_directories: bool = True
-    ) -> Dict[str, dict]:
-    """
-    Splits COCO annotations by image ID.
+def split_annotations(coco: dict, strip_directories: bool = True) -> dict[str, list]:
+    """Split COCO annotations by image ID.
 
     Args:
-        coco (dict): COCO dataset.
-        strip_directories (`bool`, optional): Flag to indicate whether only the basename of the images should be included in the result. Defaults to True.
+        coco: COCO dataset.
+        strip_directories: Flag indicating whether only the basename of the images should be included in the result.
+            Defaults to `True`.
 
     Returns:
-        out (`Dict[str, dict]`): Dict of COCO datasets, split by image ID and keyed by image name.
+        `dict` of COCO datasets, split by image ID and keyed by image name.
+
     """
     img_id = np.array([i["image_id"] for i in coco["annotations"]])
     ids = np.unique(np.array([i["id"] for i in coco["images"]]))
@@ -230,38 +226,38 @@ def split_annotations(
             coco["images"][i]["file_name"] = os.path.basename(coco["images"][i]["file_name"])
 
     result = {coco["images"][id - 1]["file_name"]: [coco["annotations"][i] for i in g] for id, g in zip(ids, groups)}
-    
+
     # Ensure that all images are included in the result, even if they have no annotations/predictions
     for i in range(len(coco["images"])):
         image_name = coco["images"][i]["file_name"]
         if image_name not in result:
             result[image_name] = []
-    
+
     return result
 
 
-def annotations_2_contours(annotations: Dict[str, dict]) -> Dict[str, List[np.array]]:
-    """
-    Converts COCO annotations to contours.
+def annotations_2_contours(annotations: dict[str, dict]) -> dict[str, list[np.ndarray]]:
+    """Convert COCO annotations to contours.
 
     Args:
-        annotations (`Dict[str, dict]`): COCO annotations.
+        annotations: COCO annotations.
 
     Returns:
-        out (`Dict[str, List[np.array]]`): Contours.
+        Contours.
+
     """
     return {k: [format_contour(i["segmentation"]) for i in v] for k, v in annotations.items()}
 
 
-def contour_area(c: np.ndarray) -> np.ndarray:
-    """
-    Calculates the area of a contour.
+def contour_area(c: np.ndarray):
+    """Calculate the area of a contour.
 
     Args:
-        c (`np.ndarray`): Contour of shape (n, 2).
+        c: Contour of shape (n, 2).
 
     Returns:
-        out (`np.array[np.int32]`): Scalar area of the contour of shape (1,).
+        Scalar area of the contour of shape (1,).
+
     """
     # return cv2.contourArea(c)
     min_xy = c.min(axis=0)
@@ -272,37 +268,33 @@ def contour_area(c: np.ndarray) -> np.ndarray:
     return np.sum(mask, dtype=np.int64)
 
 
-def annotations_to_numpy(annotations: List[Dict[str, Union[int, List[int]]]]) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Converts COCO annotations to NumPy arrays.
+def annotations_to_numpy(annotations: list[dict[str, list[int]]]) -> tuple[np.ndarray, list[np.ndarray]]:
+    """Convert COCO annotations to NumPy arrays.
 
     Args:
-        annotations (`List[Dict[str, Union[int, List[int]]]]`): COCO annotations.
+        annotations: COCO annotations.
 
     Returns:
-        out (`Tuple[np.ndarray, np.ndarray]`): Bounding boxes and contours.
+        Bounding boxes and contours.
+
     """
     contours = [format_contour(i["segmentation"]) for i in annotations]
     bboxes = np.array([contour_bbox(c) for c in contours])
     return bboxes, contours
 
-def filter_coco(
-        coco : dict, 
-        confidence : Optional[float]=None, 
-        area : Optional[int]=None, 
-        verbose : bool=False
-    ) -> dict:
-    """
-    Filters COCO annotations by confidence.
+
+def filter_coco(coco: dict, confidence: float | None = None, area: int | None = None, verbose: bool = False) -> dict:
+    """Filter COCO annotations by confidence.
 
     Args:
-        coco (`dict`): COCO dataset.
-        confidence (`Optional[float]`, optional): Confidence threshold. Defaults to None; no threshold.
-        area (`Optional[int]`, optional): Area threshold. Defaults to None; no threshold.
-        verbose (`bool`, optional): Verbose mode. Defaults to False.
+        coco: COCO dataset.
+        confidence: Confidence threshold. Defaults to None; no threshold.
+        area: Area threshold. Defaults to None; no threshold.
+        verbose: Verbose mode. Defaults to False.
 
     Returns:
-        out (`dict`): Filtered COCO dataset.
+        Filtered COCO dataset.
+
     """
     filtered_annotations = []
     for a in coco["annotations"]:
@@ -322,5 +314,5 @@ def filter_coco(
         "licenses": coco["licenses"],
         "images": coco["images"],
         "annotations": filtered_annotations,
-        "categories": coco["categories"]
+        "categories": coco["categories"],
     }

@@ -1,0 +1,17 @@
+# noqa: D100
+import os
+
+if __name__ == "__main__":
+    ASSET_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets"))
+    prediction_assets = [
+        os.path.join(ASSET_DIR, f)
+        for f in os.listdir(ASSET_DIR)
+        if f.startswith("pyramid_") or f.startswith("single_scale_")
+    ]
+
+    print("-------------------------- Restoring test assets --------------------------")
+    for asset in prediction_assets:
+        print("\t", asset)
+        with open(asset, "w") as f:
+            f.write("ERDA Pointer")
+    print("-------------------------- Test assets restored! --------------------------")
