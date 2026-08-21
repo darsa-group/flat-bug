@@ -32,6 +32,7 @@ import re
 import uuid
 
 import torch
+import torch._dynamo
 import torch.nn.functional as F  # noqa: N812
 from torchvision.io import ImageReadMode, decode_image
 from tqdm.auto import tqdm
@@ -44,6 +45,17 @@ from flat_bug.mask2former.data import IMAGENET_MEAN, IMAGENET_STD
 from flat_bug.mask2former.train import DEFAULT_CHECKPOINT, build_model
 from flat_bug.predictor import TensorPredictions
 from flat_bug.predictor import _executor as prediction_executor
+
+# Several flatbug geometry helpers (`poly_area`, the mask/polygon overlap kernels)
+# are `@torch.compile(fullgraph=True, mode="max-autotune-no-cudagraphs")`. On CPU that
+# needs a C++ toolchain *with Python development headers*, which plenty of clusters
+# lack - GHPC compiles fine but has no Python.h. Without this, serializing results
+# dies with a CppCompileError after the model has already done all the work. Falling
+# back to eager costs a little speed and loses nothing else.
+try:
+    torch._dynamo.config.suppress_errors = True
+except AttributeError:  # pragma: no cover - depends on the torch version
+    logger.debug("torch._dynamo.config.suppress_errors unavailable; compile errors will propagate")
 
 DEFAULT_IMAGE_PATTERN = r"[^/]*\.([jJ][pP][eE]?[gG]|[pP][nN][gG])$"
 
