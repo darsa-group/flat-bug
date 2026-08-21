@@ -48,6 +48,7 @@ out_structure = """
 def merge_cocos(files, out_file, delete=False):
     im_id = 1
     an_id = 1
+    # An empty split must still yield a readable COCO document, not the literal `null`.
     out = None
     for c in files:
         with open(c) as f:
@@ -70,6 +71,15 @@ def merge_cocos(files, out_file, delete=False):
         else:
             out["images"].extend(coco["images"])
             out["annotations"].extend(coco["annotations"])
+    if out is None:
+        logging.warning(f"No annotations to merge into {out_file}")
+        out = {
+            "licenses": [],
+            "info": {},
+            "images": [],
+            "annotations": [],
+            "categories": [{"id": 1, "name": "insect", "supercategory": ""}],
+        }
     with open(out_file, "w") as f:
         json.dump(out, f)
 
@@ -123,7 +133,7 @@ def main():
     ))
 
     args_parse.add_argument(
-        "-p", "--validation-proportion", dest="validation_proportion",
+        "-p", "--validation-proportion", dest="validation_proportion", type=float,
         help="the proportion of data allocated to the validation set, based on md5 (pseudorandom)",
         default=0.15
     )
@@ -239,7 +249,7 @@ def main():
                     os.path.join(tmp_dir, OUT_COCO_CONVERTER, "val", f"{d}" + JSON_FILE_BASENAME),
                 )
 
-            if len(validation_files) == 0:
+            if len(training_files) == 0:
                 logging.warning(f"No train files for {d}")
             else:
                 prepare_coco_file(

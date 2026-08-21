@@ -54,6 +54,7 @@ fb_tune = "flat_bug.cli.fb_tune:main"
 fb_prepare_data = "flat_bug.cli.fb_prepare_data:main"
 fb_clone_data = "flat_bug.cli.fb_clone_data:main"
 fb_train_m2f = "flat_bug.mask2former.train:main"
+fb_predict_m2f = "flat_bug.mask2former.predict:main"
 
 [dependency-groups]
 dev = [
