@@ -17,6 +17,9 @@
 #   EXCLUDE_DATASETS space-separated sub-dataset prefixes to hold out
 #   RESUME           checkpoint to resume from
 #   MAX_IMAGES       use only the first N images per split (shakedown runs)
+#   VAL_SAMPLES      validation samples per epoch (default 2000; -1 for all).
+#                    Validation is data-loading bound, so this dominates epoch time
+#                    at large tile sizes - 2000 samples at 1024 cost 25 of 81 min.
 #   RUN_EVAL=0       skip the predict+evaluate stage
 
 set -euo pipefail
@@ -69,6 +72,9 @@ TRAIN_CMD=(fb_train_m2f
 # statement of a script aborts it, which is a trap for anyone reordering these.
 if [[ -n "${MAX_IMAGES:-}" ]]; then
     TRAIN_CMD+=(--max-images "${MAX_IMAGES}")
+fi
+if [[ -n "${VAL_SAMPLES:-}" ]]; then
+    TRAIN_CMD+=(--val-samples "${VAL_SAMPLES}")
 fi
 if [[ -n "${BACKGROUND_DIR:-}" ]]; then
     TRAIN_CMD+=(--background-dir "${BACKGROUND_DIR}")
