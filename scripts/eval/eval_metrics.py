@@ -16,7 +16,7 @@ Adds a size-stratified recall breakdown, which is what tells you whether misses
 are concentrated in objects too large for a single tile.
 
 Usage:
-    eval_metrics.py <eval-dir> [--output results.csv] [--bootstrap 200]
+    eval_metrics.py <eval-dir> [--output somewhere/results.csv] [--bootstrap 200]
 """
 
 from __future__ import annotations
@@ -32,14 +32,31 @@ import pandas as pd
 SIZE_BINS = [0, 32, 64, 128, 256, 512, np.inf]
 
 
+#: Outputs that live in the same directory but are not per-image results.
+NOT_PER_IMAGE = ("combined_results", "results.csv")
+REQUIRED_COLUMNS = ("idx_1", "idx_2", "IoU", "contourArea_1", "contourArea_2")
+
+
 def load(eval_dir: str) -> pd.DataFrame:
-    """Read the per-image CSVs, skipping the combined one, as the R script does."""
-    files = [f for f in sorted(glob.glob(os.path.join(eval_dir, "*.csv"))) if "combined_results" not in f]
+    """Read the per-image CSVs written by `fb_evaluate`.
+
+    Skips this script's own `results.csv` as well as `combined_results.csv`: without
+    that, a second run globs its own output, and because the file has no `idx_1`
+    column the concat fills NaN - and `NaN != -1` is True, silently inventing a
+    sub-dataset with perfect precision and recall.
+    """
+    files = [
+        f for f in sorted(glob.glob(os.path.join(eval_dir, "*.csv")))
+        if not any(skip in os.path.basename(f) for skip in NOT_PER_IMAGE)
+    ]
     if not files:
         raise FileNotFoundError(f"No per-image result CSVs in {eval_dir}")
     frames = []
     for path in files:
         frame = pd.read_csv(path, sep=";", usecols=lambda c: not c.startswith("contour_"))
+        missing = [c for c in REQUIRED_COLUMNS if c not in frame.columns]
+        if missing:
+            raise ValueError(f"{path} is not an fb_evaluate result file (no {', '.join(missing)})")
         frame["filename"] = os.path.basename(path)
         frames.append(frame)
     data = pd.concat(frames, ignore_index=True)
@@ -81,7 +98,11 @@ def summarize(data: pd.DataFrame) -> pd.DataFrame:
 def main() -> None:  # noqa: D103
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("eval_dir", help="Directory of per-image CSVs written by fb_evaluate")
-    parser.add_argument("-o", "--output", default=None, help="Where to write results.csv")
+    parser.add_argument(
+        "-o", "--output", default=None,
+        help="Write results.csv here. Do NOT place it inside the eval directory: "
+             "eval-metrics.R globs *.csv there and would read it back as results.",
+    )
     parser.add_argument("--bootstrap", type=int, default=200, help="Bootstrap resamples for the CIs")
     args = parser.parse_args()
 
@@ -108,9 +129,9 @@ def main() -> None:  # noqa: D103
     print(f"\nper sub-dataset ({len(results)} datasets):")
     print(results.sort_values("recall").to_string(index=False, float_format=lambda v: f"{v:.3f}"))
 
-    out = args.output or os.path.join(args.eval_dir, "results.csv")
-    results.to_csv(out, index=False)
-    print(f"\nwrote {out}")
+    if args.output:
+        results.to_csv(args.output, index=False)
+        print(f"\nwrote {args.output}")
 
 
 if __name__ == "__main__":
