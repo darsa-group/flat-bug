@@ -18,7 +18,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader, Subset
 
-from flat_bug import logger
+from flat_bug import logger, set_log_level
 from flat_bug.mask2former.data import (
     BackgroundMixDataset,
     FlatBugM2FDataset,
@@ -178,6 +178,7 @@ def main() -> None:  # noqa: D103
     parser.add_argument("--warmup", type=int, default=500, help="Linear LR warmup steps")
     parser.add_argument("--clip-grad", type=float, default=1.0, help="Gradient-norm clip; 0 disables")
     parser.add_argument("--resume", default=None, help="Checkpoint to resume weights and epoch from")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Only warn; suppress per-step progress")
     parser.add_argument(
         "--max-images", type=int, default=None, help="Keep only the first N images per split"
     )
@@ -189,6 +190,9 @@ def main() -> None:  # noqa: D103
     )
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
+    # A trainer that runs for hours should say what it is doing; flatbug's logger
+    # defaults to WARNING, which would make the whole run silent.
+    set_log_level("WARNING" if args.quiet else "INFO")
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

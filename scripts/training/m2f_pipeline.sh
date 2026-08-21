@@ -74,7 +74,7 @@ fi
 {
     echo "name: ${NAME}"
     echo "date: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-    echo "commit: $(git -C ~/flat-bug rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    echo "commit: $(git -C "$(dirname "$(readlink -f "$0")")" rev-parse --short HEAD 2>/dev/null || echo unknown)"
     echo "job: ${SLURM_JOB_ID:-none}"
     echo "node: $(hostname)"
     echo "gpu: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null | head -1)"

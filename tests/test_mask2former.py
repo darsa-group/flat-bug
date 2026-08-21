@@ -7,6 +7,7 @@ per-query decoding, the tiling arithmetic and the conversion to
 """
 
 import os
+import random
 import tempfile
 
 import cv2
@@ -310,7 +311,14 @@ def test_augmented_dataset_yields_mask2former_batches():  # noqa: D103
 
 
 def test_augmentation_actually_varies_between_reads():
-    """A deterministic pipeline here would mean the augmentations silently did nothing."""
+    """A deterministic pipeline here would mean the augmentations silently did nothing.
+
+    The augmentations draw from the global `random`/`numpy` state, so seed both:
+    otherwise the outcome depends on whichever tests ran first.
+    """
+    random.seed(0)
+    np.random.seed(0)
+    torch.manual_seed(0)
     with tempfile.TemporaryDirectory() as tmp:
         _write_prepared_dataset(tmp, size=256)
         dataset = _augmented(tmp, "train")
