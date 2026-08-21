@@ -35,10 +35,16 @@ WORKERS=${WORKERS:-8}
 MAX_INSTANCES=${MAX_INSTANCES:-100}
 RUN_EVAL=${RUN_EVAL:-1}
 
-# transformers is an optional extra, so fail loudly rather than 40 minutes in.
+# Optional extras, checked up front: discovering a missing import *after* an hour
+# of GPU work - which is exactly how this was found - wastes the allocation.
 python - <<'PY' || { echo "ERROR: install the extra first:  pip install -e '.[mask2former]'" >&2; exit 1; }
 import transformers  # noqa: F401
 PY
+if [[ "${RUN_EVAL:-1}" == "1" ]]; then
+    python - <<'PY' || { echo "ERROR: fb_evaluate --combine needs pandas:  pip install -e '.[eval]'" >&2; exit 1; }
+import pandas  # noqa: F401
+PY
+fi
 
 if [[ "${PREPARE_DATA:-0}" == "1" ]]; then
     echo "== Cloning and preparing data =="
