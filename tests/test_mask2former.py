@@ -453,3 +453,29 @@ def test_max_images_truncates_a_split():  # noqa: D103
         assert len(_augmented(tmp, "train").im_files) == 4
         limited = build_augmented_dataset(tmp, split="train", image_size=64, batch_size=1, max_images=2)
         assert len(limited.im_files) == 2
+
+
+def test_image_sampling_spans_sub_datasets():
+    """Alphabetical truncation samples the first sub-datasets only, which skews evaluation."""
+    from flat_bug.mask2former.predict import _list_images
+
+    with tempfile.TemporaryDirectory() as tmp:
+        for prefix in ("ALUS", "BIOSCAN", "cao2022", "sticky-pi", "wehrli"):
+            for i in range(10):
+                cv2.imwrite(os.path.join(tmp, f"{prefix}_{i:03d}.jpg"), np.zeros((8, 8, 3), np.uint8))
+
+        def prefixes(files):
+            return {os.path.basename(f).split("_")[0] for f in files}
+
+        alphabetical = _list_images(tmp, r".*\.jpg$", False, 10)
+        assert len(alphabetical) == 10
+        assert len(prefixes(alphabetical)) == 1, "truncation should collapse to one sub-dataset"
+
+        sampled = _list_images(tmp, r".*\.jpg$", False, 10, sample_seed=0)
+        assert len(sampled) == 10
+        assert len(prefixes(sampled)) >= 3, "a random sample should span sub-datasets"
+        # Reproducible, and still ordered.
+        assert sampled == _list_images(tmp, r".*\.jpg$", False, 10, sample_seed=0)
+        assert sampled == sorted(sampled)
+        # Asking for everything returns everything, sampling or not.
+        assert len(_list_images(tmp, r".*\.jpg$", False, 50, sample_seed=0)) == 50

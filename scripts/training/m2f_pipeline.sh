@@ -20,6 +20,7 @@
 #   VAL_SAMPLES      validation samples per epoch (default 2000; -1 for all).
 #                    Validation is data-loading bound, so this dominates epoch time
 #                    at large tile sizes - 2000 samples at 1024 cost 25 of 81 min.
+#   EVAL_SEED        seed for the random evaluation sample (default 0)
 #   RUN_EVAL=0       skip the predict+evaluate stage
 
 set -euo pipefail
@@ -119,6 +120,7 @@ fb_predict_m2f \
     -o "${OUT}/preds" \
     -w "${OUT}/best.pt" \
     -n "${N_EVAL}" \
+    --sample-seed "${EVAL_SEED:-0}" \
     --batch "${BATCH}" \
     --no-crops --no-overviews \
     --device cuda:0

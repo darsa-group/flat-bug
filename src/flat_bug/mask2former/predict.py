@@ -28,6 +28,7 @@ import argparse
 import glob
 import json
 import os
+import random
 import re
 import uuid
 
@@ -383,8 +384,17 @@ class M2FPredictor:
         return predictions
 
 
-def _list_images(input: str, pattern: str, recursive: bool, max_images: int | None) -> list[str]:
-    """Resolve a file or a directory into a sorted list of image paths."""
+def _list_images(
+    input: str, pattern: str, recursive: bool, max_images: int | None, sample_seed: int | None = None
+) -> list[str]:
+    """Resolve a file or a directory into a sorted list of image paths.
+
+    ``max_images`` truncates alphabetically, matching ``fb_predict``. That is a poor
+    sample for evaluation: `fb_prepare_data` prefixes every file with its sub-dataset,
+    so the first N images come from the alphabetically first few sub-datasets only -
+    scoring 100 of ours covered 4 of 33. ``sample_seed`` takes a reproducible random
+    subset across all of them instead.
+    """
     if os.path.isfile(input):
         return [input]
     if not os.path.isdir(input):
@@ -395,7 +405,12 @@ def _list_images(input: str, pattern: str, recursive: bool, max_images: int | No
     files = sorted(f for f in candidates if os.path.isfile(f) and matcher.search(f.replace(os.sep, "/")))
     if not files:
         raise FileNotFoundError(f"No images matching '{pattern}' found in {input}")
-    return files[:max_images] if max_images else files
+    if not max_images or max_images >= len(files):
+        return files
+    if sample_seed is None:
+        return files[:max_images]
+    indices = random.Random(sample_seed).sample(range(len(files)), max_images)
+    return [files[i] for i in sorted(indices)]
 
 
 def cli_args() -> dict:  # noqa: D103
@@ -427,6 +442,10 @@ def cli_args() -> dict:  # noqa: D103
     parser.add_argument(
         "-n", "--max-images", dest="max_images", type=int, default=None,
         help="Maximum number of images to process. Truncates in alphabetical order."
+    )
+    parser.add_argument(
+        "--sample-seed", dest="sample_seed", type=int, default=None,
+        help="With -n, take a reproducible random sample instead of the first N alphabetically."
     )
     parser.add_argument(
         "-R", "--recursive", action="store_true",
@@ -502,6 +521,7 @@ def predict(
     checkpoint: str | None = None,
     input_pattern: str = DEFAULT_IMAGE_PATTERN,
     max_images: int | None = None,
+    sample_seed: int | None = None,
     recursive: bool = False,
     device: str = "auto",
     dtype: str | None = None,
@@ -536,7 +556,7 @@ def predict(
         dtype = "float16" if "cuda" in device else "float32"
     torch_dtype = getattr(torch, dtype)
 
-    files = _list_images(os.path.normpath(input), input_pattern, recursive, max_images)
+    files = _list_images(os.path.normpath(input), input_pattern, recursive, max_images, sample_seed)
     output_dir = os.path.normpath(output_dir)
     os.makedirs(output_dir, exist_ok=True)
     if id is None:
