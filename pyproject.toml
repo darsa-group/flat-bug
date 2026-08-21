@@ -38,6 +38,9 @@ cloud_datasets = [
     "boto3>=1.40",
     "cvat_sdk>=2.47"
 ]
+mask2former = [
+    "transformers>=4.44",
+]
 
 [project.urls]
 "Homepage" = "https://github.com/darsa-group/flat-bug"
@@ -50,6 +53,7 @@ fb_evaluate = "flat_bug.cli.fb_eval:main"
 fb_tune = "flat_bug.cli.fb_tune:main"
 fb_prepare_data = "flat_bug.cli.fb_prepare_data:main"
 fb_clone_data = "flat_bug.cli.fb_clone_data:main"
+fb_train_m2f = "flat_bug.mask2former.train:main"
 
 [dependency-groups]
 dev = [
