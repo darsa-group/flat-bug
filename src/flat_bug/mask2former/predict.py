@@ -46,16 +46,21 @@ from flat_bug.mask2former.train import DEFAULT_CHECKPOINT, build_model
 from flat_bug.predictor import TensorPredictions
 from flat_bug.predictor import _executor as prediction_executor
 
-# Several flatbug geometry helpers (`poly_area`, the mask/polygon overlap kernels)
-# are `@torch.compile(fullgraph=True, mode="max-autotune-no-cudagraphs")`. On CPU that
-# needs a C++ toolchain *with Python development headers*, which plenty of clusters
-# lack - GHPC compiles fine but has no Python.h. Without this, serializing results
-# dies with a CppCompileError after the model has already done all the work. Falling
-# back to eager costs a little speed and loses nothing else.
+# Several flatbug geometry helpers (`poly_area`, the mask overlap kernels) are
+# `@torch.compile(fullgraph=True, mode="max-autotune-no-cudagraphs")`. Compiling those
+# for CPU needs a C++ toolchain *with Python development headers*, which plenty of
+# clusters lack - GHPC has g++ but no Python.h - and serializing results then dies
+# with a CppCompileError after the model has already done all the work.
+#
+# `suppress_errors` does NOT help: `fullgraph=True` means "raise rather than fall
+# back", so the backend failure propagates regardless. Disabling dynamo for this
+# process is what actually works. Nothing here is on a hot path - this predictor
+# de-duplicates with shapely polygons, not the compiled mask kernels - so the only
+# cost is a slightly slower `poly_area` during serialization.
 try:
-    torch._dynamo.config.suppress_errors = True
+    torch._dynamo.config.disable = True
 except AttributeError:  # pragma: no cover - depends on the torch version
-    logger.debug("torch._dynamo.config.suppress_errors unavailable; compile errors will propagate")
+    logger.debug("torch._dynamo.config.disable unavailable; compile errors may propagate")
 
 DEFAULT_IMAGE_PATTERN = r"[^/]*\.([jJ][pP][eE]?[gG]|[pP][nN][gG])$"
 
