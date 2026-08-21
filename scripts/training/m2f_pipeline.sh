@@ -16,6 +16,7 @@
 #   BACKGROUND_DIR   insect-free images to mix in  (default: none)
 #   EXCLUDE_DATASETS space-separated sub-dataset prefixes to hold out
 #   RESUME           checkpoint to resume from
+#   MAX_IMAGES       use only the first N images per split (shakedown runs)
 #   RUN_EVAL=0       skip the predict+evaluate stage
 
 set -euo pipefail
@@ -60,6 +61,9 @@ TRAIN_CMD=(fb_train_m2f
 )
 # `if` rather than `test && append`: under `set -e` a failing test as the last
 # statement of a script aborts it, which is a trap for anyone reordering these.
+if [[ -n "${MAX_IMAGES:-}" ]]; then
+    TRAIN_CMD+=(--max-images "${MAX_IMAGES}")
+fi
 if [[ -n "${BACKGROUND_DIR:-}" ]]; then
     TRAIN_CMD+=(--background-dir "${BACKGROUND_DIR}")
 fi
