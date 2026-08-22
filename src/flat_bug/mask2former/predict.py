@@ -276,8 +276,12 @@ class M2FPredictor:
         while scale <= 0.9:  # cut off near 1 so we do not run a near-native scale twice
             ladder.append(scale)
             scale /= scale_increment
-        if scale != 1:
-            ladder.append(1.0)
+        # Native scale is always run. Guarding this with `if scale != 1` (as
+        # `Predictor.pyramid_predictions` does) drops it exactly when the geometric
+        # ladder lands on 1.0 - i.e. whenever max(H, W) == tile_size * 1.5**k. For a
+        # 1024 tile that is 1536/2304/3456/5184, and 5184x3456 is a stock DSLR size.
+        # The loop only appends values <= 0.9, so 1.0 is never a duplicate.
+        ladder.append(1.0)
         return ladder
 
     def _detect_at_scale(

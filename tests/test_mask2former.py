@@ -222,13 +222,37 @@ def test_scale_ladder_matches_the_yolo_pyramid():
     assert predictor.scales(4000, single_scale=True) == [1.0]
 
 
-def test_pyramid_merges_overlapping_detections_across_scales():
-    """Every scale sees the same object, so stitching plus NMS must not multiply it."""
+@pytest.mark.parametrize("power", [1, 2, 3, 4])
+def test_native_scale_survives_an_exact_geometric_ladder(power):
+    """The ladder must include 1.0 even when it lands there exactly.
+
+    With `scale_increment = 2/3`, an image whose largest side is
+    `tile_size * 1.5**k` makes the ladder arrive at precisely 1.0, and a
+    `if scale != 1` guard then drops native scale entirely - so the finest level
+    is 0.667 and small objects are never seen at full resolution. For a 1024 tile
+    that is 1536/2304/3456/5184, and 5184x3456 is a stock DSLR resolution.
+    """
+    predictor = _predictor()
+    max_dim = round(TILE_SIZE * 1.5**power)
+    ladder = predictor.scales(max_dim)
+    assert 1.0 in ladder, f"native scale dropped for max_dim={max_dim}"
+    assert ladder[-1] == 1.0
+    assert len(ladder) == len(set(ladder)), "no duplicated scales"
+
+
+def test_pyramid_never_finds_less_than_native_scale_alone():
+    """The pyramid runs native scale *and* coarser ones, so it cannot find fewer.
+
+    This previously asserted the opposite, which only held because the ladder was
+    silently dropping native scale - see
+    `test_native_scale_survives_an_exact_geometric_ladder`.
+    """
     predictor = _predictor()
     image = torch.zeros((3, 96, 96), dtype=torch.uint8)
     multi = predictor(image, path="synthetic.jpg")
     single = predictor(image, path="synthetic.jpg", single_scale=True)
-    assert len(multi) < len(single), "the pyramid should de-duplicate, not accumulate"
+    assert 1.0 in predictor.scales(96)
+    assert len(multi) >= len(single)
     for box in multi.boxes:
         x1, y1, x2, y2 = box.tolist()
         assert 0 <= x1 < x2 <= 96
