@@ -251,7 +251,14 @@ def main() -> None:  # noqa: D103
         checkpoint = torch.load(args.resume, map_location="cpu", weights_only=True)
         model.load_state_dict(checkpoint["model"])
         start_epoch = int(checkpoint.get("epoch", -1)) + 1
-        logger.info(f"resumed {args.resume} at epoch {start_epoch}")
+        # Restoring Adam's moments matters: without them a resume restarts the
+        # optimizer cold, which shows up as a loss spike for the first few hundred
+        # steps. Older checkpoints predate this, hence the guard.
+        if "optimizer" in checkpoint:
+            optimizer.load_state_dict(checkpoint["optimizer"])
+            logger.info(f"resumed {args.resume} at epoch {start_epoch} (with optimizer state)")
+        else:
+            logger.warning(f"resumed {args.resume} at epoch {start_epoch}; no optimizer state in checkpoint")
 
     amp = not args.no_amp
     total_steps = max(1, len(train_loader) * (args.epochs - start_epoch))
@@ -275,10 +282,18 @@ def main() -> None:  # noqa: D103
         if score < best:
             best = score
             ckpt = out_dir / "best.pt"
-            torch.save({"model": model.state_dict(), "epoch": epoch, "score": score, **meta}, ckpt)
+            torch.save(
+                {"model": model.state_dict(), "optimizer": optimizer.state_dict(),
+                 "epoch": epoch, "score": score, **meta},
+                ckpt,
+            )
             logger.info(f"saved {ckpt}")
 
-    torch.save({"model": model.state_dict(), "epoch": args.epochs - 1, **meta}, out_dir / "last.pt")
+    torch.save(
+        {"model": model.state_dict(), "optimizer": optimizer.state_dict(),
+         "epoch": args.epochs - 1, **meta},
+        out_dir / "last.pt",
+    )
 
 
 if __name__ == "__main__":
