@@ -40,16 +40,37 @@ import numpy as np
 
 
 # ----------------------------------------------------------------- backgrounds
-def load_background_pool(data_dir: str, split: str, n: int, tile: int, rng: random.Random) -> list[np.ndarray]:
-    """Cut empty patches from real images, guided by the ground-truth polygons."""
+def dataset_of(path: str) -> str:
+    """`fb_prepare_data` prefixes every file with its CVAT sub-dataset name."""
+    return os.path.basename(path).split("_")[0]
+
+
+def load_background_pool(
+    data_dir: str, split: str, per_dataset: int, tile: int, rng: random.Random, clearance: int = 32
+) -> dict[str, list[np.ndarray]]:
+    """Cut empty patches from real images, keyed by sub-dataset.
+
+    A patch is accepted only if it contains *zero* annotated pixels once the
+    ground-truth masks are dilated by `clearance`. The earlier version allowed a
+    small mean occupancy, which let genuinely unlabelled animals through - and an
+    unlabelled insect in a background is a false negative baked into the labels.
+    This cannot catch animals the *source annotation* missed entirely - measured
+    at 6/114 patches (12 insects) over the flat-bug training split. Pass
+    `--screen-weights` to run flatbug over the candidates and drop those too.
+    """
     base = os.path.join(data_dir, "insects")
     base = base if os.path.isdir(base) else data_dir
     images = sorted(glob.glob(os.path.join(base, "images", split, "*.jpg")))
     rng.shuffle(images)
-    patches: list[np.ndarray] = []
+    pool: dict[str, list[np.ndarray]] = {}
+    kernel = np.ones((clearance * 2 + 1, clearance * 2 + 1), np.uint8)
+
     for path in images:
-        if len(patches) >= n:
-            break
+        ds = dataset_of(path)
+        if len(pool.get(ds, [])) >= per_dataset:
+            continue
+        if all(len(v) >= per_dataset for v in pool.values()) and len(pool) > 12:
+            pass  # keep going; other datasets may still be unfilled
         image = cv2.imread(path)
         if image is None or min(image.shape[:2]) < tile:
             continue
@@ -63,12 +84,14 @@ def load_background_pool(data_dir: str, split: str, n: int, tile: int, rng: rand
                     continue
                 poly = (np.asarray(vals[1:], float).reshape(-1, 2) * [w, h]).astype(np.int32)
                 cv2.fillPoly(occupied, [poly], 255)
-        for _ in range(12):                      # a few tries per image
+        if occupied.any():
+            occupied = cv2.dilate(occupied, kernel)
+        for _ in range(15):
             x = rng.randint(0, w - tile); y = rng.randint(0, h - tile)
-            if occupied[y:y + tile, x:x + tile].mean() < 1.0:   # essentially empty
-                patches.append(image[y:y + tile, x:x + tile].copy())
+            if not occupied[y:y + tile, x:x + tile].any():       # strictly empty
+                pool.setdefault(ds, []).append(image[y:y + tile, x:x + tile].copy())
                 break
-    return patches
+    return pool
 
 
 # ------------------------------------------------------------------- instances
@@ -165,10 +188,63 @@ def find_touching_position(
 
 
 # ---------------------------------------------------------------------- scenes
-def compose(bank: list[str], backgrounds: list[np.ndarray], args, rng: random.Random):
+def screen_backgrounds(
+    pool: dict[str, list[np.ndarray]], weights: str, device: str, keep: int
+) -> dict[str, list[np.ndarray]]:
+    """Drop candidate patches in which flatbug finds an animal.
+
+    The zero-annotated-pixel rule in `load_background_pool` only trusts the
+    source labels. Datasets that annotate one focal specimen per image (ArTaxOr)
+    or that under-annotate dense traps (AMI-traps, PeMaToEuroPep) leak real
+    animals into "empty" patches, and an unlabelled animal in a background is a
+    false negative baked into the training target - precisely the wrong lesson
+    for a model we are trying to make *more* willing to split neighbours.
+    """
+    import tempfile
+
+    from flat_bug.predictor import Predictor  # heavy + needs a GPU; import only when asked
+
+    predictor = Predictor(weights, device=device)
+    cleaned: dict[str, list[np.ndarray]] = {}
+    dropped = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        for ds, patches in pool.items():
+            for i, patch in enumerate(patches):
+                if len(cleaned.get(ds, [])) >= keep:
+                    break
+                path = os.path.join(tmp, f"{ds}_{i}.jpg")
+                cv2.imwrite(path, patch, [cv2.IMWRITE_JPEG_QUALITY, 95])
+                if len(predictor.pyramid_predictions(path, single_scale=True).boxes) == 0:
+                    cleaned.setdefault(ds, []).append(patch)
+                else:
+                    dropped += 1
+    print(f"screened backgrounds: dropped {dropped} contaminated patches, "
+          f"{sum(len(v) for v in cleaned.values())} kept across {len(cleaned)} sub-datasets")
+    return cleaned
+
+
+def compose(bank_by_ds: dict[str, list[str]], backgrounds: dict[str, list[np.ndarray]],
+            args, rng: random.Random):
+    """Build one scene. Instances and background come from the same sub-dataset.
+
+    Mixing them would paste an EntoScan specimen from a white well-plate onto a
+    green pan-trap lid: the illumination, colour temperature and focus all
+    disagree, making the composite trivially separable from a real image, and a
+    model can learn that seam instead of the animal's outline.
+    """
     tile = args.tile_size
-    canvas = (backgrounds[rng.randrange(len(backgrounds))].copy() if backgrounds
-              else np.full((tile, tile, 3), 235, np.uint8))
+    eligible = sorted(set(bank_by_ds) & set(backgrounds)) if not args.mix_backgrounds else sorted(bank_by_ds)
+    if not eligible:
+        raise RuntimeError("No sub-dataset has both crops and backgrounds; use --mix-backgrounds")
+    # Uniform over sub-datasets, not over patches, so a dataset with many usable
+    # backgrounds (pan-trap lids) does not dominate the synthetic set.
+    ds = rng.choice(eligible)
+    bank = bank_by_ds[ds]
+    if args.mix_backgrounds:
+        pool = [p for v in backgrounds.values() for p in v]
+    else:
+        pool = backgrounds[ds]
+    canvas = pool[rng.randrange(len(pool))].copy() if pool else np.full((tile, tile, 3), 235, np.uint8)
     canvas = cv2.resize(canvas, (tile, tile))
 
     n_inst = rng.randint(*args.instances)
@@ -222,7 +298,7 @@ def compose(bank: list[str], backgrounds: list[np.ndarray], args, rng: random.Ra
         c = cv2.approxPolyDP(c, 1.0, True).squeeze(1)
         if len(c) >= 3:
             polys.append(c)
-    return canvas, polys
+    return canvas, polys, ds
 
 
 def main() -> None:  # noqa: D103
@@ -242,32 +318,49 @@ def main() -> None:  # noqa: D103
     p.add_argument("--max-overlap", type=float, default=0.35, help="reject placements above this")
     p.add_argument("--min-visible", type=float, default=0.4, help="drop labels hidden below this fraction")
     p.add_argument("--feather", type=int, default=1, help="alpha feather radius in px")
-    p.add_argument("--n-backgrounds", type=int, default=40)
+    p.add_argument("--backgrounds-per-dataset", type=int, default=6)
+    p.add_argument("--screen-weights", default=None,
+                   help="flatbug .pt used to reject background patches containing unlabelled animals")
+    p.add_argument("--screen-device", default="cuda:0")
+    p.add_argument("--mix-backgrounds", action="store_true",
+                   help="Allow instances on backgrounds from other sub-datasets (domain mismatch)")
     p.add_argument("--seed", type=int, default=0)
     args = p.parse_args()
 
     rng = random.Random(args.seed)
-    bank = sorted(glob.glob(os.path.join(args.bank, "crops", "*.png")))
-    if not bank:
+    crops = sorted(glob.glob(os.path.join(args.bank, "crops", "*.png")))
+    if not crops:
         raise FileNotFoundError(f"No crops in {args.bank}/crops")
-    backgrounds = load_background_pool(args.data_dir, args.split, args.n_backgrounds, args.tile_size, rng) \
-        if args.data_dir else []
-    print(f"bank {len(bank)} crops | backgrounds {len(backgrounds)}")
+    bank_by_ds: dict[str, list[str]] = {}
+    for c in crops:
+        bank_by_ds.setdefault(os.path.basename(c).split("_")[1], []).append(c)
+    # Oversample when screening: flatbug rejects some candidates, and we still
+    # want `backgrounds_per_dataset` survivors per sub-dataset.
+    want = args.backgrounds_per_dataset * (2 if args.screen_weights else 1)
+    backgrounds = load_background_pool(args.data_dir, args.split, want,
+                                       args.tile_size, rng) if args.data_dir else {}
+    if backgrounds and args.screen_weights:
+        backgrounds = screen_backgrounds(backgrounds, args.screen_weights, args.screen_device,
+                                         args.backgrounds_per_dataset)
+    shared = sorted(set(bank_by_ds) & set(backgrounds))
+    print(f"bank {len(crops)} crops across {len(bank_by_ds)} sub-datasets | "
+          f"backgrounds for {len(backgrounds)} sub-datasets | usable (both): {len(shared)}")
+    print("  usable: " + ", ".join(f"{d}({len(bank_by_ds[d])}c/{len(backgrounds[d])}b)" for d in shared))
 
     img_dir = os.path.join(args.out, "images", args.split)
     lbl_dir = os.path.join(args.out, "labels", args.split)
     os.makedirs(img_dir, exist_ok=True); os.makedirs(lbl_dir, exist_ok=True)
 
-    counts = []
+    counts, used = [], {}
     for i in range(args.n_scenes):
-        canvas, polys = compose(bank, backgrounds, args, rng)
-        name = f"synth_{i:05d}"
+        canvas, polys, ds = compose(bank_by_ds, backgrounds, args, rng)
+        name = f"{ds}_synth_{i:05d}"
         cv2.imwrite(os.path.join(img_dir, name + ".jpg"), canvas, [cv2.IMWRITE_JPEG_QUALITY, 95])
         with open(os.path.join(lbl_dir, name + ".txt"), "w") as fh:
             for c in polys:
                 norm = (c.astype(np.float64) / [args.tile_size, args.tile_size]).clip(0, 1)
                 fh.write("0 " + " ".join(f"{v:.6f}" for v in norm.reshape(-1)) + "\n")
-        counts.append(len(polys))
+        counts.append(len(polys)); used[ds] = used.get(ds, 0) + 1
         if (i + 1) % 25 == 0:
             print(f"  {i + 1}/{args.n_scenes} scenes", flush=True)
 
@@ -275,6 +368,7 @@ def main() -> None:  # noqa: D103
         json.dump(vars(args), fh, indent=1)
     print(f"\nwrote {args.n_scenes} scenes to {args.out}")
     print(f"  instances/scene: mean {np.mean(counts):.1f}, range {min(counts)}-{max(counts)}")
+    print("  scenes per sub-dataset: " + ", ".join(f"{k}={v}" for k, v in sorted(used.items())))
 
 
 if __name__ == "__main__":
