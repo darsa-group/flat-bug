@@ -19,8 +19,11 @@ ROOT=$HOME/flatbug-dir
 CONFIG=$HOME/flat-bug-synth/scripts/training/${FB_CONFIG}
 NAME=fb_${FB_TAG}_$(date +"%Y-%m-%d_%H-%M-%S")
 
-# The data is already cloned and prepared; re-running fb_clone_data/fb_prepare_data
-# here would repull from CVAT and reshuffle the train/val split, which would make
-# the two arms incomparable.
+# The data is already cloned and prepared, so both arms train on exactly the same
+# files. The train/val split itself is content-deterministic - fb_prepare_data
+# assigns on md5(image bytes), so re-preparing would reproduce it - but
+# re-running fb_clone_data would repull from CVAT, and any annotation edited
+# since the last pull would differ between the two arms. A re-encoded image
+# would also change its md5 and could legitimately flip subsets.
 cd $HOME/flat-bug-synth/scripts/training
 fb_train -c ${CONFIG} -d ${ROOT}/flat-bug-data/yolo/ --name ${NAME}
