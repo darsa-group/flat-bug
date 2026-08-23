@@ -1,6 +1,7 @@
 """Modified YOLO dataset used for training flatbug."""
 
 import os
+import random
 import re
 import stat
 import tempfile
@@ -16,6 +17,7 @@ from ultralytics.data.dataset import LOGGER
 from ultralytics.utils import IterableSimpleNamespace
 
 from flat_bug.augmentations import CenterCrop, FixInstances, FlatBugRandomPerspective, RandomColorInv, RandomCrop
+from flat_bug.synthetic import SceneComposer
 
 HELP_URL = "See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data"
 IMG_FORMATS = "bmp", "dng", "jpeg", "jpg", "mpo", "png", "tif", "tiff", "webp", "pfm"  # include image suffixes
@@ -215,9 +217,20 @@ class FlatBugYOLODataset(YOLODataset):  # noqa: D101
     _oversample_factor: int = 2
 
     def __init__(  # noqa: D107
-        self, max_instances: int | float | None, classes: None = None, subset_args: dict | None = None, *args, **kwargs
+        self,
+        max_instances: int | float | None,
+        classes: None = None,
+        subset_args: dict | None = None,
+        synthetic: SceneComposer | None = None,
+        synthetic_prob: float = 0.0,
+        *args,
+        **kwargs,
     ):
         self._max_instances = max_instances
+        self._synthetic = synthetic
+        self._synthetic_prob = float(synthetic_prob) if synthetic is not None else 0.0
+        self._synth_rng: random.Random | None = None
+        self._synth_count = 0
         self._include_classes = classes  # Only used so the class list is visible in the subset method
         if subset_args is not None:
             hook_get_labels_with_subset(self, subset_args)
@@ -270,6 +283,70 @@ class FlatBugYOLODataset(YOLODataset):  # noqa: D101
 
             return im, (h0, w0), im.shape[:2]  # type: ignore
         return self.ims[i], self.im_hw0[i], self.im_hw[i]  # type: ignore
+
+    def get_image_and_label(self, index: int) -> dict:
+        """Return one sample, occasionally a synthetic scene instead of a real image.
+
+        The dispatch sits *below* `self.transforms`, so a synthetic scene goes
+        through the same crop, perspective, inpainting and colour augmentation as
+        a real one. Injecting above the pipeline would leave the two halves
+        distinguishable by their augmentation statistics alone, and the model
+        could learn that instead of the animals' outlines.
+
+        Because the draw happens per call, the synthetic half is freshly composed
+        every epoch with no epoch bookkeeping.
+
+        Args:
+            index: Index into `self.labels`.
+
+        Returns:
+            A label dictionary, as ultralytics expects it.
+        """
+        if self._synthetic is not None and self._synthetic_prob > 0:
+            if self._synth_rng is None:
+                # Seeded per worker process: forked workers would otherwise share
+                # a single stream and compose identical scenes in lockstep.
+                self._synth_rng = random.Random((os.getpid() << 16) ^ id(self))
+            if self._synth_rng.random() < self._synthetic_prob:
+                return self._synthetic_label(index)
+        return super().get_image_and_label(index)
+
+    def _synthetic_label(self, index: int) -> dict:
+        """Compose one scene and wrap it in the label schema `update_labels_info` expects."""
+        assert self._synthetic is not None and self._synth_rng is not None
+        image, polygons, dataset = self._synthetic.compose(self._synth_rng)
+        self._synth_count += 1
+        height, width = image.shape[:2]
+
+        if polygons:
+            boxes = np.stack([
+                [
+                    (p[:, 0].min() + p[:, 0].max()) / 2,
+                    (p[:, 1].min() + p[:, 1].max()) / 2,
+                    np.ptp(p[:, 0]),
+                    np.ptp(p[:, 1]),
+                ]
+                for p in polygons
+            ]).astype(np.float32)
+        else:
+            boxes = np.zeros((0, 4), np.float32)
+
+        label = {
+            "im_file": f"<synthetic>/{dataset}_{self._synth_count:06d}.jpg",
+            "img": image,
+            "ori_shape": (height, width),
+            "resized_shape": (height, width),
+            "ratio_pad": (1.0, 1.0),
+            "cls": np.zeros((len(polygons), 1), np.float32),
+            "bboxes": boxes,
+            "segments": [p.astype(np.float32) for p in polygons],
+            "keypoints": None,
+            "bbox_format": "xywh",
+            "normalized": True,
+        }
+        if self.rect:
+            label["rect_shape"] = self.batch_shapes[self.batch[index]]
+        return self.update_labels_info(label)
 
     def build_transforms(  # noqa: D102
         self, hyp: IterableSimpleNamespace
