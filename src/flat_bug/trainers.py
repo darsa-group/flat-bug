@@ -48,6 +48,7 @@ from ultralytics.utils.torch_utils import smart_inference_mode, torch_distribute
 
 from flat_bug import logger
 from flat_bug.datasets import FlatBugYOLODataset, FlatBugYOLOValidationDataset
+from flat_bug.synthetic import SceneComposer
 
 
 def remove_custom_fb_args(args: dict | IterableSimpleNamespace | Any) -> dict | IterableSimpleNamespace | Any:
@@ -301,6 +302,16 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
         custom_fb_args = extract_custom_fb_args(overrides or {})
         self._max_instances = custom_fb_args["fb_max_instances"]
         self._max_images = custom_fb_args["fb_max_images"]
+        self._synth_bank = custom_fb_args.get("fb_synth_bank")
+        self._synth_cache = custom_fb_args.get("fb_synth_cache")
+        self._synth_prob = float(custom_fb_args.get("fb_synth_prob", 0.0) or 0.0)
+        self._synth_kwargs = {
+            "alpha": float(custom_fb_args.get("fb_synth_alpha", 4.0)),
+            "tau": float(custom_fb_args.get("fb_synth_tau", 0.5)),
+            "coverage": float(custom_fb_args.get("fb_synth_coverage", 0.15)),
+            "touch_prob": float(custom_fb_args.get("fb_synth_touch_prob", 0.6)),
+        }
+        self._synthetic = None
         self._exclude_datasets = custom_fb_args["fb_exclude_datasets"]
         self.custom_eval = custom_fb_args["fb_custom_eval"]
         self._do_custom_eval = False  # This is a dynamic signalling flag, not a hyperparameter
@@ -379,7 +390,25 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
             f"max images ({self._max_images}) and exclude pattern ({self.exclude_pattern})."
         )
         if mode == "train":
+            # Composed at imgsz * 1.5, which is what RandomCrop asks for before the
+            # pipeline centre-crops back down to imgsz.
+            if self._synth_prob > 0 and self._synthetic is None:
+                if not (self._synth_bank and self._synth_cache):
+                    raise ValueError("synth_prob > 0 requires both synth_bank and synth_cache")
+                self._synthetic = SceneComposer(
+                    bank_dir=self._synth_bank,
+                    cache_dir=self._synth_cache,
+                    tile=int(self.args.imgsz * 1.5),
+                    max_instances=int(self._max_instances) if np.isfinite(self._max_instances) else 150,
+                    **self._synth_kwargs,
+                )
+                LOGGER.info(
+                    f"Synthetic touching-instance scenes enabled: p={self._synth_prob}, "
+                    f"{len(self._synthetic.domains)} sub-datasets, alpha={self._synth_kwargs['alpha']}"
+                )
             dataset = FlatBugYOLODataset(
+                synthetic=self._synthetic,
+                synthetic_prob=self._synth_prob,
                 data=yaml_load(self.args.data),
                 img_path=img_path,
                 imgsz=self.args.imgsz,

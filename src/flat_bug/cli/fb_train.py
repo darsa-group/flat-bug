@@ -53,6 +53,15 @@ def main():  # noqa: D103
         "fb_custom_eval": False,
         "fb_custom_eval_num_images": -1,
         "fb_exclude_datasets": [],
+        # Synthetic touching-instance scenes. Inert at fb_synth_prob=0, which
+        # keeps existing training runs bit-identical.
+        "fb_synth_bank": None,
+        "fb_synth_cache": None,
+        "fb_synth_prob": 0.0,
+        "fb_synth_alpha": 4.0,
+        "fb_synth_tau": 0.5,
+        "fb_synth_coverage": 0.15,
+        "fb_synth_touch_prob": 0.6,
         "cache": False,
     }
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
