@@ -223,8 +223,82 @@ def screen_backgrounds(
     return cleaned
 
 
-def compose(bank_by_ds: dict[str, list[str]], backgrounds: dict[str, list[np.ndarray]],
-            args, rng: random.Random):
+def load_bank(bank_dir: str) -> dict[str, list[tuple[str, float]]]:
+    """Read the manifest into {sub-dataset: [(crop_path, longest_side_px), ...]}."""
+    with open(os.path.join(bank_dir, "manifest.json")) as fh:
+        manifest = json.load(fh)
+    out: dict[str, list[tuple[str, float]]] = {}
+    for m in manifest:
+        size = float(m.get("max_px") or m["side_px"])
+        out.setdefault(m["dataset"], []).append((os.path.join(bank_dir, "crops", m["file"]), size))
+    return out
+
+
+def domain_size_distributions(data_dir: str, split: str, cache: str) -> dict[str, np.ndarray]:
+    """Longest-side (px) of every real instance, per sub-dataset.
+
+    This is the distribution a synthetic scene should imitate: pasting an
+    ArTaxOr-sized beetle onto a sticky card would be domain-matched in
+    provenance and wrong in scale.
+    """
+    if os.path.isfile(cache):
+        with open(cache) as fh:
+            return {k: np.asarray(v) for k, v in json.load(fh).items()}
+    from PIL import Image
+
+    Image.MAX_IMAGE_PIXELS = None
+    base = os.path.join(data_dir, "insects")
+    base = base if os.path.isdir(base) else data_dir
+    sizes: dict[str, list[float]] = {}
+    for label in sorted(glob.glob(os.path.join(base, "labels", split, "*.txt"))):
+        image = os.path.join(base, "images", split, os.path.basename(label)[:-4] + ".jpg")
+        try:
+            width, height = Image.open(image).size
+        except Exception:
+            continue
+        ds = dataset_of(label)
+        for line in open(label):
+            vals = line.split()
+            if len(vals) < 7:
+                continue
+            coords = np.asarray(vals[1:], float).reshape(-1, 2) * [width, height]
+            sizes.setdefault(ds, []).append(
+                float(max(np.ptp(coords[:, 0]), np.ptp(coords[:, 1])))
+            )
+    with open(cache, "w") as fh:
+        json.dump(sizes, fh)
+    return {k: np.asarray(v) for k, v in sizes.items()}
+
+
+def crop_weights(entries: list[tuple[str, float]], s_star: float, alpha: float) -> np.ndarray:
+    """P(crop) proportional to q^alpha, with q = min(1, size / s_star).
+
+    q saturates at s_star so every sufficiently large crop is equally preferred -
+    an unsaturated size**alpha would put nearly all the mass on the single
+    biggest crop in the domain. Because q > 0 for every crop, the distribution
+    stays well defined when a domain has nothing large: it simply concentrates
+    on that domain's own upper tail rather than dropping out. That is the whole
+    "prefer large, fall back to small" rule.
+    """
+    q = np.minimum(1.0, np.array([e[1] for e in entries]) / s_star)
+    w = q ** alpha
+    total = w.sum()
+    return w / total if total > 0 else np.full(len(entries), 1.0 / len(entries))
+
+
+def sample_target_size(real_sizes: np.ndarray, native: float, rng: random.Random) -> float:
+    """Draw a paste size from the domain's own size distribution, truncated at `native`.
+
+    Truncation is what guarantees we never upscale a crop and invent detail.
+    """
+    usable = real_sizes[real_sizes <= native]
+    if usable.size == 0:
+        return float(min(native, real_sizes.min() if real_sizes.size else native))
+    return float(usable[rng.randrange(usable.size)])
+
+
+def compose(bank_by_ds: dict[str, list[tuple[str, float]]], backgrounds: dict[str, list[np.ndarray]],
+            real_sizes: dict[str, np.ndarray], args, rng: random.Random):
     """Build one scene. Instances and background come from the same sub-dataset.
 
     Mixing them would paste an EntoScan specimen from a white well-plate onto a
@@ -236,10 +310,15 @@ def compose(bank_by_ds: dict[str, list[str]], backgrounds: dict[str, list[np.nda
     eligible = sorted(set(bank_by_ds) & set(backgrounds)) if not args.mix_backgrounds else sorted(bank_by_ds)
     if not eligible:
         raise RuntimeError("No sub-dataset has both crops and backgrounds; use --mix-backgrounds")
-    # Uniform over sub-datasets, not over patches, so a dataset with many usable
-    # backgrounds (pan-trap lids) does not dominate the synthetic set.
-    ds = rng.choice(eligible)
+    # P(domain) proportional to its share of real instances, tempered by `tau`.
+    # tau=1 reproduces the real (Zipfian) prior, tau=0 is uniform; 0.5 is the
+    # usual compromise. Quality does NOT enter here on purpose - down-weighting
+    # the poorly resolved domains would drop exactly the ones we set out to cover.
+    weights = np.array([max(len(real_sizes.get(d, ())), 1) ** args.tau for d in eligible])
+    ds = eligible[int(rng.choices(range(len(eligible)), weights=weights, k=1)[0])]
     bank = bank_by_ds[ds]
+    probs = crop_weights(bank, args.s_star, args.alpha)
+    sizes_d = real_sizes.get(ds, np.array([args.tile_size / 8.0]))
     if args.mix_backgrounds:
         pool = [p for v in backgrounds.values() for p in v]
     else:
@@ -247,16 +326,28 @@ def compose(bank_by_ds: dict[str, list[str]], backgrounds: dict[str, list[np.nda
     canvas = pool[rng.randrange(len(pool))].copy() if pool else np.full((tile, tile, 3), 235, np.uint8)
     canvas = cv2.resize(canvas, (tile, tile))
 
-    n_inst = rng.randint(*args.instances)
+    # Crowd by area, not by count. A fixed count means a sticky-card scene of
+    # 60px insects covers a twentieth of the tile while an ArTaxOr scene of
+    # 220px ones covers half. Solving `n * E[t^2] = coverage * tile^2` keeps the
+    # visual density comparable, and at small native scales that means many more
+    # instances per tile - which is exactly where touching pairs come from.
+    typical = float(np.median(sizes_d)) if sizes_d.size else tile / 8.0
+    n_inst = int(round(args.coverage * tile * tile / max(typical * typical, 1.0)))
+    n_inst = max(args.instances[0], min(args.instances[1], n_inst))
+    n_inst = rng.randint(max(args.instances[0], int(n_inst * 0.75)), max(args.instances[0] + 1, n_inst))
     placed_masks: list[np.ndarray] = []
     occupied = np.zeros((tile, tile), np.uint8)
     records = []
 
     for _ in range(n_inst):
-        rgba = cv2.imread(rng.choice(bank), cv2.IMREAD_UNCHANGED)
+        idx = int(np.searchsorted(np.cumsum(probs), rng.random()))
+        path, native = bank[min(idx, len(bank) - 1)]
+        rgba = cv2.imread(path, cv2.IMREAD_UNCHANGED)
         if rgba is None or rgba.shape[2] != 4:
             continue
-        target_side = rng.randint(*args.instance_size)
+        target_side = int(round(sample_target_size(sizes_d, native, rng)))
+        if target_side < 8:
+            continue
         rgba = augment_crop(rgba, target_side, rng)
         if min(rgba.shape[:2]) < 8 or max(rgba.shape[:2]) >= tile:
             continue
@@ -309,7 +400,8 @@ def main() -> None:  # noqa: D103
     p.add_argument("-n", "--n-scenes", type=int, default=100)
     p.add_argument("--split", default="train")
     p.add_argument("--tile-size", type=int, default=1024)
-    p.add_argument("--instances", type=int, nargs=2, default=(8, 25), metavar=("MIN", "MAX"))
+    p.add_argument("--instances", type=int, nargs=2, default=(8, 200), metavar=("MIN", "MAX"),
+                   help="clamp on the count implied by --coverage")
     p.add_argument("--instance-size", type=int, nargs=2, default=(60, 200), metavar=("MIN", "MAX"),
                    help="target sqrt(area) of pasted instances, in px")
     p.add_argument("--touch-prob", type=float, default=0.5,
@@ -319,6 +411,14 @@ def main() -> None:  # noqa: D103
     p.add_argument("--min-visible", type=float, default=0.4, help="drop labels hidden below this fraction")
     p.add_argument("--feather", type=int, default=1, help="alpha feather radius in px")
     p.add_argument("--backgrounds-per-dataset", type=int, default=6)
+    p.add_argument("--alpha", type=float, default=4.0,
+                   help="size preference: P(crop) ~ min(1, size/s_star)**alpha. 0=uniform, large=strict")
+    p.add_argument("--s-star", type=float, default=256.0,
+                   help="size (px) at which a mask is treated as fully trustworthy")
+    p.add_argument("--tau", type=float, default=0.5,
+                   help="domain prior temper: P(d) ~ (real instances)**tau. 1=proportional, 0=uniform")
+    p.add_argument("--coverage", type=float, default=0.15,
+                   help="target fraction of the tile covered by instances; drives how crowded scenes are")
     p.add_argument("--screen-weights", default=None,
                    help="flatbug .pt used to reject background patches containing unlabelled animals")
     p.add_argument("--screen-device", default="cuda:0")
@@ -334,6 +434,9 @@ def main() -> None:  # noqa: D103
     bank_by_ds: dict[str, list[str]] = {}
     for c in crops:
         bank_by_ds.setdefault(os.path.basename(c).split("_")[1], []).append(c)
+    bank_by_ds = load_bank(args.bank)
+    real_sizes = domain_size_distributions(args.data_dir, args.split,
+                                           os.path.join(args.bank, "real_sizes.json")) if args.data_dir else {}
     # Oversample when screening: flatbug rejects some candidates, and we still
     # want `backgrounds_per_dataset` survivors per sub-dataset.
     want = args.backgrounds_per_dataset * (2 if args.screen_weights else 1)
@@ -353,7 +456,7 @@ def main() -> None:  # noqa: D103
 
     counts, used = [], {}
     for i in range(args.n_scenes):
-        canvas, polys, ds = compose(bank_by_ds, backgrounds, args, rng)
+        canvas, polys, ds = compose(bank_by_ds, backgrounds, real_sizes, args, rng)
         name = f"{ds}_synth_{i:05d}"
         cv2.imwrite(os.path.join(img_dir, name + ".jpg"), canvas, [cv2.IMWRITE_JPEG_QUALITY, 95])
         with open(os.path.join(lbl_dir, name + ".txt"), "w") as fh:

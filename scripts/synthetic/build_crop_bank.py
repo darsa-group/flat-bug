@@ -79,6 +79,7 @@ def harvest_image(
     for i, (poly, box) in enumerate(zip(polys, boxes)):
         x0, y0, x1, y1 = box
         side = float(np.sqrt(max(x1 - x0, 1) * max(y1 - y0, 1)))
+        longest = float(max(x1 - x0, y1 - y0))
         if side < min_size:
             continue
         # Truncated by the image border -> not a whole animal.
@@ -104,6 +105,7 @@ def harvest_image(
             "source_image": os.path.basename(image_path),
             "instance_index": i,
             "side_px": round(side, 1),
+            "max_px": round(longest, 1),
             "fill_ratio": round(fill_ratio, 3),
             "n_vertices": int(len(poly)),
             "dataset": os.path.basename(image_path).split("_")[0],
@@ -116,11 +118,14 @@ def main() -> None:  # noqa: D103
     parser.add_argument("-d", "--data-dir", required=True, help="fb_prepare_data output (holds data.yaml)")
     parser.add_argument("-o", "--out", required=True, help="destination crop bank directory")
     parser.add_argument("--split", default="train", choices=("train", "val"))
-    parser.add_argument("--min-size", type=int, default=128, help="minimum sqrt(box area) in px")
+    parser.add_argument("--min-size", type=int, default=32,
+                        help="sanity floor on sqrt(box area) in px; the real size preference lives in the sampler")
     parser.add_argument("--isolation-margin", type=int, default=12,
                         help="reject an instance if a neighbour is within this many px")
     parser.add_argument("--border-margin", type=int, default=4, help="reject instances touching the image border")
     parser.add_argument("--max-crops", type=int, default=5000)
+    parser.add_argument("--max-per-dataset", type=int, default=600,
+                        help="cap per sub-dataset so dense domains do not exhaust the global budget")
     parser.add_argument("--max-per-image", type=int, default=8, help="keep the bank diverse across source images")
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
@@ -137,16 +142,22 @@ def main() -> None:  # noqa: D103
     random.Random(args.seed).shuffle(images)
     os.makedirs(os.path.join(args.out, "crops"), exist_ok=True)
 
+    per_dataset: dict[str, int] = {}
     manifest, kept, scanned = [], 0, 0
     for image_path in images:
         if kept >= args.max_crops:
             break
+        if per_dataset.get(os.path.basename(image_path).split("_")[0], 0) >= args.max_per_dataset:
+            continue
         label_path = os.path.join(label_dir, os.path.basename(image_path)[:-4] + ".txt")
         found = harvest_image(image_path, label_path, args.min_size, args.isolation_margin, args.border_margin)
         scanned += 1
         for rgba, meta in found[: args.max_per_image]:
             if kept >= args.max_crops:
                 break
+            if per_dataset.get(meta["dataset"], 0) >= args.max_per_dataset:
+                break
+            per_dataset[meta["dataset"]] = per_dataset.get(meta["dataset"], 0) + 1
             name = f"{kept:06d}_{meta['dataset']}_{int(meta['side_px'])}px.png"
             cv2.imwrite(os.path.join(args.out, "crops", name), rgba)
             meta["file"] = name
