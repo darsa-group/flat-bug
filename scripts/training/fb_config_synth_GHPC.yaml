@@ -1,0 +1,21 @@
+# Synthetic touching-instance arm. Identical to fb_config_control_GHPC.yaml
+# except for fb_synth_prob, so the two runs isolate that one variable.
+batch: 8
+model: "yolo26m-seg.pt"
+epochs: 100
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 16
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_bank: /usr/home/qgg/qgeiss/flatbug-dir/synth/crop_bank
+fb_synth_cache: /usr/home/qgg/qgeiss/flatbug-dir/synth/cache
+fb_synth_prob: 0.2
+fb_synth_alpha: 4.0
+fb_synth_tau: 0.5
+fb_synth_coverage: 0.15
+fb_synth_touch_prob: 0.6
+fb_synth_max_instances: 120

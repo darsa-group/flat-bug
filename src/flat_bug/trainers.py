@@ -310,6 +310,11 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
             "tau": float(custom_fb_args.get("fb_synth_tau", 0.5)),
             "coverage": float(custom_fb_args.get("fb_synth_coverage", 0.15)),
             "touch_prob": float(custom_fb_args.get("fb_synth_touch_prob", 0.6)),
+            # Deliberately NOT fb_max_instances: that is often set to 9999 to keep
+            # every instance of a dense real image, whereas here it bounds how much
+            # work one scene costs. At coverage 0.15 an unbounded cap asks for ~290
+            # instances on a Massid45 tile, which takes seconds to compose.
+            "max_instances": int(custom_fb_args.get("fb_synth_max_instances", 120)),
         }
         self._synthetic = None
         self._exclude_datasets = custom_fb_args["fb_exclude_datasets"]
@@ -399,7 +404,6 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
                     bank_dir=self._synth_bank,
                     cache_dir=self._synth_cache,
                     tile=int(self.args.imgsz * 1.5),
-                    max_instances=int(self._max_instances) if np.isfinite(self._max_instances) else 150,
                     **self._synth_kwargs,
                 )
                 LOGGER.info(
