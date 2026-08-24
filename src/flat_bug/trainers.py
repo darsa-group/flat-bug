@@ -315,6 +315,10 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
             # work one scene costs. At coverage 0.15 an unbounded cap asks for ~290
             # instances on a Massid45 tile, which takes seconds to compose.
             "max_instances": int(custom_fb_args.get("fb_synth_max_instances", 120)),
+            "overlap": float(custom_fb_args.get("fb_synth_overlap", 0.10)),
+            "max_overlap": float(custom_fb_args.get("fb_synth_max_overlap", 0.35)),
+            "min_visible": float(custom_fb_args.get("fb_synth_min_visible", 0.4)),
+            "amodal_labels": bool(custom_fb_args.get("fb_synth_amodal", True)),
         }
         self._synthetic = None
         self._exclude_datasets = custom_fb_args["fb_exclude_datasets"]
