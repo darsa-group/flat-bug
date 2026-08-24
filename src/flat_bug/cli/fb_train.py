@@ -62,6 +62,11 @@ def main():  # noqa: D103
         "fb_synth_tau": 0.5,
         "fb_synth_coverage": 0.15,
         "fb_synth_touch_prob": 0.6,
+        "fb_synth_max_instances": 120,
+        "fb_synth_overlap": 0.10,
+        "fb_synth_max_overlap": 0.35,
+        "fb_synth_min_visible": 0.4,
+        "fb_synth_amodal": True,
         "cache": False,
     }
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)

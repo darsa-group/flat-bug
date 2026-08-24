@@ -395,6 +395,7 @@ class SceneComposer:
         min_visible: float = 0.4,
         feather: int = 1,
         max_instances: int = 150,
+        amodal_labels: bool = True,
     ) -> None:
         """Load the bank manifest and memmap the background cache.
 
@@ -412,6 +413,8 @@ class SceneComposer:
             min_visible: Drop labels hidden below this fraction of their full area.
             feather: Alpha feather radius, in px.
             max_instances: Hard cap, matching the trainer's `fb_max_instances`.
+            amodal_labels: Label each instance's full extent rather than only the
+                part left visible, matching how the real data is annotated.
         """
         self.tile = tile
         self.alpha, self.s_star, self.tau = alpha, s_star, tau
@@ -419,6 +422,7 @@ class SceneComposer:
         self.overlap, self.max_overlap = overlap, max_overlap
         self.min_visible, self.feather = min_visible, feather
         self.max_instances = max_instances
+        self.amodal_labels = amodal_labels
 
         with open(os.path.join(bank_dir, "manifest.json")) as fh:
             manifest = json.load(fh)
@@ -477,6 +481,7 @@ class SceneComposer:
 
         cumulative = np.cumsum(probs)
         placed: list[np.ndarray] = []
+        amodal: list[np.ndarray] = []
         occupied = np.zeros((tile, tile), np.uint8)
         full_areas: list[int] = []
 
@@ -510,16 +515,42 @@ class SceneComposer:
             candidate = mask_at(rgba, x, y, (tile, tile))
             if candidate.sum() == 0 or overlap_fraction(candidate, occupied) > self.max_overlap:
                 continue
+            # Never paste an instance we are not going to label. Dropping the label
+            # later while leaving the pixels in the image manufactures exactly the
+            # false negative that `build_cache` screens the backgrounds for, about
+            # ten times per scene, and teaches the model to suppress the heavily
+            # occluded instances this dataset exists to make it find.
+            if 1.0 - overlap_fraction(candidate, occupied) < self.min_visible:
+                continue
             drawn = paste(canvas, rgba, x, y, self.feather)
+            # An earlier instance may now fall below the threshold because of this
+            # paste; it keeps its (amodal) label rather than losing it, so the
+            # image and the labels stay consistent.
             for m in placed:
                 m &= ~drawn.astype(bool)
             placed.append(drawn.astype(bool))
+            amodal.append(candidate.astype(bool))
             full_areas.append(int(candidate.sum()))
             occupied |= drawn
 
         polys: list[np.ndarray] = []
-        for mask, full in zip(placed, full_areas):
-            if full == 0 or mask.sum() / full < self.min_visible:
+        # Trace the *amodal* mask - the instance's full extent at placement, not the
+        # part left visible after later pastes. Human annotators draw the complete
+        # outline through an occluder, so real ground-truth polygons overlap and
+        # modal (visible-only) labels would train against a different convention
+        # from the one we evaluate on.
+        source = amodal if self.amodal_labels else placed
+        for mask, visible, full in zip(source, placed, full_areas):
+            if full == 0:
+                continue
+            # With amodal labels every pasted instance keeps its full outline, so
+            # nothing is ever dropped: an instance buried by a later paste is still
+            # annotated, exactly as a human would annotate it. Applying the
+            # visibility filter here would leave its pixels in the image with no
+            # label - the false negative this generator must not manufacture.
+            # The filter is only meaningful for modal labels, where a barely
+            # visible instance would otherwise become a meaningless sliver.
+            if not self.amodal_labels and visible.sum() / full < self.min_visible:
                 continue
             contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             if not contours:
