@@ -228,6 +228,52 @@ def merged(gt: list[Polygon], pred: list[Polygon], contained: float) -> np.ndarr
     return flags
 
 
+def _bootstrap(
+    per_image: list[dict[str, tuple[int, int, int]]], n: int
+) -> dict[str, tuple[float, float, float, float]]:
+    """Percentile CIs for recall and merge rate, resampling *images*.
+
+    Images are the unit of independence: two animals in one photo share a
+    background, an exposure and an annotator, so resampling instances would
+    treat them as independent evidence and give intervals that are too tight.
+
+    Args:
+        per_image: Per-image {bucket: (n, tp, merged)} counts.
+        n: Number of bootstrap resamples.
+
+    Returns:
+        {bucket: (recall_lo, recall_hi, merge_lo, merge_hi)}.
+    """
+    rng = np.random.default_rng(0)
+    names = [b[2] for b in BUCKETS]
+    out: dict[str, tuple[float, float, float, float]] = {}
+    if not per_image or n <= 0:
+        return {k: (float("nan"),) * 4 for k in names}
+    idx = np.arange(len(per_image))
+    draws = {k: ([], []) for k in names}
+    for _ in range(n):
+        pick = rng.choice(idx, len(idx), replace=True)
+        for name in names:
+            tot = tp = mg = 0
+            for i in pick:
+                a, b, c = per_image[i].get(name, (0, 0, 0))
+                tot += a
+                tp += b
+                mg += c
+            if tot:
+                draws[name][0].append(tp / tot)
+                draws[name][1].append(mg / tot)
+    for name in names:
+        rec, mer = draws[name]
+        if not rec:
+            out[name] = (float("nan"),) * 4
+        else:
+            out[name] = (float(np.percentile(rec, 2.5)), float(np.percentile(rec, 97.5)),
+                         float(np.percentile(mer, 2.5)), float(np.percentile(mer, 97.5)))
+    return out
+
+
+
 def main() -> None:  # noqa: D103
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--gt", help="ground-truth COCO json")
@@ -238,6 +284,8 @@ def main() -> None:  # noqa: D103
     parser.add_argument("--iou", type=float, default=0.5, help="IoU threshold for a match")
     parser.add_argument("--contained", type=float, default=0.5,
                         help="fraction of a GT instance inside a prediction that counts as covered")
+    parser.add_argument("--bootstrap", type=int, default=500,
+                        help="bootstrap resamples over images for the CIs; 0 disables")
     parser.add_argument("--score-missing", action="store_true",
                         help="score ground-truth images with no predictions as all-missed")
     parser.add_argument("--min-size", type=float, default=32.0, help="drop instances below this longest side, in px")
@@ -265,6 +313,10 @@ def main() -> None:  # noqa: D103
         print(f"note: {len(missing)} ground-truth images have no predictions; scored as all-missed")
 
     rows: dict[str, dict[str, int]] = {b[2]: {"n": 0, "tp": 0, "merged": 0} for b in BUCKETS}
+    # Per-image counts, so the CIs can resample images - the unit of independence.
+    # Resampling instances would treat two animals in one photo as independent
+    # evidence, which they are not, and would give intervals that are too tight.
+    per_image: list[dict[str, tuple[int, int, int]]] = []
     total_pred = total_pred_hit = 0
     for stem, gt in gt_by_image.items():
         pred = pred_by_image.get(stem, [])
@@ -273,21 +325,28 @@ def main() -> None:  # noqa: D103
         merge_flags = merged(gt, pred, args.contained)
         total_pred += len(pred)
         total_pred_hit += int(pred_hit.sum())
+        image_counts: dict[str, tuple[int, int, int]] = {}
         for lo, hi, name in BUCKETS:
             sel = (gaps <= hi) if lo == hi == 0.0 else ((gaps > lo) & (gaps <= hi))
-            rows[name]["n"] += int(sel.sum())
-            rows[name]["tp"] += int(gt_hit[sel].sum())
-            rows[name]["merged"] += int(merge_flags[sel].sum())
+            n_i, tp_i, mg_i = int(sel.sum()), int(gt_hit[sel].sum()), int(merge_flags[sel].sum())
+            rows[name]["n"] += n_i
+            rows[name]["tp"] += tp_i
+            rows[name]["merged"] += mg_i
+            image_counts[name] = (n_i, tp_i, mg_i)
+        per_image.append(image_counts)
 
     print(f"\nimages {len(gt_by_image)} | GT instances {sum(r['n'] for r in rows.values())} | predictions {total_pred}")
     print(f"overall precision {total_pred_hit / max(total_pred, 1):.4f}\n")
-    print(f"{'neighbour gap':>14s} {'GT':>7s} {'recall':>8s} {'merged':>8s} {'merge rate':>11s}")
+    ci = _bootstrap(per_image, args.bootstrap)
+    print(f"{'neighbour gap':>14s} {'GT':>7s} {'recall':>8s} {'95% CI':>18s} {'merge rate':>11s} {'95% CI':>18s}")
     for _, _, name in BUCKETS:
         r = rows[name]
         if r["n"] == 0:
-            print(f"{name:>14s} {0:>7d} {'-':>8s} {'-':>8s} {'-':>11s}")
+            print(f"{name:>14s} {0:>7d} {'-':>8s} {'-':>18s} {'-':>11s} {'-':>18s}")
             continue
-        print(f"{name:>14s} {r['n']:>7d} {r['tp'] / r['n']:>8.4f} {r['merged']:>8d} {r['merged'] / r['n']:>11.4f}")
+        rl, rh, ml, mh = ci[name]
+        print(f"{name:>14s} {r['n']:>7d} {r['tp'] / r['n']:>8.4f} [{rl:.4f}, {rh:.4f}] "
+              f"{r['merged'] / r['n']:>11.4f} [{ml:.4f}, {mh:.4f}]")
 
 
 if __name__ == "__main__":
