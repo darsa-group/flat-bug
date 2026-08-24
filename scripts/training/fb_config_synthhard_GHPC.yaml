@@ -19,3 +19,10 @@ fb_synth_tau: 0.5
 fb_synth_coverage: 0.45
 fb_synth_touch_prob: 0.85
 fb_synth_max_instances: 250
+# Stated explicitly rather than left to the default, so the run's args record it:
+# labels are amodal (full outline through occluders, as the real data is
+# annotated) and no instance is pasted that would not be labelled.
+fb_synth_amodal: true
+fb_synth_min_visible: 0.4
+fb_synth_overlap: 0.10
+fb_synth_max_overlap: 0.35
