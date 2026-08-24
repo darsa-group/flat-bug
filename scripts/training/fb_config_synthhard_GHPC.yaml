@@ -1,0 +1,21 @@
+# Hard-crowding arm: same as fb_config_synth_GHPC.yaml but with roughly double
+# the contact density (0.61 vs 0.33 touching pairs per instance).
+batch: 8
+model: "yolo26m-seg.pt"
+epochs: 100
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 32
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_bank: /usr/home/qgg/qgeiss/flatbug-dir/synth/crop_bank
+fb_synth_cache: /usr/home/qgg/qgeiss/flatbug-dir/synth/cache
+fb_synth_prob: 0.2
+fb_synth_alpha: 4.0
+fb_synth_tau: 0.5
+fb_synth_coverage: 0.45
+fb_synth_touch_prob: 0.85
+fb_synth_max_instances: 250
