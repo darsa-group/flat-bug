@@ -1,0 +1,26 @@
+# yolo26l-seg on GenomeDK.
+#
+# Scale relative to the m-seg runs on GHPC: yolo26-seg.yaml gives m=[0.5, 1.0]
+# and l=[1.0, 1.0] for (depth, width), so L doubles depth at the same width -
+# roughly twice the parameters and activation memory of M.
+#
+# The m-seg runs used batch 8 at 1024px and peaked around 21 GB on a 48 GB L40S.
+# Batch 4 is therefore the safe starting point on a 40 GB card and should still
+# fit a 24 GB one; raise it if `nvidia-smi` shows headroom during epoch 1.
+# Ultralytics accumulates gradients up to `nbs`, so the *effective* batch stays
+# 64 regardless - lowering `batch` costs wall-clock, not optimisation quality.
+batch: 4
+nbs: 64
+model: "yolo26l-seg.pt"     # published asset; ultralytics downloads it on first use
+epochs: 100
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 16
+fb_max_instances: 9999
+fb_max_images: -1
+# Synthetic touching-instance scenes are off here: establish the L baseline
+# first, then turn them on with the settings that won on the M model.
+fb_synth_prob: 0.0
