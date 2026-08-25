@@ -3,22 +3,20 @@
 #
 #   sbatch --account=<project> scripts/training/train_L_GenomeDK.sh
 #
-# The SBATCH header below is NOT verified against GenomeDK. Before relying on it:
-#   sinfo -s                     # partition names
-#   sinfo -o "%P %G %m %c"       # GPU resource strings, memory, cores per node
-#   gnodes                       # GenomeDK's own node overview, if available
-# Override at submit time rather than editing, e.g.
-#   sbatch --account=myproject --partition=gpu --gres=gpu:a100:1 train_L_GenomeDK.sh
+# Verified on GenomeDK 2026-08-25: gpu-h200 has 4x H200 (141 GB) per node on
+# gn-1003/gn-1004, 7-day limit; gpu-l40s has 7x L40S (48 GB). At batch 16 the
+# measured throughput is 50.4 img/s, so 100 epochs over 22,266 samples is ~12 h;
+# 48 h leaves ample margin.
 
 #SBATCH --account=CHANGEME
-#SBATCH --partition=gpu
+#SBATCH --partition=gpu-h200
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=128G
-#SBATCH --time=168:00:00
+#SBATCH --mem=192G
+#SBATCH --time=48:00:00
 #SBATCH --job-name=flatbug_L
-#SBATCH --output=flatbug_L_%j.out
+#SBATCH --output=/faststorage/project/flat-bug/logs/flatbug_L_%j.out
 
 set -euo pipefail
 
@@ -30,7 +28,7 @@ fi
 
 # GenomeDK home directories are small and are not meant for datasets or runs.
 # ROOT must point at project storage.
-ROOT=${ROOT:-/faststorage/project/${SLURM_JOB_ACCOUNT}/flatbug-dir}
+ROOT=${ROOT:-/faststorage/project/flat-bug/flatbug-dir}
 if [[ ! -d "${ROOT}/flat-bug-data/yolo" ]]; then
     echo "ERROR: no prepared dataset at ${ROOT}/flat-bug-data/yolo" >&2
     echo "       Set ROOT, or stage the data there first (see notes at the end)." >&2
@@ -38,18 +36,20 @@ if [[ ! -d "${ROOT}/flat-bug-data/yolo" ]]; then
 fi
 
 # GenomeDK uses conda/mamba rather than a bare venv.
-FB_ENV=${FB_ENV:-flatbug}
-if command -v conda >/dev/null 2>&1; then
-    eval "$(conda shell.bash hook)"
-    conda activate "${FB_ENV}"
-elif [[ -f ~/.venv/bin/activate ]]; then
-    source ~/.venv/bin/activate
-else
-    echo "ERROR: no conda environment '${FB_ENV}' and no ~/.venv to activate" >&2
+# GenomeDK has no module system and no conda; the environment is a uv-built
+# venv on project storage (Python 3.11, torch 2.13+cu130).
+VENV=${FB_VENV:-/faststorage/project/flat-bug/venv}
+if [[ ! -f "${VENV}/bin/activate" ]]; then
+    echo "ERROR: no venv at ${VENV}" >&2
     exit 1
 fi
+source "${VENV}/bin/activate"
 
-export PYTHONPATH=${FB_SRC:-$HOME/flat-bug-synth/src}
+export PYTHONPATH=${FB_SRC:-/faststorage/project/flat-bug/code/flat-bug/src}
+# GenomeDK nodes reach the internet only through a proxy; ultralytics needs it
+# to fetch yolo26l-seg.pt on first use.
+export http_proxy=${http_proxy:-http://proxy-default:3128}
+export https_proxy=${https_proxy:-http://proxy-default:3128}
 
 CONFIG=$(dirname "$(readlink -f "$0")")/fb_config_L_GenomeDK.yaml
 NAME=fb_L_$(date +"%Y-%m-%d_%H-%M-%S")

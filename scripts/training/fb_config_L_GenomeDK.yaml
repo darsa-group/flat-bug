@@ -1,15 +1,23 @@
-# yolo26l-seg on GenomeDK.
+# yolo26l-seg on GenomeDK (H200, 141 GB).
 #
-# Scale relative to the m-seg runs on GHPC: yolo26-seg.yaml gives m=[0.5, 1.0]
-# and l=[1.0, 1.0] for (depth, width), so L doubles depth at the same width -
-# roughly twice the parameters and activation memory of M.
+# Batch chosen from a measured sweep on an H200 at 1024px (31.5M params):
+#   batch  8:  29.9 GiB (21%)  31.0 img/s
+#   batch 16:  59.7 GiB (43%)  50.4 img/s   <- chosen
+#   batch 24:  89.4 GiB (64%)  51.8 img/s
+#   batch 32: 119.2 GiB (85%)  52.7 img/s
+#   batch 48: OOM
+# Memory is linear at 3.73 GiB/image and throughput saturates by 16, so 32 buys
+# 4.6% more img/s for double the memory.
 #
-# The m-seg runs used batch 8 at 1024px and peaked around 21 GB on a 48 GB L40S.
-# Batch 4 is therefore the safe starting point on a 40 GB card and should still
-# fit a 24 GB one; raise it if `nvidia-smi` shows headroom during epoch 1.
-# Ultralytics accumulates gradients up to `nbs`, so the *effective* batch stays
-# 64 regardless - lowering `batch` costs wall-clock, not optimisation quality.
-batch: 4
+# The probe used random tensors and a surrogate loss, so it does NOT capture the
+# spike that trainers.py documents: YOLOv26's one2many head makes
+# single_mask_loss/crop_mask allocate 10+ GB on dense flat-bug images, which is
+# why validation loss is suppressed there. Batch 16 leaves 57% of the card for
+# that; batch 32 would leave 15%.
+#
+# nbs stays 64, so the effective batch matches the GHPC runs (batch 8 x 8)
+# despite the larger per-step batch.
+batch: 16
 nbs: 64
 model: "yolo26l-seg.pt"     # published asset; ultralytics downloads it on first use
 epochs: 100
