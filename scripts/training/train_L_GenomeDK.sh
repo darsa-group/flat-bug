@@ -51,7 +51,14 @@ export PYTHONPATH=${FB_SRC:-/faststorage/project/flat-bug/code/flat-bug/src}
 export http_proxy=${http_proxy:-http://proxy-default:3128}
 export https_proxy=${https_proxy:-http://proxy-default:3128}
 
-CONFIG=$(dirname "$(readlink -f "$0")")/fb_config_L_GenomeDK.yaml
+# SLURM copies the batch script into its spool directory, so $0 does not point
+# at the repo: resolve the config absolutely.
+FB_SRC_DIR=${FB_SRC_DIR:-/faststorage/project/flat-bug/code/flat-bug}
+CONFIG=${FB_CONFIG:-${FB_SRC_DIR}/scripts/training/fb_config_L_GenomeDK.yaml}
+if [[ ! -f "${CONFIG}" ]]; then
+    echo "ERROR: config not found at ${CONFIG}" >&2
+    exit 1
+fi
 NAME=fb_L_$(date +"%Y-%m-%d_%H-%M-%S")
 
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
