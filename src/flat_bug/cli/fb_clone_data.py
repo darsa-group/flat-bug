@@ -13,6 +13,34 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 from cvat_sdk import make_client
 
+
+def _honour_proxy_env() -> None:
+    """Make cvat_sdk respect http(s)_proxy, which it otherwise ignores.
+
+    `cvat_sdk` talks to the server through `urllib3` directly. Unlike `requests`,
+    urllib3 does not consult the proxy environment variables, so on a cluster
+    whose nodes reach the internet only through a proxy every call fails with
+    "Network is unreachable" while `curl` on the same node succeeds. `rest.py`
+    does build a ProxyManager, but only if `configuration.proxy` is set, and
+    nothing populates it. Default it from the environment here.
+
+    botocore, used for the S3 half of the sync, already honours these variables.
+    """
+    proxy = os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
+    if not proxy:
+        return
+    from cvat_sdk.api_client import Configuration
+
+    original = Configuration.__init__
+
+    def patched(self, *args, **kwargs):
+        original(self, *args, **kwargs)
+        if self.proxy is None:
+            self.proxy = proxy
+            self.no_proxy = os.environ.get("no_proxy") or os.environ.get("NO_PROXY")
+
+    Configuration.__init__ = patched
+
 try:
     from tqdm import tqdm
 
@@ -369,6 +397,7 @@ def _process_one_task(
 
 # ------------------ Main ------------------
 def main():
+    _honour_proxy_env()
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     args_parse.add_argument(
         "-s", "--secrets-file", dest="secrets_file",
