@@ -1,0 +1,45 @@
+# yolo26l-seg + synthetic touching-instance scenes, GenomeDK H200.
+#
+# Combines the two interventions that were measured separately on 426 validation
+# images with a paired bootstrap:
+#   - synthetic scenes (on yolo26m): +2.7 pts recall on touching instances and
+#     +3.4 within 8px, both significant, at no cost in merge rate or precision.
+#   - yolo26l capacity: +1.1 pts precision (0.885 vs 0.874); its recall gains
+#     were NOT significant in any stratum.
+# They act on different failure modes, so they plausibly add.
+#
+# Crowding is the MILD setting, not the hard one. At matched epoch 40 the hard
+# arm (0.61 pairs/instance) gained only +0.6 pts on touching recall over mild
+# (n.s.) while losing 1.3 pts on isolated instances (significant) - pushing the
+# synthetic distribution far past the real one (~0.23 pairs/instance) trades
+# general performance for crowded performance and the crowded gain has saturated.
+#
+# The generator fixes from the hard arm ARE kept: amodal labels and never
+# pasting an instance that will not be labelled. Those were confounded with
+# crowding in the hard arm, but they are correct on their own terms - the hard
+# arm had the best precision of the three and repaired the isolated-stratum
+# merge rate.
+batch: 16
+nbs: 64
+model: "yolo26l-seg.pt"
+epochs: 100
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 16
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_bank: /faststorage/project/flat-bug/flatbug-dir/synth/crop_bank
+fb_synth_cache: /faststorage/project/flat-bug/flatbug-dir/synth/cache
+fb_synth_prob: 0.2
+fb_synth_alpha: 4.0
+fb_synth_tau: 0.5
+fb_synth_coverage: 0.15
+fb_synth_touch_prob: 0.6
+fb_synth_max_instances: 120
+fb_synth_amodal: true
+fb_synth_min_visible: 0.4
+fb_synth_overlap: 0.10
+fb_synth_max_overlap: 0.35
