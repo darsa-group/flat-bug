@@ -1,0 +1,75 @@
+# yolo26l-seg + synthetic touching scenes, LONG run on a GenomeDK H200.
+#
+# This is not another ablation arm - it is an attempt at the best model the
+# current setup can produce. It deliberately breaks comparability with the
+# 100-epoch matched runs in two ways, both justified below.
+#
+# ---------------------------------------------------------------------------
+# Why longer: the 100-epoch runs were NOT converged.
+#
+# Slope of validation mask mAP over the last 6 validations (epochs 71-96):
+#   M control  +1.59e-04 /epoch    M + synth  +1.61e-04 /epoch
+#   L control  +1.10e-04 /epoch
+# which extrapolates to +0.011 to +0.016 over another 100 epochs - several
+# times the size of the effects being compared (synth vs control was +0.002 on
+# aggregate). Two of the three runs also peaked at epoch 86, not 100.
+#
+# ---------------------------------------------------------------------------
+# Why cosine: the linear schedule stays high, then falls off a cliff.
+#
+# Measured LR on the L run: 9.6e-3 at epoch 5, still 1.1e-3 at epoch 90, then
+# 1.0e-4 at 100. Only 9 of 100 epochs sit below 10% of lr0, all after epoch 92.
+# The tail flattens because the LR collapsed, not because the model saturated.
+# Cosine reaches 1.5e-3 by epoch 75 where linear is still at 2.5e-3, spending
+# far more of the budget in the regime where fine detail is learned, at no
+# extra compute.
+#
+# 96% of the L run's total gain came in its first 50 epochs, so the marginal
+# return here is genuinely small - this buys the last few percent, not a
+# transformation.
+# ---------------------------------------------------------------------------
+batch: 16               # measured: 3.73 GiB/image, real training peaks ~40 of 141 GiB
+nbs: 64                 # effective batch matches every other run
+model: "yolo26l-seg.pt" # not x: 2.24x compute for detection-only gains, and mask
+                        # IoU is resolution/annotation-bound, not capacity-bound
+epochs: 250
+cos_lr: true
+lr0: 0.01
+lrf: 0.0001             # cosine floor; 10x above the linear runs' 1e-5 so the
+                        # last epochs still move rather than freezing
+optimizer: 'SGD'
+device: 0
+patience: 9999          # no early stop - we want the whole schedule
+save_period: 10
+workers: 32
+fb_max_instances: 9999
+fb_max_images: -1
+
+# Synthetic scenes: the HARD setting, 0.61 touching pairs per instance.
+#
+# At matched epoch 40 hard looked worse than mild, and I reported it that way.
+# That was premature - the hard arm was simply slower to converge. At 100
+# epochs it has the BEST touching recall of all five runs (0.7632 vs mild's
+# 0.7592 and the control's 0.7324) and the better merge rates, with every
+# hard-vs-mild difference non-significant. Since this run is about reaching the
+# ceiling rather than about a fair comparison, it takes the arm that ended
+# highest on the metric this work exists to improve.
+#
+# Real validation data runs ~0.23 pairs per instance, so 0.61 is well past the
+# target distribution. That is deliberate: train harder than the task.
+#
+# 32 workers, not 16: composition costs 6.8 s per scene at this density against
+# 2.6 s at mild, which would otherwise make the dataloader the bottleneck.
+fb_synth_bank: /faststorage/project/flat-bug/flatbug-dir/synth/crop_bank
+fb_synth_cache: /faststorage/project/flat-bug/flatbug-dir/synth/cache
+fb_synth_prob: 0.2
+fb_synth_alpha: 4.0
+fb_synth_tau: 0.5
+fb_synth_coverage: 0.45
+fb_synth_touch_prob: 0.85
+fb_synth_max_instances: 250
+# Generator correctness fixes - kept regardless of crowding.
+fb_synth_amodal: true          # full outlines through occluders, as real data is annotated
+fb_synth_min_visible: 0.4      # reject the placement, never drop the label
+fb_synth_overlap: 0.10
+fb_synth_max_overlap: 0.35
