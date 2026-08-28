@@ -18,6 +18,10 @@
 
 source ~/.venv/bin/activate
 export PYTHONPATH=$HOME/flat-bug-synth/src
+# mask_ratio 2 quadruples the per-instance mask tensors in the seg loss, and the dense
+# sub-datasets (Massid45, ~400 instances per tile) drive the peak. Expandable segments
+# keep those large short-lived blocks from fragmenting the allocator.
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 ROOT=$HOME/flatbug-dir
 CONFIG=$HOME/flat-bug-synth/scripts/training/${FB_CONFIG}
