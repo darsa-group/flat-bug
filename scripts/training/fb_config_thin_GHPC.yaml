@@ -1,0 +1,28 @@
+# Arm C: mask_ratio 2 plus thin-structure weighting in the mask loss.
+# Pixels removed by a 5x5 morphological opening of the GT mask (legs, antennae,
+# wing edges) get 5x the per-pixel BCE weight; the term is renormalised by the mean
+# weight in the box crop so the loss magnitude matches arms A and B.
+# Compare against fb_config_ratio2_GHPC.yaml to attribute the weighting alone.
+
+batch: 8
+model: "yolo26m-seg.pt"
+epochs: 100
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 16
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_bank: /usr/home/qgg/qgeiss/flatbug-dir/synth/crop_bank
+fb_synth_cache: /usr/home/qgg/qgeiss/flatbug-dir/synth/cache
+fb_synth_prob: 0.0
+fb_synth_alpha: 4.0
+fb_synth_tau: 0.5
+fb_synth_coverage: 0.15
+fb_synth_touch_prob: 0.6
+fb_synth_max_instances: 120
+mask_ratio: 2
+fb_thin_weight: 4.0
+fb_thin_kernel: 5

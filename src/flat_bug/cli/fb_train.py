@@ -67,6 +67,11 @@ def main():  # noqa: D103
         "fb_synth_max_overlap": 0.35,
         "fb_synth_min_visible": 0.4,
         "fb_synth_amodal": True,
+        # Thin-structure (leg/antenna/wing) weighting in the mask loss.
+        # Inert at 0.0. Pair with mask_ratio=2, since at mask_ratio=4 only ~68%
+        # of appendage pixels survive target rasterisation.
+        "fb_thin_weight": 0.0,
+        "fb_thin_kernel": 5,
         "cache": False,
     }
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)

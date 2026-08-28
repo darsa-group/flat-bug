@@ -48,6 +48,7 @@ from ultralytics.utils.torch_utils import smart_inference_mode, torch_distribute
 
 from flat_bug import logger
 from flat_bug.datasets import FlatBugYOLODataset, FlatBugYOLOValidationDataset
+from flat_bug.losses import ThinCriterionFactory
 from flat_bug.synthetic import SceneComposer
 
 
@@ -321,6 +322,10 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
             "amodal_labels": bool(custom_fb_args.get("fb_synth_amodal", True)),
         }
         self._synthetic = None
+        # Up-weight thin structures (legs/antennae/wings) in the mask loss. 0.0 disables,
+        # reproducing stock ultralytics behaviour exactly.
+        self._thin_weight = float(custom_fb_args.get("fb_thin_weight", 0.0) or 0.0)
+        self._thin_kernel = int(custom_fb_args.get("fb_thin_kernel", 5) or 5)
         self._exclude_datasets = custom_fb_args["fb_exclude_datasets"]
         self.custom_eval = custom_fb_args["fb_custom_eval"]
         self._do_custom_eval = False  # This is a dynamic signalling flag, not a hyperparameter
@@ -362,6 +367,17 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
 
     def log_lr(self):  # noqa: D102
         LOGGER.info(f"LR: {self.scheduler.get_last_lr() if self.scheduler is not None else 'NaN'}")
+
+    def get_model(self, cfg: Any = None, weights: Any = None, verbose: bool = True) -> torch.nn.Module:
+        """Build the segmentation model, swapping in the thin-weighted mask loss if requested."""
+        model = super().get_model(cfg=cfg, weights=weights, verbose=verbose)
+        if self._thin_weight > 0:
+            model.init_criterion = ThinCriterionFactory(model, self._thin_weight, self._thin_kernel)
+            LOGGER.info(
+                f"Using thin-structure-weighted mask loss "
+                f"(weight={self._thin_weight}, kernel={self._thin_kernel})."
+            )
+        return model
 
     def setup_model(self) -> dict | None:  # noqa: D102
         if isinstance(self.model, torch.nn.Module):  # if model is loaded beforehand. No setup needed

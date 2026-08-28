@@ -1,0 +1,25 @@
+# Arm B: identical to fb_config_control_GHPC.yaml except mask_ratio 4 -> 2.
+# Isolates the effect of keeping thin structures in the mask *target*:
+# at ratio 4 only 68% of GT appendage pixels survive rasterisation (48% below 32px),
+# at ratio 2, 83% (74% below 32px). No loss reweighting here.
+
+batch: 8
+model: "yolo26m-seg.pt"
+epochs: 100
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 16
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_bank: /usr/home/qgg/qgeiss/flatbug-dir/synth/crop_bank
+fb_synth_cache: /usr/home/qgg/qgeiss/flatbug-dir/synth/cache
+fb_synth_prob: 0.0
+fb_synth_alpha: 4.0
+fb_synth_tau: 0.5
+fb_synth_coverage: 0.15
+fb_synth_touch_prob: 0.6
+fb_synth_max_instances: 120
+mask_ratio: 2
