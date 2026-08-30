@@ -204,7 +204,13 @@ class TileSegDataset(Dataset):
         if length is not None:
             scale = max(0.0, (length - len(reps)) / max(sum(reps) - len(reps), 1))
             reps = [max(1, int(round(1 + (r - 1) * scale))) for r in reps]
-        return [i for i, r in enumerate(reps) for _ in range(r)]
+        index = [i for i, r in enumerate(reps) for _ in range(r)]
+        # Shuffle, or the rotating window walks the SORTED file list and each epoch trains on
+        # one alphabetically-adjacent - hence domain-homogeneous - slice. That produces
+        # sequential domain shift and catastrophic forgetting, and pins validation to whichever
+        # datasets sort first.
+        random.Random(20260830).shuffle(index)
+        return index
 
     def __len__(self) -> int:
         """Length of the full coverage list (one pass over every image's tiles)."""
