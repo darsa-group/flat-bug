@@ -83,8 +83,8 @@ def evaluate(model, loader, device) -> dict:
     for x, y, v in loader:
         x, y, v = x.to(device, non_blocking=True), y.to(device, non_blocking=True), v.to(device, non_blocking=True)
         with torch.autocast("cuda", dtype=torch.bfloat16):
-            p = (torch.sigmoid(model(x)) > 0.5).float() * v
-        y = y * v
+            p = (torch.sigmoid(model(x)[:, :2]) > 0.5).float() * v
+        y = y[:, :2] * v
         tp += (p * y).sum((0, 2, 3))
         fp += (p * (1 - y)).sum((0, 2, 3))
         fn += ((1 - p) * y).sum((0, 2, 3))
@@ -102,7 +102,13 @@ def main() -> None:
     ap.add_argument("-e", "--epochs", type=int, default=20)
     ap.add_argument("-b", "--batch", type=int, default=4)
     ap.add_argument("--tile", type=int, default=1024)
-    ap.add_argument("--encoder", default="tu-convnext_tiny")
+    ap.add_argument("--encoder", default="tu-convnext_tiny",
+                    help="tu-convnext_tiny (local context) or mit_b2 (global self-attention)")
+    ap.add_argument("--dist-channel", action="store_true",
+                    help="predict a per-instance distance map as a third channel, for watershed markers")
+    ap.add_argument("--inst-weight", action="store_true",
+                    help="weight the loss by 1/sqrt(instance area), so small animals are not drowned")
+    ap.add_argument("--dist-gain", type=float, default=1.0, help="weight of the distance-map L1 term")
     ap.add_argument("--steps", type=int, default=4000,
                     help="crops per EPOCH (a rotating window; full image coverage accumulates "
                          "over len(coverage)/steps epochs)")
@@ -127,22 +133,26 @@ def main() -> None:
 
     os.makedirs(a.out, exist_ok=True)
     dev = "cuda" if torch.cuda.is_available() else "cpu"
-    model = smp.Unet(a.encoder, encoder_weights="imagenet", in_channels=3, classes=2).to(dev)
+    n_pred = 3 if a.dist_channel else 2
+    model = smp.Unet(a.encoder, encoder_weights="imagenet", in_channels=3, classes=n_pred).to(dev)
     n_par = sum(p.numel() for p in model.parameters()) / 1e6
-    print(f"U-Net / {a.encoder}: {n_par:.1f}M params, tile {a.tile}, batch {a.batch}", flush=True)
+    print(f"U-Net / {a.encoder}: {n_par:.1f}M params, tile {a.tile}, batch {a.batch}, "
+          f"{n_pred} predicted channels", flush=True)
 
     import dataset as _ds  # module-level knobs, so workers inherit them through the fork
     _ds.P_BLUR, _ds.P_NOISE, _ds.P_ROTATE = a.blur, a.noise, a.rotate
     tr_ds = TileSegDataset(a.data, "train", a.tile, seam_channel=a.seam_weight > 0,
+                           dist_channel=a.dist_channel, inst_weight=a.inst_weight,
                            synth_bank=a.synth_bank, synth_cache=a.synth_cache,
                            synth_prob=a.synth_prob, synth_touch_prob=a.synth_touch_prob,
                            synth_coverage=a.synth_coverage)
-    va_ds = TileSegDataset(a.data, "val", a.tile, seed=1234)
+    va_ds = TileSegDataset(a.data, "val", a.tile, seed=1234, dist_channel=a.dist_channel)
     tr_sampler = WindowSampler(len(tr_ds), a.steps)
     va_sampler = WindowSampler(len(va_ds), a.val_steps)
     cycle = max(1, round(len(tr_ds) / a.steps))
     print(f"seam weight w0={a.seam_weight} sigma={a.seam_sigma}; synthetic scenes p={tr_ds.synth_prob}; "
-          f"blur p={a.blur} noise p={a.noise} rotate p={a.rotate}", flush=True)
+          f"blur p={a.blur} noise p={a.noise} rotate p={a.rotate}; "
+          f"dist_channel={a.dist_channel} inst_weight={a.inst_weight}", flush=True)
     print(f"coverage list = {len(tr_ds)} crops over {len(tr_ds.images)} images; "
           f"epoch = {a.steps} crops, so every image is seen once per {cycle} epochs. "
           f"val = {a.val_steps} crops (fixed window).", flush=True)
@@ -164,14 +174,22 @@ def main() -> None:
         tot = n = 0
         for x, y, v in tr:
             x, y, v = x.to(dev, non_blocking=True), y.to(dev, non_blocking=True), v.to(dev, non_blocking=True)
+            # NOTE: weights are kept separate from `v`. Folding them into the validity mask
+            # breaks the Dice term and the metrics, both of which need a binary mask.
             w = None
-            if a.seam_weight > 0:  # third channel is the seam mask, not a prediction target
-                # NOTE: kept separate from `v`. Folding it into the validity mask breaks the
-                # Dice term and the metrics, both of which need a binary mask.
-                w = v * weight_from_seam(y[:, 2:3], w0=a.seam_weight, sigma=a.seam_sigma)
-                y = y[:, :2]
+            if tr_ds.idx_seam is not None:
+                w = v * weight_from_seam(y[:, tr_ds.idx_seam:tr_ds.idx_seam + 1],
+                                         w0=a.seam_weight, sigma=a.seam_sigma)
+            if tr_ds.idx_instw is not None:
+                iw = y[:, tr_ds.idx_instw:tr_ds.idx_instw + 1]
+                w = iw * v if w is None else w * iw
+            yp = y[:, :n_pred]
             with torch.autocast("cuda", dtype=torch.bfloat16):
-                loss = dice_bce(model(x), y, pw, v, w)
+                out = model(x)
+                loss = dice_bce(out[:, :2], yp[:, :2], pw, v, w)
+                if a.dist_channel:  # regression, not classification
+                    d = torch.sigmoid(out[:, 2:3])
+                    loss = loss + a.dist_gain * ((d - yp[:, 2:3]).abs() * v).sum() / v.sum().clamp_min(1.0)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
