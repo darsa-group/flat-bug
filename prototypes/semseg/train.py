@@ -27,7 +27,7 @@ import torch
 from torch.utils.data import DataLoader
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from dataset import TileSegDataset  # noqa: E402
+from dataset import TileSegDataset, WindowSampler  # noqa: E402
 
 
 def dice_bce(logits: torch.Tensor, target: torch.Tensor, pos_weight: torch.Tensor,
@@ -97,8 +97,10 @@ def main() -> None:
     ap.add_argument("-b", "--batch", type=int, default=4)
     ap.add_argument("--tile", type=int, default=1024)
     ap.add_argument("--encoder", default="tu-convnext_tiny")
-    ap.add_argument("--steps", type=int, default=1500, help="crops per epoch")
-    ap.add_argument("--val-steps", type=int, default=300)
+    ap.add_argument("--steps", type=int, default=4000,
+                    help="crops per EPOCH (a rotating window; full image coverage accumulates "
+                         "over len(coverage)/steps epochs)")
+    ap.add_argument("--val-steps", type=int, default=800, help="crops per validation pass")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--lr", type=float, default=3e-4)
     a = ap.parse_args()
@@ -109,19 +111,29 @@ def main() -> None:
     n_par = sum(p.numel() for p in model.parameters()) / 1e6
     print(f"U-Net / {a.encoder}: {n_par:.1f}M params, tile {a.tile}, batch {a.batch}", flush=True)
 
-    tr = DataLoader(TileSegDataset(a.data, "train", a.tile, a.steps), batch_size=a.batch, num_workers=a.workers,
+    tr_ds = TileSegDataset(a.data, "train", a.tile)
+    va_ds = TileSegDataset(a.data, "val", a.tile, seed=1234)
+    tr_sampler = WindowSampler(len(tr_ds), a.steps)
+    va_sampler = WindowSampler(len(va_ds), a.val_steps)
+    cycle = max(1, round(len(tr_ds) / a.steps))
+    print(f"coverage list = {len(tr_ds)} crops over {len(tr_ds.images)} images; "
+          f"epoch = {a.steps} crops, so every image is seen once per {cycle} epochs. "
+          f"val = {a.val_steps} crops (fixed window).", flush=True)
+    tr = DataLoader(tr_ds, batch_size=a.batch, sampler=tr_sampler, num_workers=a.workers,
                     pin_memory=True, drop_last=True, persistent_workers=a.workers > 0)
-    va = DataLoader(TileSegDataset(a.data, "val", a.tile, a.val_steps, seed=1234), batch_size=a.batch,
+    va = DataLoader(va_ds, batch_size=a.batch, sampler=va_sampler,
                     num_workers=max(2, a.workers // 2), pin_memory=True)
 
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=1e-4)
-    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=a.epochs * (a.steps // a.batch) + 1)
+    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr,
+                                               total_steps=a.epochs * (len(tr) + 1) + 1)
     # Outline is ~1% of pixels against ~12% foreground, so it needs the heavier positive weight.
     pw = torch.tensor([2.0, 8.0], device=dev)
 
     best = -1.0
     for ep in range(1, a.epochs + 1):
         t0 = time.time()
+        tr_sampler.set_epoch(ep - 1)
         tot = n = 0
         for x, y, v in tr:
             x, y, v = x.to(dev, non_blocking=True), y.to(dev, non_blocking=True), v.to(dev, non_blocking=True)
@@ -142,7 +154,8 @@ def main() -> None:
             best = score
             torch.save({"model": model.state_dict(), "encoder": a.encoder, "tile": a.tile, "epoch": ep, "metrics": m},
                        os.path.join(a.out, "best.pt"))
-        print(f"ep {ep:3d}/{a.epochs}  loss {tot / max(n, 1):.4f}  "
+        lr_now = opt.param_groups[0]["lr"]
+        print(f"ep {ep:3d}/{a.epochs}  lr {lr_now:.2e}  loss {tot / max(n, 1):.4f}  "
               f"fg IoU {m['fg_iou']:.4f}  outline IoU {m['ol_iou']:.4f}  "
               f"fg F1 {m['fg_f1']:.4f}  outline F1 {m['ol_f1']:.4f}  ({time.time() - t0:.0f}s)", flush=True)
     print(f"done. best fg+outline IoU {best:.4f} -> {a.out}/best.pt")
