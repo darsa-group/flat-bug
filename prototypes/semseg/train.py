@@ -119,6 +119,10 @@ def main() -> None:
     ap.add_argument("--synth-prob", type=float, default=0.0, help="fraction of TRAIN crops that are composed scenes")
     ap.add_argument("--synth-touch-prob", type=float, default=0.92)
     ap.add_argument("--synth-coverage", type=float, default=0.30)
+    ap.add_argument("--blur", type=float, default=0.0, help="probability of Gaussian blur, sigma 0.4-2.0")
+    ap.add_argument("--noise", type=float, default=0.0, help="probability of Gaussian noise, 1-6%% of crop contrast")
+    ap.add_argument("--rotate", type=float, default=0.0,
+                    help="probability of arbitrary-angle rotation; target is re-rasterised from rotated polygons")
     a = ap.parse_args()
 
     os.makedirs(a.out, exist_ok=True)
@@ -127,6 +131,8 @@ def main() -> None:
     n_par = sum(p.numel() for p in model.parameters()) / 1e6
     print(f"U-Net / {a.encoder}: {n_par:.1f}M params, tile {a.tile}, batch {a.batch}", flush=True)
 
+    import dataset as _ds  # module-level knobs, so workers inherit them through the fork
+    _ds.P_BLUR, _ds.P_NOISE, _ds.P_ROTATE = a.blur, a.noise, a.rotate
     tr_ds = TileSegDataset(a.data, "train", a.tile, seam_channel=a.seam_weight > 0,
                            synth_bank=a.synth_bank, synth_cache=a.synth_cache,
                            synth_prob=a.synth_prob, synth_touch_prob=a.synth_touch_prob,
@@ -135,7 +141,8 @@ def main() -> None:
     tr_sampler = WindowSampler(len(tr_ds), a.steps)
     va_sampler = WindowSampler(len(va_ds), a.val_steps)
     cycle = max(1, round(len(tr_ds) / a.steps))
-    print(f"seam weight w0={a.seam_weight} sigma={a.seam_sigma}; synthetic scenes p={tr_ds.synth_prob}", flush=True)
+    print(f"seam weight w0={a.seam_weight} sigma={a.seam_sigma}; synthetic scenes p={tr_ds.synth_prob}; "
+          f"blur p={a.blur} noise p={a.noise} rotate p={a.rotate}", flush=True)
     print(f"coverage list = {len(tr_ds)} crops over {len(tr_ds.images)} images; "
           f"epoch = {a.steps} crops, so every image is seen once per {cycle} epochs. "
           f"val = {a.val_steps} crops (fixed window).", flush=True)

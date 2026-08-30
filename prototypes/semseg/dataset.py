@@ -43,9 +43,21 @@ AUGMENTATIONS (all label-preserving; see `augment()` for the rationale of each):
     - dihedral: horizontal/vertical flip and 90-degree rotation  (p=1, lossless)
     - HSV jitter: h 0.015, s 0.7, v 0.4                          (flat-bug's own values)
     - channel inversion                                          (p=0.25, as flat-bug)
-Deliberately ABSENT: any scaling, arbitrary-angle rotation, shear or perspective. Those
-resample the image, and at native resolution a 2px leg does not survive interpolation -
-the thin structures are the whole point of the outline channel.
+OPTIONAL, all off by default (see `augment()`):
+    - rotation at an arbitrary angle. Safe here because the target is re-rasterised from
+      ROTATED POLYGONS rather than resampled, so it stays exact and only the image is
+      interpolated. flat-bug uses degrees=180 for the same reason.
+    - Gaussian blur, sigma in [0, 2]. Calibrated: high-frequency detail spans 10x across
+      the sub-datasets (0.71 for Massid45 and ubc-scanned-sticky-cards up to 6.91 for
+      broto2025), and sigma 2 takes the sharpest down past the blurriest, so the range
+      covers the real spread without leaving it.
+    - Gaussian noise, scaled to each crop's own contrast, since contrast spans 12x
+      (std 7.5 to 93.5) and an absolute noise level would be trivial on one dataset and
+      overwhelming on another.
+
+Still deliberately absent: scaling (breaks the native-resolution contract with inference)
+and elastic deformation (most likely to produce anatomically implausible animals, and the
+hardest to calibrate).
 """
 
 from __future__ import annotations
@@ -62,6 +74,11 @@ from torch.utils.data import Dataset
 OUTLINE_PX = 3  # outline thickness in pixels, at native resolution
 HSV_GAINS = (0.015, 0.7, 0.4)  # matches flat-bug's hsv_h / hsv_s / hsv_v
 P_INVERT = 0.25  # matches flat-bug's RandomColorInv
+P_BLUR = 0.0  # probability of Gaussian blur; set by the trainer
+BLUR_SIGMA = (0.4, 2.0)  # spans the measured 10x range of high-frequency detail
+P_NOISE = 0.0  # probability of Gaussian noise; set by the trainer
+NOISE_FRAC = (0.01, 0.06)  # std as a fraction of the crop's own contrast
+P_ROTATE = 0.0  # probability of arbitrary-angle rotation; set by the trainer
 P_NEAR_INSTANCE = 0.92  # fraction of crops centred on an annotation
 MAX_REPEATS = 48  # cap on per-epoch repeats, so one 143Mpx scan cannot dominate an epoch
 
@@ -126,6 +143,32 @@ def rasterise(polygons: list[np.ndarray], shape: tuple[int, int], suppress_borde
     return np.stack([fg, ol]).astype(np.float32)
 
 
+def rotate_crop_and_polygons(img: np.ndarray, polygons: list[np.ndarray], angle: float
+                             ) -> tuple[np.ndarray, list[np.ndarray]]:
+    """Rotate an image about its centre and transform the polygons to match.
+
+    The target is later re-rasterised from the rotated polygons, so it is exact - only the
+    image is interpolated. This is what makes arbitrary-angle rotation safe for thin
+    structures that would not survive resampling of a rasterised mask.
+
+    Args:
+        img: HxWx3 uint8 crop.
+        polygons: Instance polygons in crop-local pixel coordinates.
+        angle: Rotation in degrees.
+
+    Returns:
+        The rotated image and the transformed polygons.
+    """
+    h, w = img.shape[:2]
+    mat = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
+    out = cv2.warpAffine(img, mat, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT_101)
+    rot = []
+    for c in polygons:
+        q = np.concatenate([c, np.ones((len(c), 1), np.float32)], 1) @ mat.T
+        rot.append(q.astype(np.float32))
+    return out, rot
+
+
 def augment(img: np.ndarray, target: np.ndarray, rng: random.Random) -> tuple[np.ndarray, np.ndarray]:
     """Apply the label-preserving augmentations listed in the module docstring.
 
@@ -161,6 +204,14 @@ def augment(img: np.ndarray, target: np.ndarray, rng: random.Random) -> tuple[np
         img = cv2.cvtColor(cv2.merge(lut), cv2.COLOR_HSV2RGB)
     if rng.random() < P_INVERT:
         img = 255 - img
+    if P_BLUR and rng.random() < P_BLUR:
+        img = cv2.GaussianBlur(img, (0, 0), rng.uniform(*BLUR_SIGMA))
+    if P_NOISE and rng.random() < P_NOISE:
+        # relative to this crop's contrast: an absolute level would be trivial on a
+        # high-contrast dataset and overwhelming on a low-contrast one.
+        sd = max(1.0, float(img.std())) * rng.uniform(*NOISE_FRAC)
+        noise = np.random.default_rng(rng.randrange(2 ** 32)).normal(0, sd, img.shape)
+        img = np.clip(img.astype(np.float32) + noise, 0, 255).astype(np.uint8)
     return img, np.ascontiguousarray(target)
 
 
@@ -306,6 +357,8 @@ class TileSegDataset(Dataset):
         local = [p - np.array([x0, y0], np.float32) for p in polys]
         local = [p for p in local
                  if p[:, 0].max() >= 0 and p[:, 1].max() >= 0 and p[:, 0].min() <= t and p[:, 1].min() <= t]
+        if self.augment_data and P_ROTATE and rng.random() < P_ROTATE:
+            crop, local = rotate_crop_and_polygons(crop, local, rng.uniform(0, 360))
         target = rasterise(local, (t, t), suppress_border=whole)
         if self.seam_channel:
             from seam_weight import seam_from_polygons
