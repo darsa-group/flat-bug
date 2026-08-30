@@ -32,6 +32,13 @@ rotating slice so coverage accumulates over several epochs. This decouples "how 
 get a metric and a checkpoint" from "how long until every image has been seen", which
 otherwise forces 76-minute epochs and a 10-point learning curve.
 
+SYNTHETIC SCENES: optionally, a fraction of crops are composed by flat-bug's
+``SceneComposer`` instead of read from disk. The motivation is specific - inter-instance
+seams are 0.0111% of real pixels and appear in only 82 of 250 validation crops, and seams
+are the only thing that decides whether a watershed can split touching animals. Composed
+scenes raise seam density about ninefold and their ground truth is exact at precisely the
+place real annotation is least reliable. Off by default (``synth_prob=0``).
+
 AUGMENTATIONS (all label-preserving; see `augment()` for the rationale of each):
     - dihedral: horizontal/vertical flip and 90-degree rotation  (p=1, lossless)
     - HSV jitter: h 0.015, s 0.7, v 0.4                          (flat-bug's own values)
@@ -162,7 +169,10 @@ class TileSegDataset(Dataset):
 
     def __init__(self, root: str, split: str = "train", tile: int = 1024,
                  length: int | None = None, seed: int = 0, augment_data: bool | None = None,
-                 seam_channel: bool = False):
+                 seam_channel: bool = False, synth_bank: str | None = None,
+                 synth_cache: str | None = None, synth_prob: float = 0.0,
+                 synth_touch_prob: float = 0.92, synth_coverage: float = 0.30,
+                 synth_max_instances: int = 90):
         """Build the dataset index.
 
         Args:
@@ -174,6 +184,12 @@ class TileSegDataset(Dataset):
             augment_data: Force augmentation on or off. Defaults to on for ``train``.
             seam_channel: If True the target gains a third channel marking inter-instance
                 seams, for loss weighting. Off by default, so existing runs are unchanged.
+            synth_bank: Crop-bank directory for synthetic scenes, or None to disable.
+            synth_cache: Background cache directory for synthetic scenes.
+            synth_prob: Probability that a crop is a composed scene rather than a real one.
+            synth_touch_prob: Probability a pasted instance is placed touching another.
+            synth_coverage: Target fraction of the tile covered by instances.
+            synth_max_instances: Cap on instances per composed scene.
         """
         self.images = sorted(glob.glob(os.path.join(root, "images", split, "*.jpg")))
         if not self.images:
@@ -181,7 +197,29 @@ class TileSegDataset(Dataset):
         self.root, self.split, self.tile, self.seed = root, split, tile, seed
         self.augment_data = (split == "train") if augment_data is None else augment_data
         self.seam_channel = seam_channel
+        self.synth_prob = float(synth_prob) if (synth_bank and synth_cache) else 0.0
+        self._synth_args = dict(bank_dir=synth_bank, cache_dir=synth_cache, tile=tile,
+                                coverage=synth_coverage, touch_prob=synth_touch_prob,
+                                overlap=0.12, max_overlap=0.40, min_visible=0.45,
+                                max_instances=synth_max_instances, amodal_labels=False)
+        self._composer = None  # built lazily, so dataloader workers each get their own
         self.index = self._build_index(length)
+
+    def _scene(self, rng: random.Random):
+        """Compose one synthetic scene.
+
+        Returns:
+            (RGB uint8 image, list of polygons in pixel coordinates).
+        """
+        if self._composer is None:
+            import sys as _sys
+            if "/home/quentin/repos/flat-bug-git/src" not in _sys.path:
+                _sys.path.insert(0, "/home/quentin/repos/flat-bug-git/src")
+            from flat_bug.synthetic import SceneComposer
+            self._composer = SceneComposer(**self._synth_args)
+        img, polys, _ = self._composer.compose(rng)
+        t = self.tile
+        return cv2.cvtColor(img, cv2.COLOR_BGR2RGB), [q.reshape(-1, 2) * t for q in polys]
 
     def _build_index(self, length: int | None) -> list[int]:
         """Repeat each image in proportion to its tile count, so every image is seen.
@@ -228,6 +266,22 @@ class TileSegDataset(Dataset):
         # `i` is a global step that keeps increasing across epochs, so both the image
         # (cycling through the coverage list) and the crop position vary every pass.
         rng = random.Random((self.seed << 20) ^ (i * 2654435761) & 0xFFFFFFFF)
+        if self.synth_prob > 0 and rng.random() < self.synth_prob:
+            crop, local = self._scene(rng)
+            t = self.tile
+            target = rasterise(local, (t, t), suppress_border=True)
+            if self.seam_channel:
+                from seam_weight import seam_from_polygons
+                target = np.concatenate([target, seam_from_polygons(local, (t, t), OUTLINE_PX)[None]], 0)
+            valid = np.ones((t, t), np.float32)
+            if self.augment_data:
+                nch = target.shape[0]
+                stacked = np.concatenate([target, valid[None]], 0)
+                crop, stacked = augment(crop, stacked, rng)
+                target, valid = stacked[:nch], stacked[nch]
+            x = torch.from_numpy(np.ascontiguousarray(crop)).permute(2, 0, 1).float().div_(255)
+            return (x, torch.from_numpy(np.ascontiguousarray(target)),
+                    torch.from_numpy(np.ascontiguousarray(valid))[None])
         path = self.images[self.index[i % len(self.index)]]
         img = cv2.imread(path)
         if img is None:

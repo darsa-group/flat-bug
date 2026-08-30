@@ -109,6 +109,11 @@ def main() -> None:
                          "0 disables it and reproduces the unweighted run exactly. "
                          "Measured signal share in the seam neighbourhood: w0=30 -> 1.2%%, 100 -> 3.5%%.")
     ap.add_argument("--seam-sigma", type=float, default=6.0, help="spatial spread of the seam weight, px")
+    ap.add_argument("--synth-bank", default=None, help="crop-bank dir; enables synthetic scenes")
+    ap.add_argument("--synth-cache", default=None, help="background cache dir for synthetic scenes")
+    ap.add_argument("--synth-prob", type=float, default=0.0, help="fraction of TRAIN crops that are composed scenes")
+    ap.add_argument("--synth-touch-prob", type=float, default=0.92)
+    ap.add_argument("--synth-coverage", type=float, default=0.30)
     a = ap.parse_args()
 
     os.makedirs(a.out, exist_ok=True)
@@ -117,11 +122,15 @@ def main() -> None:
     n_par = sum(p.numel() for p in model.parameters()) / 1e6
     print(f"U-Net / {a.encoder}: {n_par:.1f}M params, tile {a.tile}, batch {a.batch}", flush=True)
 
-    tr_ds = TileSegDataset(a.data, "train", a.tile, seam_channel=a.seam_weight > 0)
+    tr_ds = TileSegDataset(a.data, "train", a.tile, seam_channel=a.seam_weight > 0,
+                           synth_bank=a.synth_bank, synth_cache=a.synth_cache,
+                           synth_prob=a.synth_prob, synth_touch_prob=a.synth_touch_prob,
+                           synth_coverage=a.synth_coverage)
     va_ds = TileSegDataset(a.data, "val", a.tile, seed=1234)
     tr_sampler = WindowSampler(len(tr_ds), a.steps)
     va_sampler = WindowSampler(len(va_ds), a.val_steps)
     cycle = max(1, round(len(tr_ds) / a.steps))
+    print(f"seam weight w0={a.seam_weight} sigma={a.seam_sigma}; synthetic scenes p={tr_ds.synth_prob}", flush=True)
     print(f"coverage list = {len(tr_ds)} crops over {len(tr_ds.images)} images; "
           f"epoch = {a.steps} crops, so every image is seen once per {cycle} epochs. "
           f"val = {a.val_steps} crops (fixed window).", flush=True)
