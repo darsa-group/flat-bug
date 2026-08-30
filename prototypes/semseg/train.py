@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Train a 1024px U-Net predicting arthropod foreground and instance outline.
+"""PROTOTYPE - not part of the mainstream flat-bug pipeline.
+
+Train a 1024px U-Net predicting arthropod foreground and instance outline.
 
 Two channels, both binary: foreground (any arthropod) and outline (the contour ring of
 each instance). Subtracting the outline from the foreground leaves one connected core per
@@ -20,7 +22,6 @@ import os
 import sys
 import time
 
-import numpy as np
 import segmentation_models_pytorch as smp
 import torch
 from torch.utils.data import DataLoader
@@ -29,7 +30,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dataset import TileSegDataset  # noqa: E402
 
 
-def dice_bce(logits: torch.Tensor, target: torch.Tensor, pos_weight: torch.Tensor) -> torch.Tensor:
+def dice_bce(logits: torch.Tensor, target: torch.Tensor, pos_weight: torch.Tensor,
+             valid: torch.Tensor) -> torch.Tensor:
     """Soft-Dice plus weighted BCE, summed over channels.
 
     Dice keeps the loss meaningful when foreground is ~12% of pixels and outline ~1%;
@@ -39,17 +41,20 @@ def dice_bce(logits: torch.Tensor, target: torch.Tensor, pos_weight: torch.Tenso
         logits: Raw model output, (B, 2, H, W).
         target: Binary targets, (B, 2, H, W).
         pos_weight: Per-channel positive weight for the BCE term, (2,).
+        valid: (B, 1, H, W) mask; 0 where the crop was reflect-padded and carries no
+            annotation, so those pixels must not be scored as background.
 
     Returns:
         Scalar loss.
     """
     bce = torch.nn.functional.binary_cross_entropy_with_logits(
-        logits, target, pos_weight=pos_weight.view(1, -1, 1, 1)
+        logits, target, pos_weight=pos_weight.view(1, -1, 1, 1), reduction="none"
     )
-    p = torch.sigmoid(logits)
+    bce = (bce * valid).sum() / valid.expand_as(bce).sum().clamp_min(1.0)
+    p = torch.sigmoid(logits) * valid
+    t = target * valid
     dims = (0, 2, 3)
-    inter = (p * target).sum(dims)
-    dice = 1 - (2 * inter + 1.0) / (p.sum(dims) + target.sum(dims) + 1.0)
+    dice = 1 - (2 * (p * t).sum(dims) + 1.0) / (p.sum(dims) + t.sum(dims) + 1.0)
     return bce + dice.mean()
 
 
@@ -69,10 +74,11 @@ def evaluate(model, loader, device) -> dict:
     tp = torch.zeros(2, device=device)
     fp = torch.zeros(2, device=device)
     fn = torch.zeros(2, device=device)
-    for x, y in loader:
-        x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
+    for x, y, v in loader:
+        x, y, v = x.to(device, non_blocking=True), y.to(device, non_blocking=True), v.to(device, non_blocking=True)
         with torch.autocast("cuda", dtype=torch.bfloat16):
-            p = (torch.sigmoid(model(x)) > 0.5).float()
+            p = (torch.sigmoid(model(x)) > 0.5).float() * v
+        y = y * v
         tp += (p * y).sum((0, 2, 3))
         fp += (p * (1 - y)).sum((0, 2, 3))
         fn += ((1 - p) * y).sum((0, 2, 3))
@@ -117,10 +123,10 @@ def main() -> None:
     for ep in range(1, a.epochs + 1):
         t0 = time.time()
         tot = n = 0
-        for x, y in tr:
-            x, y = x.to(dev, non_blocking=True), y.to(dev, non_blocking=True)
+        for x, y, v in tr:
+            x, y, v = x.to(dev, non_blocking=True), y.to(dev, non_blocking=True), v.to(dev, non_blocking=True)
             with torch.autocast("cuda", dtype=torch.bfloat16):
-                loss = dice_bce(model(x), y, pw)
+                loss = dice_bce(model(x), y, pw, v)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
