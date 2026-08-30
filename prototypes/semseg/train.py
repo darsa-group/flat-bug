@@ -32,7 +32,7 @@ from seam_weight import weight_from_seam  # noqa: E402
 
 
 def dice_bce(logits: torch.Tensor, target: torch.Tensor, pos_weight: torch.Tensor,
-             valid: torch.Tensor) -> torch.Tensor:
+             valid: torch.Tensor, weight: torch.Tensor | None = None) -> torch.Tensor:
     """Soft-Dice plus weighted BCE, summed over channels.
 
     Dice keeps the loss meaningful when foreground is ~12% of pixels and outline ~1%;
@@ -42,16 +42,21 @@ def dice_bce(logits: torch.Tensor, target: torch.Tensor, pos_weight: torch.Tenso
         logits: Raw model output, (B, 2, H, W).
         target: Binary targets, (B, 2, H, W).
         pos_weight: Per-channel positive weight for the BCE term, (2,).
-        valid: (B, 1, H, W) mask; 0 where the crop was reflect-padded and carries no
-            annotation, so those pixels must not be scored as background.
+        valid: (B, 1, H, W) BINARY mask; 0 where the crop was reflect-padded and carries
+            no annotation, so those pixels must not be scored as background. Must stay
+            binary: it also masks the Dice term, where a non-binary multiplier would take
+            the predictions outside [0, 1] and drive Dice negative.
+        weight: Optional (B, 1, H, W) per-pixel weight applied to the BCE term only, e.g.
+            emphasis around inter-instance seams. Defaults to ``valid``.
 
     Returns:
         Scalar loss.
     """
+    w = valid if weight is None else weight
     bce = torch.nn.functional.binary_cross_entropy_with_logits(
         logits, target, pos_weight=pos_weight.view(1, -1, 1, 1), reduction="none"
     )
-    bce = (bce * valid).sum() / valid.expand_as(bce).sum().clamp_min(1.0)
+    bce = (bce * w).sum() / w.expand_as(bce).sum().clamp_min(1.0)
     p = torch.sigmoid(logits) * valid
     t = target * valid
     dims = (0, 2, 3)
@@ -152,11 +157,14 @@ def main() -> None:
         tot = n = 0
         for x, y, v in tr:
             x, y, v = x.to(dev, non_blocking=True), y.to(dev, non_blocking=True), v.to(dev, non_blocking=True)
+            w = None
             if a.seam_weight > 0:  # third channel is the seam mask, not a prediction target
-                v = v * weight_from_seam(y[:, 2:3], w0=a.seam_weight, sigma=a.seam_sigma)
+                # NOTE: kept separate from `v`. Folding it into the validity mask breaks the
+                # Dice term and the metrics, both of which need a binary mask.
+                w = v * weight_from_seam(y[:, 2:3], w0=a.seam_weight, sigma=a.seam_sigma)
                 y = y[:, :2]
             with torch.autocast("cuda", dtype=torch.bfloat16):
-                loss = dice_bce(model(x), y, pw, v)
+                loss = dice_bce(model(x), y, pw, v, w)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
