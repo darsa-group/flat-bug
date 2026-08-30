@@ -82,6 +82,7 @@ def main() -> None:
     sampler = WindowSampler(len(ds), a.n_crops)
     tp = {"seam": 0, "outer": 0}
     tot = {"seam": 0, "outer": 0}
+    pred_n = {"seam": 0, "outer": 0}
     fg_tp = fg_n = 0
     n_with_seam = 0
     for g in sampler:
@@ -116,16 +117,22 @@ def main() -> None:
         tot["seam"] += int(seam.sum())
         tp["outer"] += int((pred_ol & outer).sum())
         tot["outer"] += int(outer.sum())
+        # predictions falling in each region, for precision
+        near = cv2.dilate(seam.astype(np.uint8), k) > 0
+        pred_n["seam"] += int((pred_ol & near).sum())
+        pred_n["outer"] += int((pred_ol & ~near).sum())
         pf = (p[0] > a.threshold) & (v[0].numpy() > 0.5)
         gf = (y[0].numpy() > 0.5) & (v[0].numpy() > 0.5)
         fg_tp += int((pf & gf).sum())
         fg_n += int(gf.sum())
 
     print(f"crops scored: {a.n_crops}, of which {n_with_seam} contain at least one inter-instance seam\n")
-    print(f"{'outline pixel class':28s} {'pixels':>10s} {'recall':>9s}")
+    print(f"{'outline pixel class':28s} {'pixels':>10s} {'recall':>9s} {'precision':>10s}")
     for k_ in ("outer", "seam"):
         r = tp[k_] / max(tot[k_], 1)
-        print(f"{'inter-instance SEAM' if k_ == 'seam' else 'outer contour':28s} {tot[k_]:10d} {r:9.4f}")
+        p_ = tp[k_] / max(pred_n[k_], 1)
+        lab = "inter-instance SEAM" if k_ == "seam" else "outer contour"
+        print(f"{lab:28s} {tot[k_]:10d} {r:9.4f} {p_:10.4f}")
     print(f"{'foreground (reference)':28s} {fg_n:10d} {fg_tp / max(fg_n, 1):9.4f}")
     if tot["seam"]:
         print(f"\nseam pixels are {tot['seam'] / max(tot['seam'] + tot['outer'], 1):.1%} of all outline pixels")

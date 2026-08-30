@@ -161,7 +161,8 @@ class TileSegDataset(Dataset):
     """Native-resolution crops from the flat-bug YOLO layout, with (foreground, outline) targets."""
 
     def __init__(self, root: str, split: str = "train", tile: int = 1024,
-                 length: int | None = None, seed: int = 0, augment_data: bool | None = None):
+                 length: int | None = None, seed: int = 0, augment_data: bool | None = None,
+                 seam_channel: bool = False):
         """Build the dataset index.
 
         Args:
@@ -171,12 +172,15 @@ class TileSegDataset(Dataset):
             length: Approximate epoch length. None uses one crop per tile of every image.
             seed: Base seed for crop sampling.
             augment_data: Force augmentation on or off. Defaults to on for ``train``.
+            seam_channel: If True the target gains a third channel marking inter-instance
+                seams, for loss weighting. Off by default, so existing runs are unchanged.
         """
         self.images = sorted(glob.glob(os.path.join(root, "images", split, "*.jpg")))
         if not self.images:
             raise FileNotFoundError(f"no images under {os.path.join(root, 'images', split)}")
         self.root, self.split, self.tile, self.seed = root, split, tile, seed
         self.augment_data = (split == "train") if augment_data is None else augment_data
+        self.seam_channel = seam_channel
         self.index = self._build_index(length)
 
     def _build_index(self, length: int | None) -> list[int]:
@@ -249,15 +253,19 @@ class TileSegDataset(Dataset):
         local = [p for p in local
                  if p[:, 0].max() >= 0 and p[:, 1].max() >= 0 and p[:, 0].min() <= t and p[:, 1].min() <= t]
         target = rasterise(local, (t, t), suppress_border=whole)
+        if self.seam_channel:
+            from seam_weight import seam_from_polygons
+            target = np.concatenate([target, seam_from_polygons(local, (t, t), OUTLINE_PX)[None]], 0)
         if not whole:  # padded region carries no annotation, so it must not be scored as background
             valid = np.zeros((t, t), np.float32)
             valid[:ch, :cw] = 1.0
         else:
             valid = np.ones((t, t), np.float32)
         if self.augment_data:
+            nch = target.shape[0]  # 2, or 3 when the seam channel is enabled
             stacked = np.concatenate([target, valid[None]], 0)
             crop, stacked = augment(crop, stacked, rng)
-            target, valid = stacked[:2], stacked[2]
+            target, valid = stacked[:nch], stacked[nch]
         x = torch.from_numpy(np.ascontiguousarray(crop)).permute(2, 0, 1).float().div_(255)
         y = torch.from_numpy(np.ascontiguousarray(target))
         v = torch.from_numpy(np.ascontiguousarray(valid))[None]
