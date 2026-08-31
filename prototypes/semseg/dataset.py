@@ -145,12 +145,20 @@ def rasterise(polygons: list[np.ndarray], shape: tuple[int, int], suppress_borde
 
 
 def rotate_crop_and_polygons(img: np.ndarray, polygons: list[np.ndarray], angle: float
-                             ) -> tuple[np.ndarray, list[np.ndarray]]:
+                             ) -> tuple[np.ndarray, list[np.ndarray], np.ndarray]:
     """Rotate an image about its centre and transform the polygons to match.
 
     The target is later re-rasterised from the rotated polygons, so it is exact - only the
     image is interpolated. This is what makes arbitrary-angle rotation safe for thin
     structures that would not survive resampling of a rasterised mask.
+
+    The corners rotated into view are filled by MIRRORING (``BORDER_REFLECT_101``), which
+    keeps the texture statistics plausible but can duplicate an animal sitting near an edge.
+    The polygons are not mirrored, so those pixels would otherwise be shown to the model as
+    visible-animal-labelled-background. They average 13.7% of a tile over uniform angles and
+    reach 17.2% at 45 degrees, so a validity mask is returned and the caller must exclude
+    them from the loss. Filling with zeros instead would avoid the contradiction but teach
+    the model that a large black wedge is background, which is its own artefact.
 
     Args:
         img: HxWx3 uint8 crop.
@@ -158,16 +166,19 @@ def rotate_crop_and_polygons(img: np.ndarray, polygons: list[np.ndarray], angle:
         angle: Rotation in degrees.
 
     Returns:
-        The rotated image and the transformed polygons.
+        The rotated image, the transformed polygons, and a float mask that is 0 on the
+        mirrored-in region and 1 elsewhere.
     """
     h, w = img.shape[:2]
     mat = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
     out = cv2.warpAffine(img, mat, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT_101)
+    keep = cv2.warpAffine(np.ones((h, w), np.float32), mat, (w, h), flags=cv2.INTER_NEAREST,
+                          borderMode=cv2.BORDER_CONSTANT, borderValue=0)
     rot = []
     for c in polygons:
         q = np.concatenate([c, np.ones((len(c), 1), np.float32)], 1) @ mat.T
         rot.append(q.astype(np.float32))
-    return out, rot
+    return out, rot, keep
 
 
 def distance_map(polygons: list[np.ndarray], shape: tuple[int, int]) -> np.ndarray:
@@ -510,8 +521,9 @@ class TileSegDataset(Dataset):
         local = [p - np.array([x0, y0], np.float32) for p in polys]
         local = [p for p in local
                  if p[:, 0].max() >= 0 and p[:, 1].max() >= 0 and p[:, 0].min() <= t and p[:, 1].min() <= t]
+        rot_keep = None
         if self.augment_data and P_ROTATE and rng.random() < P_ROTATE:
-            crop, local = rotate_crop_and_polygons(crop, local, rng.uniform(0, 360))
+            crop, local, rot_keep = rotate_crop_and_polygons(crop, local, rng.uniform(0, 360))
         target = rasterise(local, (t, t), suppress_border=whole)
         ex = self._extra_channels(local, t)
         if ex:
@@ -522,6 +534,8 @@ class TileSegDataset(Dataset):
             valid[:ch, :cw] = 1.0
         else:
             valid = np.ones((t, t), np.float32)
+        if rot_keep is not None:  # mirrored-in corners carry no valid annotation
+            valid = valid * rot_keep
         if self.augment_data:
             nch = target.shape[0]  # 2, or 3 when the seam channel is enabled
             stacked = np.concatenate([target, valid[None]], 0)
