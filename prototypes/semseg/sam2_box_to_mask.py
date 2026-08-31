@@ -38,16 +38,30 @@ from dataset import read_polygons  # noqa: E402
 DEFAULT_WEIGHTS = "/home/quentin/repos/flat-bug-git/sam2.1_b.pt"
 
 
-def masks_from_boxes(model, img: np.ndarray, boxes: list[list[float]]) -> list[np.ndarray]:
-    """Prompt SAM 2 with boxes and return one contour per box.
+MIN_COMPONENT_PX = 20  # ignore specks below this when keeping extra components
+
+
+def masks_from_boxes(model, img: np.ndarray, boxes: list[list[float]],
+                     keep_all_components: bool = True) -> list[list[np.ndarray]]:
+    """Prompt SAM 2 with boxes and return the contours of each returned mask.
+
+    SAM returns exactly one mask per box prompt - measured at 1.00 masks per box - so it
+    never splits a box into several instances. But 56% of those masks are MULTI-COMPONENT:
+    a body plus detached legs, antennae or wing tips. Keeping only the largest contour
+    discards 1.7% of mask area on average and up to 11.9%, and by area badly understates the
+    harm, since the discarded pieces are exactly the thin structures this project exists to
+    preserve.
 
     Args:
         model: An ultralytics SAM model.
         img: HxWx3 RGB image.
         boxes: List of [x1, y1, x2, y2].
+        keep_all_components: Keep every component above ``MIN_COMPONENT_PX``, not just the
+            largest.
 
     Returns:
-        List of (N, 2) contours; entries may be absent where SAM returned nothing.
+        One list of contours per box, largest first. An empty list means SAM returned
+        nothing for that box.
     """
     if not boxes:
         return []
@@ -59,10 +73,9 @@ def masks_from_boxes(model, img: np.ndarray, boxes: list[list[float]]) -> list[n
         for m in r.masks.data.cpu().numpy():
             mm = (m > 0.5).astype(np.uint8)
             cs, _ = cv2.findContours(mm, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if not cs:
-                out.append(None)
-                continue
-            out.append(max(cs, key=cv2.contourArea)[:, 0, :])
+            cs = [c[:, 0, :] for c in cs if len(c) >= 3 and cv2.contourArea(c) >= MIN_COMPONENT_PX]
+            cs.sort(key=lambda c: -cv2.contourArea(c.astype(np.float32)))
+            out.append(cs if keep_all_components else cs[:1])
     return out
 
 
@@ -104,13 +117,13 @@ def validate(model, data: str, pattern: str, n: int) -> None:
         boxes = [[float(p[:, 0].min()), float(p[:, 1].min()),
                   float(p[:, 0].max()), float(p[:, 1].max())] for p in polys]
         got = masks_from_boxes(model, img, boxes)
-        for p, c in zip(polys, got):
-            if c is None or len(c) < 3:
+        for p, cs in zip(polys, got):
+            if not cs:
                 continue
             g = np.zeros((h, w), np.uint8)
             cv2.fillPoly(g, [np.round(p).astype(np.int32)], 1)
             s = np.zeros((h, w), np.uint8)
-            cv2.fillPoly(s, [c.astype(np.int32)], 1)
+            cv2.fillPoly(s, [c.astype(np.int32) for c in cs], 1)
             inter = int((g & s).sum())
             union = int((g | s).sum())
             if union == 0:
