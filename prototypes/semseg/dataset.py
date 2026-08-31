@@ -235,6 +235,58 @@ def instance_weight_map(polygons: list[np.ndarray], shape: tuple[int, int]) -> n
     return out
 
 
+def background_weight_map(polygons: list[np.ndarray], shape: tuple[int, int],
+                          gamma: float = 4.0, saturate: float = 50.0) -> np.ndarray:
+    """Penalise predicted foreground in proportion to its distance from any real instance.
+
+    Measured on the trained model, false-positive pixels split roughly in half: 40.7% lie
+    within 5px of an annotated insect (halo and over-draw, arguably the annotation's fault
+    as much as the model's) while 39.2% lie more than 20px away and 20.5% more than 100px -
+    genuinely free-standing foreground in empty background. A uniform loss treats a 1px
+    halo and a blob in the middle of nowhere identically; this does not.
+
+    The ramp is linear to ``saturate`` px and flat beyond, so everything "far" is penalised
+    equally rather than unboundedly - a blob 500px from an insect is no worse than one at
+    60px, and an unbounded weight would let one distant region dominate the loss.
+
+    Only the BACKGROUND portion is normalised, to mean 1 over background pixels, and
+    foreground pixels keep weight 1. Normalising the whole map instead would change the
+    foreground-to-background balance as a side effect and could trade recall for precision
+    without that ever being asked for; this way the change is confined to redistributing
+    weight WITHIN background - near an animal down, far from any animal up.
+
+    CAVEAT: this assumes the annotation is complete. Where it is not - and there is evidence
+    of that in this dataset - far-from-annotation foreground may be a genuinely unlabelled
+    animal rather than debris, and this weighting would teach the model to reproduce the
+    annotation's gaps.
+
+    Args:
+        polygons: Instance polygons in crop-local pixel coordinates.
+        shape: (height, width) of the crop.
+        gamma: Extra weight at full saturation. 0 returns an all-ones map.
+        saturate: Distance in pixels at which the penalty stops growing.
+
+    Returns:
+        Float array (H, W), mean 1.
+    """
+    h, w = shape
+    if gamma <= 0:
+        return np.ones((h, w), np.float32)
+    fg = np.zeros((h, w), np.uint8)
+    for c in polygons:
+        cv2.fillPoly(fg, [np.round(c).astype(np.int32)], 1)
+    if fg.sum() == 0:  # no annotation: nothing to measure distance from
+        return np.ones((h, w), np.float32)
+    d = cv2.distanceTransform((fg == 0).astype(np.uint8), cv2.DIST_L2, 5)
+    out = np.ones((h, w), np.float32)
+    bg = fg == 0
+    if not bg.any():
+        return out
+    b = 1.0 + gamma * np.clip(d[bg] / max(saturate, 1e-6), 0.0, 1.0)
+    out[bg] = b / max(float(b.mean()), 1e-6)
+    return out
+
+
 def augment(img: np.ndarray, target: np.ndarray, rng: random.Random) -> tuple[np.ndarray, np.ndarray]:
     """Apply the label-preserving augmentations listed in the module docstring.
 
@@ -287,7 +339,8 @@ class TileSegDataset(Dataset):
     def __init__(self, root: str, split: str = "train", tile: int = 1024,
                  length: int | None = None, seed: int = 0, augment_data: bool | None = None,
                  seam_channel: bool = False, dist_channel: bool = False,
-                 inst_weight: bool = False, synth_bank: str | None = None,
+                 inst_weight: bool = False, bg_gamma: float = 0.0, bg_saturate: float = 50.0,
+                 synth_bank: str | None = None,
                  synth_cache: str | None = None, synth_prob: float = 0.0,
                  synth_touch_prob: float = 0.92, synth_coverage: float = 0.30,
                  synth_max_instances: int = 90):
@@ -305,6 +358,9 @@ class TileSegDataset(Dataset):
             dist_channel: If True a per-instance normalised distance map is added as a third
                 PREDICTED channel, for watershed markers.
             inst_weight: If True a 1/sqrt(area) per-pixel weight channel is added.
+            bg_gamma: If > 0, adds a weight channel penalising predicted foreground by its
+                distance from any real instance. 0 disables it.
+            bg_saturate: Distance in pixels at which that penalty saturates.
             synth_bank: Crop-bank directory for synthetic scenes, or None to disable.
             synth_cache: Background cache directory for synthetic scenes.
             synth_prob: Probability that a crop is a composed scene rather than a real one.
@@ -320,11 +376,14 @@ class TileSegDataset(Dataset):
         self.seam_channel = seam_channel
         self.dist_channel = dist_channel
         self.inst_weight = inst_weight
+        self.bg_gamma = float(bg_gamma)
+        self.bg_saturate = float(bg_saturate)
         # channel layout, so the trainer cannot mis-slice it
         self.n_pred = 3 if dist_channel else 2
         i = self.n_pred
         self.idx_seam = (i := i + 1) - 1 if seam_channel else None
         self.idx_instw = (i := i + 1) - 1 if inst_weight else None
+        self.idx_bgw = (i := i + 1) - 1 if bg_gamma > 0 else None
         self.n_channels = i
         self.synth_prob = float(synth_prob) if (synth_bank and synth_cache) else 0.0
         self._synth_args = dict(bank_dir=synth_bank, cache_dir=synth_cache, tile=tile,
@@ -345,6 +404,8 @@ class TileSegDataset(Dataset):
             chans.append(seam_from_polygons(local, (t, t), OUTLINE_PX)[None])
         if self.inst_weight:
             chans.append(instance_weight_map(local, (t, t))[None])
+        if self.bg_gamma > 0:
+            chans.append(background_weight_map(local, (t, t), self.bg_gamma, self.bg_saturate)[None])
         return chans
 
     def _scene(self, rng: random.Random):

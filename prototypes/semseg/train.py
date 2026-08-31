@@ -109,6 +109,10 @@ def main() -> None:
     ap.add_argument("--inst-weight", action="store_true",
                     help="weight the loss by 1/sqrt(instance area), so small animals are not drowned")
     ap.add_argument("--dist-gain", type=float, default=1.0, help="weight of the distance-map L1 term")
+    ap.add_argument("--bg-gamma", type=float, default=0.0,
+                    help="penalise predicted foreground by distance from any real instance; 0 disables")
+    ap.add_argument("--bg-saturate", type=float, default=50.0,
+                    help="distance in px at which the background penalty saturates")
     ap.add_argument("--steps", type=int, default=4000,
                     help="crops per EPOCH (a rotating window; full image coverage accumulates "
                          "over len(coverage)/steps epochs)")
@@ -143,6 +147,7 @@ def main() -> None:
     _ds.P_BLUR, _ds.P_NOISE, _ds.P_ROTATE = a.blur, a.noise, a.rotate
     tr_ds = TileSegDataset(a.data, "train", a.tile, seam_channel=a.seam_weight > 0,
                            dist_channel=a.dist_channel, inst_weight=a.inst_weight,
+                           bg_gamma=a.bg_gamma, bg_saturate=a.bg_saturate,
                            synth_bank=a.synth_bank, synth_cache=a.synth_cache,
                            synth_prob=a.synth_prob, synth_touch_prob=a.synth_touch_prob,
                            synth_coverage=a.synth_coverage)
@@ -152,7 +157,8 @@ def main() -> None:
     cycle = max(1, round(len(tr_ds) / a.steps))
     print(f"seam weight w0={a.seam_weight} sigma={a.seam_sigma}; synthetic scenes p={tr_ds.synth_prob}; "
           f"blur p={a.blur} noise p={a.noise} rotate p={a.rotate}; "
-          f"dist_channel={a.dist_channel} inst_weight={a.inst_weight}", flush=True)
+          f"dist_channel={a.dist_channel} inst_weight={a.inst_weight} "
+          f"bg_gamma={a.bg_gamma} (saturating at {a.bg_saturate}px)", flush=True)
     print(f"coverage list = {len(tr_ds)} crops over {len(tr_ds.images)} images; "
           f"epoch = {a.steps} crops, so every image is seen once per {cycle} epochs. "
           f"val = {a.val_steps} crops (fixed window).", flush=True)
@@ -183,6 +189,9 @@ def main() -> None:
             if tr_ds.idx_instw is not None:
                 iw = y[:, tr_ds.idx_instw:tr_ds.idx_instw + 1]
                 w = iw * v if w is None else w * iw
+            if tr_ds.idx_bgw is not None:
+                bw = y[:, tr_ds.idx_bgw:tr_ds.idx_bgw + 1]
+                w = bw * v if w is None else w * bw
             yp = y[:, :n_pred]
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 out = model(x)
