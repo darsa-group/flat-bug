@@ -65,25 +65,38 @@ def dice_bce(logits: torch.Tensor, target: torch.Tensor, pos_weight: torch.Tenso
 
 
 @torch.no_grad()
-def evaluate(model, loader, device) -> dict:
-    """Compute per-channel IoU and F1 at threshold 0.5.
+def evaluate(model, loader, device, pos_weight: torch.Tensor | None = None) -> dict:
+    """Compute per-channel IoU and F1 at threshold 0.5, plus the validation loss.
+
+    The validation loss is deliberately UNWEIGHTED - no seam, instance-area or background
+    weighting - so it is comparable across arms that train with different weightings, and so
+    it measures generalisation rather than how well each arm optimised its own objective.
+    IoU and F1 are thresholded at 0.5 and are therefore blind to calibration drift, which is
+    exactly what a rising validation loss against a falling training loss would reveal.
 
     Args:
         model: The network.
         loader: Validation dataloader.
         device: Torch device.
+        pos_weight: Per-channel positive weight for the BCE term, matching training.
 
     Returns:
         Dict of metric name to value.
     """
     model.eval()
+    vl = 0.0
+    nb = 0
     tp = torch.zeros(2, device=device)
     fp = torch.zeros(2, device=device)
     fn = torch.zeros(2, device=device)
     for x, y, v in loader:
         x, y, v = x.to(device, non_blocking=True), y.to(device, non_blocking=True), v.to(device, non_blocking=True)
         with torch.autocast("cuda", dtype=torch.bfloat16):
-            p = (torch.sigmoid(model(x)[:, :2]) > 0.5).float() * v
+            out = model(x)[:, :2]
+            if pos_weight is not None:
+                vl += float(dice_bce(out, y[:, :2], pos_weight, v))
+                nb += 1
+            p = (torch.sigmoid(out) > 0.5).float() * v
         y = y[:, :2] * v
         tp += (p * y).sum((0, 2, 3))
         fp += (p * (1 - y)).sum((0, 2, 3))
@@ -91,7 +104,8 @@ def evaluate(model, loader, device) -> dict:
     iou = tp / (tp + fp + fn + 1e-9)
     f1 = 2 * tp / (2 * tp + fp + fn + 1e-9)
     model.train()
-    return {"fg_iou": iou[0].item(), "ol_iou": iou[1].item(), "fg_f1": f1[0].item(), "ol_f1": f1[1].item()}
+    return {"fg_iou": iou[0].item(), "ol_iou": iou[1].item(), "fg_f1": f1[0].item(), "ol_f1": f1[1].item(),
+            "val_loss": vl / max(nb, 1)}
 
 
 def main() -> None:
@@ -206,7 +220,7 @@ def main() -> None:
             sched.step()
             tot += loss.item()
             n += 1
-        m = evaluate(model, va, dev)
+        m = evaluate(model, va, dev, pw)
         score = m["fg_iou"] + m["ol_iou"]
         torch.save({"model": model.state_dict(), "encoder": a.encoder, "tile": a.tile, "epoch": ep, "metrics": m},
                    os.path.join(a.out, "last.pt"))
@@ -216,6 +230,7 @@ def main() -> None:
                        os.path.join(a.out, "best.pt"))
         lr_now = opt.param_groups[0]["lr"]
         print(f"ep {ep:3d}/{a.epochs}  lr {lr_now:.2e}  loss {tot / max(n, 1):.4f}  "
+              f"val_loss {m['val_loss']:.4f}  "
               f"fg IoU {m['fg_iou']:.4f}  outline IoU {m['ol_iou']:.4f}  "
               f"fg F1 {m['fg_f1']:.4f}  outline F1 {m['ol_f1']:.4f}  ({time.time() - t0:.0f}s)", flush=True)
     print(f"done. best fg+outline IoU {best:.4f} -> {a.out}/best.pt")
