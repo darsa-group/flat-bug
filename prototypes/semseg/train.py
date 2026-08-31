@@ -145,6 +145,8 @@ def main() -> None:
     ap.add_argument("--synth-coverage", type=float, default=0.30)
     ap.add_argument("--blur", type=float, default=0.0, help="probability of Gaussian blur, sigma 0.4-2.0")
     ap.add_argument("--noise", type=float, default=0.0, help="probability of Gaussian noise, 1-6%% of crop contrast")
+    ap.add_argument("--scale", type=float, default=0.0,
+                    help="probability of scale jitter, log-uniform 0.7-1.5; target re-rasterised exactly")
     ap.add_argument("--rotate", type=float, default=0.0,
                     help="probability of arbitrary-angle rotation; target is re-rasterised from rotated polygons")
     a = ap.parse_args()
@@ -158,7 +160,7 @@ def main() -> None:
           f"{n_pred} predicted channels", flush=True)
 
     import dataset as _ds  # module-level knobs, so workers inherit them through the fork
-    _ds.P_BLUR, _ds.P_NOISE, _ds.P_ROTATE = a.blur, a.noise, a.rotate
+    _ds.P_BLUR, _ds.P_NOISE, _ds.P_ROTATE, _ds.P_SCALE = a.blur, a.noise, a.rotate, a.scale
     tr_ds = TileSegDataset(a.data, "train", a.tile, seam_channel=a.seam_weight > 0,
                            dist_channel=a.dist_channel, inst_weight=a.inst_weight,
                            bg_gamma=a.bg_gamma, bg_saturate=a.bg_saturate,
@@ -170,7 +172,7 @@ def main() -> None:
     va_sampler = WindowSampler(len(va_ds), a.val_steps)
     cycle = max(1, round(len(tr_ds) / a.steps))
     print(f"seam weight w0={a.seam_weight} sigma={a.seam_sigma}; synthetic scenes p={tr_ds.synth_prob}; "
-          f"blur p={a.blur} noise p={a.noise} rotate p={a.rotate}; "
+          f"blur p={a.blur} noise p={a.noise} rotate p={a.rotate} scale p={a.scale}; "
           f"dist_channel={a.dist_channel} inst_weight={a.inst_weight} "
           f"bg_gamma={a.bg_gamma} (saturating at {a.bg_saturate}px)", flush=True)
     print(f"coverage list = {len(tr_ds)} crops over {len(tr_ds.images)} images; "

@@ -55,9 +55,16 @@ OPTIONAL, all off by default (see `augment()`):
       (std 7.5 to 93.5) and an absolute noise level would be trivial on one dataset and
       overwhelming on another.
 
-Still deliberately absent: scaling (breaks the native-resolution contract with inference)
-and elastic deformation (most likely to produce anatomically implausible animals, and the
-hardest to calibrate).
+    - scale jitter, log-uniform in [0.7, 1.5]. Safe for the same reason rotation is: the
+      crop side is set to tile/s and the polygons are scaled before rasterisation, so the
+      target is exact and only the image is resampled. The range is deliberately narrower
+      than the usual [0.5, 2.0] - median instance size already spans 28x across
+      sub-datasets (Massid45 18.7px, ArTaxOr 527.8px), so the point is to decouple size
+      from domain rather than to widen an already wide range, and downscaling much below
+      0.7 would destroy the 16-32px instances that are 15% of the data.
+
+Still deliberately absent: elastic deformation (most likely to produce anatomically
+implausible animals, and the hardest to calibrate).
 """
 
 from __future__ import annotations
@@ -80,6 +87,8 @@ BLUR_SIGMA = (0.4, 2.0)  # spans the measured 10x range of high-frequency detail
 P_NOISE = 0.0  # probability of Gaussian noise; set by the trainer
 NOISE_FRAC = (0.01, 0.06)  # std as a fraction of the crop's own contrast
 P_ROTATE = 0.0  # probability of arbitrary-angle rotation; set by the trainer
+P_SCALE = 0.0  # probability of scale jitter; set by the trainer
+SCALE_RANGE = (0.7, 1.5)  # log-uniform; deliberately narrower than the usual [0.5, 2.0]
 P_NEAR_INSTANCE = 0.92  # fraction of crops centred on an annotation
 MAX_REPEATS = 48  # cap on per-epoch repeats, so one 143Mpx scan cannot dominate an epoch
 
@@ -513,12 +522,29 @@ class TileSegDataset(Dataset):
             x0, y0 = rng.randint(0, max(0, W - t)), rng.randint(0, max(0, H - t))
         x0 = max(0, min(x0, max(0, W - t)))
         y0 = max(0, min(y0, max(0, H - t)))
-        crop = img[y0:y0 + t, x0:x0 + t]
+        # Scale jitter: take a crop of side tile/s, then resample it to the tile. s < 1 pulls
+        # in more context and shrinks the animals; s > 1 magnifies them. Polygons are scaled
+        # by the same factor before rasterisation, so the target stays exact.
+        s = 1.0
+        if self.augment_data and P_SCALE and rng.random() < P_SCALE:
+            lo, hi = SCALE_RANGE
+            s = float(np.exp(rng.uniform(np.log(lo), np.log(hi))))
+        ct = max(32, int(round(t / s)))
+        if ct != t:  # re-centre the crop for the new side length
+            x0 = max(0, min(x0 - (ct - t) // 2, max(0, W - ct)))
+            y0 = max(0, min(y0 - (ct - t) // 2, max(0, H - ct)))
+        crop = img[y0:y0 + ct, x0:x0 + ct]
         ch, cw = crop.shape[:2]
-        whole = cw >= t and ch >= t
-        if not whole:  # reflect-pad, preserving native scale (never upscale)
-            crop = cv2.copyMakeBorder(crop, 0, t - ch, 0, t - cw, cv2.BORDER_REFLECT_101)
-        local = [p - np.array([x0, y0], np.float32) for p in polys]
+        whole = cw >= ct and ch >= ct
+        if not whole:  # reflect-pad to the crop side; the pad carries no annotation
+            crop = cv2.copyMakeBorder(crop, 0, ct - ch, 0, ct - cw, cv2.BORDER_REFLECT_101)
+        keep = np.zeros((ct, ct), np.float32)
+        keep[:ch, :cw] = 1.0
+        if ct != t:  # resample image and validity together, so the mask follows the pad
+            crop = cv2.resize(crop, (t, t), interpolation=cv2.INTER_AREA if ct > t else cv2.INTER_LINEAR)
+            keep = cv2.resize(keep, (t, t), interpolation=cv2.INTER_NEAREST)
+        f = t / ct
+        local = [(p - np.array([x0, y0], np.float32)) * f for p in polys]
         local = [p for p in local
                  if p[:, 0].max() >= 0 and p[:, 1].max() >= 0 and p[:, 0].min() <= t and p[:, 1].min() <= t]
         rot_keep = None
@@ -529,11 +555,7 @@ class TileSegDataset(Dataset):
         if ex:
             target = np.concatenate([target[:2], *ex], 0) if self.dist_channel else \
                 np.concatenate([target, *ex], 0)
-        if not whole:  # padded region carries no annotation, so it must not be scored as background
-            valid = np.zeros((t, t), np.float32)
-            valid[:ch, :cw] = 1.0
-        else:
-            valid = np.ones((t, t), np.float32)
+        valid = keep  # already 0 on any reflect-padded region, at tile resolution
         if rot_keep is not None:  # mirrored-in corners carry no valid annotation
             valid = valid * rot_keep
         if self.augment_data:
