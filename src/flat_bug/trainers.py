@@ -49,6 +49,7 @@ from ultralytics.utils.torch_utils import smart_inference_mode, torch_distribute
 from flat_bug import logger
 from flat_bug.datasets import FlatBugYOLODataset, FlatBugYOLOValidationDataset
 from flat_bug.synthetic import SceneComposer
+from flat_bug.val_loss import bounded_segmentation_loss
 
 
 def remove_custom_fb_args(args: dict | IterableSimpleNamespace | Any) -> dict | IterableSimpleNamespace | Any:
@@ -482,28 +483,34 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
         if self.epoch % self.save_period == 0 or self._val_metrics is None:
             torch.cuda.empty_cache()
 
-            # YOLOv26's one2many head assigns many positive anchors per GT instance.
-            # On dense flat-bug images this causes single_mask_loss / crop_mask to
-            # allocate 10+ GB for mask tensors — OOM even at batch_size=1.
-            # Validation loss is only logged, not used for fitness or early stopping,
-            # so we replace model.loss with a no-op for the duration of the validation pass.
-            ema_model = getattr(getattr(self, "ema", None), "ema", None)
-            _patch_targets = [m for m in [ema_model, self.model] if m is not None and hasattr(m, "loss")]
-            _saved_losses = [(m, m.loss) for m in _patch_targets]
-            for m, _ in _saved_losses:
-                m.loss = lambda *a, **kw: (0, 0)
-            LOGGER.warning(
-                "Validation loss suppressed to prevent OOM from YOLOv26 one2many head "
-                "on dense-annotation images. mAP/fitness metrics are unaffected."
-            )
+            # YOLOv26's one2many head assigns many positive anchors per GT instance, and
+            # ultralytics builds the whole (n_positives, mask_h, mask_w) stack at once, which
+            # OOMs on dense flat-bug images even at batch_size=1. This used to be handled by
+            # replacing model.loss with a no-op, which logged four zeros and left us with no
+            # validation loss at all. `bounded_segmentation_loss` instead chunks the sum over
+            # positives, which is the same number for far less memory, so val/*_loss is real.
             try:
-                metrics, fitness = super().validate()
+                with bounded_segmentation_loss():
+                    metrics, fitness = super().validate()
+            except torch.cuda.OutOfMemoryError:
+                # Losses are logged only - never fitness or early stopping - so a crowded
+                # batch must not be allowed to kill a multi-day run.
+                LOGGER.warning("Validation loss OOMed even when chunked; falling back to suppressing it.")
+                torch.cuda.empty_cache()
+                ema_model = getattr(getattr(self, "ema", None), "ema", None)
+                _patch_targets = [m for m in [ema_model, self.model] if m is not None and hasattr(m, "loss")]
+                _saved_losses = [(m, m.loss) for m in _patch_targets]
+                for m, _ in _saved_losses:
+                    m.loss = lambda *a, **kw: (0, 0)
+                try:
+                    metrics, fitness = super().validate()
+                finally:
+                    for m, orig in _saved_losses:
+                        try:
+                            del m.loss  # remove instance attribute, restoring the class method
+                        except AttributeError:
+                            m.loss = orig
             finally:
-                for m, orig in _saved_losses:
-                    try:
-                        del m.loss  # remove instance attribute, restoring the class method
-                    except AttributeError:
-                        m.loss = orig
                 torch.cuda.empty_cache()
 
             self._val_metrics, self._val_fitness = metrics, fitness
