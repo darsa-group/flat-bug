@@ -4,6 +4,14 @@ The whole justification for chunking is that `single_mask_loss` reduces with `.s
 instances, so the split is invisible to the result. If that ever stops being true - because
 ultralytics changes the reduction, say - the validation losses in results.csv silently become
 a different quantity from the training losses beside them, and the A/B built on them is void.
+
+One wrinkle. `ops.crop_mask` branches on `n < 50 and not masks.is_cuda`, and the two branches
+do not agree: the small-CPU branch zeroes outside `boxes.clamp(min=0).round().int()`, integer
+edges, while the vectorised branch compares against the exact float edges. Chunking changes
+`n` and so flips that branch, which makes a CPU comparison measure ultralytics' own
+inconsistency rather than anything about chunking. Validation runs on CUDA, where `is_cuda`
+forces the vectorised branch whatever `n` is, so these tests pin the vectorised branch to
+match the path the trainer actually takes.
 """
 
 import pytest
@@ -12,6 +20,23 @@ import torch
 from flat_bug.val_loss import bounded_segmentation_loss
 
 ultralytics_loss = pytest.importorskip("ultralytics.utils.loss")
+
+
+@pytest.fixture(autouse=True)
+def _vectorised_crop_mask(monkeypatch):
+    """Force the CUDA-equivalent branch of `crop_mask` so CPU results are comparable."""
+    import torch as _t
+
+    def crop_mask(masks, boxes):
+        if boxes.device != masks.device:
+            boxes = boxes.to(masks.device)
+        _, h, w = masks.shape
+        x1, y1, x2, y2 = _t.chunk(boxes[:, :, None], 4, 1)
+        r = _t.arange(w, device=masks.device, dtype=x1.dtype)[None, None, :]
+        c = _t.arange(h, device=masks.device, dtype=x1.dtype)[None, :, None]
+        return masks * ((r >= x1) * (r < x2) * (c >= y1) * (c < y2))
+
+    monkeypatch.setattr(ultralytics_loss, "crop_mask", crop_mask)
 
 
 class _Criterion:
@@ -55,6 +80,22 @@ def test_chunked_matches_unchunked(overlap: bool, chunk: int):
         chunked = ultralytics_loss.v8SegmentationLoss.calculate_segmentation_loss(criterion, *args)
 
     assert torch.allclose(reference, chunked, rtol=1e-5, atol=1e-6), f"{reference} != {chunked}"
+
+
+def test_e2e_loss_wraps_patchable_instances():
+    """YOLO26 seg builds E2ELoss over two v8SegmentationLoss objects.
+
+    The patch is applied to the class, not to an instance, precisely because the criterion the
+    trainer sees is a wrapper holding one2many and one2one sub-losses. An instance-level patch
+    would silently miss both and leave the OOM in place.
+    """
+    e2e = getattr(ultralytics_loss, "E2ELoss", None)
+    if e2e is None:
+        pytest.skip("ultralytics without E2ELoss")
+    import inspect
+
+    src = inspect.getsource(e2e.__init__)
+    assert "loss_fn(model" in src, "E2ELoss no longer builds its sub-losses from loss_fn"
 
 
 def test_patch_is_reverted_even_on_error():
