@@ -11,7 +11,7 @@
 #SBATCH -N 1
 #SBATCH -n 16
 #SBATCH --mem=96000
-#SBATCH -t 48:00:00
+#SBATCH -t 72:00:00
 #SBATCH --gres=gpu:1
 #SBATCH -J fb_synth
 #SBATCH -o /usr/home/qgg/qgeiss/flatbug-dir/logs/fb_synth_%x_%j.out
