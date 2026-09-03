@@ -409,7 +409,10 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
                     bank_dir=self._synth_bank,
                     cache_dir=self._synth_cache,
                     tile=int(self.args.imgsz * 1.5),
-                    max_instances=int(self._max_instances) if np.isfinite(self._max_instances) else 150,
+                    # max_instances comes from _synth_kwargs (fb_synth_max_instances), NOT from
+                    # fb_max_instances: the latter is routinely 9999 to keep every instance of a
+                    # dense real image, whereas here it bounds how much work composing one scene
+                    # costs. Passing both is also a duplicate-keyword TypeError.
                     **self._synth_kwargs,
                 )
                 LOGGER.info(
