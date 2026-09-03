@@ -1,0 +1,19 @@
+# 50-epoch A/B for the inpainting-halo fix. Two runs share this config exactly; the only
+# difference is whether the code they run against carries the patch.
+#
+# Stock settings on purpose - no synthetic scenes, no magnified crops, no thin weighting,
+# default mask_ratio, and the pyramid left as it is - so the pair isolates the halo and
+# nothing else. Mirrors fb_config_control_GHPC.yaml apart from the epoch count.
+
+batch: 8
+model: "yolo26m-seg.pt"
+epochs: 50
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 16
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_prob: 0.0
