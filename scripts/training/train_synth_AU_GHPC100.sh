@@ -1,5 +1,5 @@
 #!/bin/bash
-# Does synthetic touching-instance scenes help? 50-epoch A/B on the halo-fixed code.
+# Does synthetic touching-instance scenes help? 100-epoch A/B on the halo-fixed code.
 #
 #   sbatch --export=ALL,ARM=on  train_synth50_AU_GHPC.sh   # fb_synth_prob 0.4
 #   sbatch --export=ALL,ARM=off train_synth50_AU_GHPC.sh   # fb_synth_prob 0.0
@@ -32,5 +32,5 @@ SRC=$HOME/flat-bug-synth-test
 NAME=fb_synth_${ARM}_$(date +"%Y-%m-%d_%H-%M-%S")
 
 cd $SRC/scripts/training
-fb_train -c $SRC/scripts/training/fb_config_synth50_GHPC.yaml \
+fb_train -c $SRC/scripts/training/fb_config_synth_GHPC100.yaml \
   -d ${ROOT}/flat-bug-data/yolo/ --name ${NAME} --fb_synth_prob ${PROB}

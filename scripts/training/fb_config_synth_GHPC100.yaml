@@ -1,4 +1,4 @@
-# Does synthetic touching-instance scenes help? A/B against fb_config_halo50_GHPC.yaml.
+# Does synthetic touching-instance scenes help? 100-epoch A/B, ARM=on vs ARM=off.
 #
 # Identical to the halo-fix reference in every other respect - same model, schedule, batch,
 # default mask_ratio, no magnified crops, no thin weighting - so the pair isolates
@@ -21,7 +21,7 @@
 
 batch: 8
 model: "yolo26m-seg.pt"
-epochs: 50
+epochs: 100
 device: 0
 patience: 9999
 lr0: 0.01
