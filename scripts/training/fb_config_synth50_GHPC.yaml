@@ -1,0 +1,40 @@
+# Does synthetic touching-instance scenes help? A/B against fb_config_halo50_GHPC.yaml.
+#
+# Identical to the halo-fix reference in every other respect - same model, schedule, batch,
+# default mask_ratio, no magnified crops, no thin weighting - so the pair isolates
+# fb_synth_prob and nothing else. ARM=off reuses this file with fb_synth_prob 0.0.
+#
+# Why this experiment. Inter-instance seams are the only thing that lets a model separate
+# touching animals, and they are vanishingly rare in real data: about 0.011% of pixels, in a
+# minority of crops. Composed scenes raise seam density roughly ninefold and their ground
+# truth is exact precisely where real annotation is least reliable. In the semseg prototype,
+# raising synth-prob from 0.4 to 0.6 beat tripling the seam loss weight - you cannot upweight
+# your way out of a data shortage - but the equivalent YOLO experiment has never been run.
+#
+# Judge it on MERGE RATE per neighbour-gap stratum and on touching-instance recall, not on
+# mAP: mask IoU and mAP are measurably anti-correlated with the thing being fixed.
+#
+# touch_prob 0.92 means nearly every pasted instance abuts another, which is the point.
+# max_instances is deliberately NOT fb_max_instances (9999): here it bounds the cost of
+# composing one scene, and at coverage 0.15 an unbounded cap asks for ~290 instances on a
+# dense tile.
+
+batch: 8
+model: "yolo26m-seg.pt"
+epochs: 50
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 16
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_bank: /usr/home/qgg/qgeiss/flatbug-dir/synth/crop_bank
+fb_synth_cache: /usr/home/qgg/qgeiss/flatbug-dir/synth/cache
+fb_synth_prob: 0.4
+fb_synth_alpha: 4.0
+fb_synth_tau: 0.5
+fb_synth_coverage: 0.15
+fb_synth_touch_prob: 0.92
+fb_synth_max_instances: 120
