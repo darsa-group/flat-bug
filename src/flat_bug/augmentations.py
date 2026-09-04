@@ -163,14 +163,32 @@ def telea_inpaint_polys(
         flags=cv2.INPAINT_TELEA
     )
 
-    # Remove the exclude polygons from the inpaint bitmap, so that the original image is not inpainted under them
+    # Remove the exclude polygons from the inpaint bitmap, so that the original image is not
+    # inpainted under them. This must undo the DILATION as well as the polygon: the dilate
+    # above grew every contour drawn, excluded ones included, so subtracting only the bare
+    # polygon left a dilated ring - 1 low-res px, about `downscale_factor` px at full
+    # resolution - still marked for inpainting, painting a smeared halo tight around every
+    # KEPT instance.
+    #
+    # This runs in the validation pipeline as well as the training one, so the marker sat on
+    # both sides of the train/val split: a ring hugging every labelled instance is a cue a
+    # model can learn instead of the animal, and be rewarded for at validation time. Every
+    # metric computed before this fix was measured against crops carrying it.
+    exclude_bitmap = np.zeros_like(inpaint_bitmap)
     for p in exclude_polys:
-        inpaint_bitmap = cv2.drawContours(
-            inpaint_bitmap,
+        exclude_bitmap = cv2.drawContours(
+            exclude_bitmap,
             [p // downscale_factor],
-            color=0,
+            color=1,
             **kwargs
         )
+    cv2.dilate(
+        src=exclude_bitmap,
+        dst=exclude_bitmap,
+        kernel=np.ones((3, 3), np.uint8),
+        iterations=1
+    )
+    inpaint_bitmap[exclude_bitmap == 1] = 0
 
     # Upsample the inpainted image and bitmap
     inpaint_bitmap = cv2.resize(inpaint_bitmap, orig_shape)
