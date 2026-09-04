@@ -125,6 +125,10 @@ def main():
     args_parse.add_argument(
         "-p", "--validation-proportion", dest="validation_proportion",
         help="the proportion of data allocated to the validation set, based on md5 (pseudorandom)",
+        # Without type=float argparse hands back the raw string, and the comparison against the
+        # md5-derived float at the split step raises TypeError. The bug only fires when the flag
+        # is passed explicitly, which is why the default path never hit it.
+        type=float,
         default=0.15
     )
 
