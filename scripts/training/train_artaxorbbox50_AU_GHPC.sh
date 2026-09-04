@@ -9,7 +9,7 @@
 
 #SBATCH -p ghpc_gpu
 #SBATCH -N 1
-#SBATCH -n 16
+#SBATCH -n 32
 #SBATCH --mem=96000
 #SBATCH -t 48:00:00
 #SBATCH --gres=gpu:1
