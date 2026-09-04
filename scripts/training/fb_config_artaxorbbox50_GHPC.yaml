@@ -1,0 +1,34 @@
+# Does artaxor-bbox help as a boxes-only dataset? 50-epoch A/B, ARM=excl vs ARM=bbox.
+#
+# Identical to the halo-fix reference in every other respect - same model, schedule, batch,
+# no synthetic scenes, no magnified crops - so the pair isolates one thing: whether adding
+# 4841 images / 8334 boxes with untrustworthy masks, supervised on BOXES ONLY, is better than
+# leaving them out.
+#
+# Why boxes only. The artaxor-bbox polygons are SAM/flat-bug output that nobody has checked;
+# measured against the original ArTaxOr paper ROIs they sit at mean IoU 0.823 with 372 of 8758
+# below 0.5. Training a segmentation head on those teaches a wrong boundary. The paper ROIs
+# themselves are human-drawn, so the boxes are sound even though the masks are not.
+#
+# ARM=excl drops the dataset entirely (fb_exclude_datasets).
+# ARM=bbox keeps it, downgrades its polygons to their bounding rectangles, and excludes it
+#          from the mask loss and the mask metrics (fb_bbox_only_datasets).
+# Both arms run the SAME source tree; only one config line differs.
+#
+# Judge it on: per-dataset box AND mask metrics for the shared datasets (does the extra
+# detection signal help or hurt the rest?), and box-only performance on artaxor-bbox itself.
+
+batch: 8
+model: "yolo26m-seg.pt"
+epochs: 50
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 16
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_prob: 0.0
+fb_exclude_datasets: []
+fb_bbox_only_datasets: []
