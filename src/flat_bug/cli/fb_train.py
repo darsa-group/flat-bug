@@ -43,6 +43,7 @@ def main():  # noqa: D103
         "patience": 500,
         "optimizer": "auto",
         "save_period": 5,
+        "fb_bbox_only_datasets": [],
         # "optimizer": 'SGD',
         # "lr0": 0.01,
         # "lrf": 0.005,

@@ -47,6 +47,8 @@ from ultralytics.utils.files import increment_path
 from ultralytics.utils.torch_utils import smart_inference_mode, torch_distributed_zero_first
 
 from flat_bug import logger
+from flat_bug.bbox_only_loss import enable_bbox_only_segmentation_loss
+from flat_bug.bbox_only_val import FlatBugSegmentationValidator
 from flat_bug.datasets import FlatBugYOLODataset, FlatBugYOLOValidationDataset
 
 
@@ -302,6 +304,12 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
         self._max_instances = custom_fb_args["fb_max_instances"]
         self._max_images = custom_fb_args["fb_max_images"]
         self._exclude_datasets = custom_fb_args["fb_exclude_datasets"]
+        # Datasets whose polygons are not trustworthy: boxes are kept, masks ignored.
+        self._bbox_only_datasets = list(custom_fb_args.get("fb_bbox_only_datasets") or [])
+        if self._bbox_only_datasets:
+            # Patch only when the feature is actually used, so runs without it are unchanged.
+            enable_bbox_only_segmentation_loss()
+            LOGGER.info(f"bbox-only datasets (masks ignored): {self._bbox_only_datasets}")
         self.custom_eval = custom_fb_args["fb_custom_eval"]
         self._do_custom_eval = False  # This is a dynamic signalling flag, not a hyperparameter
         self._custom_num_images = custom_fb_args["fb_custom_eval_num_images"]
@@ -392,6 +400,7 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
                 pad=0.0 if mode == "train" else 0.5,
                 single_cls=self.args.single_cls or False,
                 max_instances=self._max_instances,
+                bbox_only_datasets=self._bbox_only_datasets,
                 task="segment",
                 subset_args={"n": self._max_images, "pattern": self.exclude_pattern},
             )
@@ -409,6 +418,7 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
                 pad=0.0 if mode == "train" else 0.5,  # fixme... does not make sense...
                 single_cls=self.args.single_cls or False,
                 max_instances=np.inf,
+                bbox_only_datasets=self._bbox_only_datasets,
                 task="segment",
                 subset_args={"n": self._max_images, "pattern": self.exclude_pattern},
             )
@@ -527,7 +537,12 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
     def get_validator(self) -> yolo.segment.SegmentationValidator:
         """Return an instance of SegmentationValidator for validation of YOLO model."""
         self.loss_names = "box_loss", "seg_loss", "cls_loss", "dfl_loss"
-        return yolo.segment.SegmentationValidator(
+        # Only swap in the mask-aware validator when the feature is in use, so runs without
+        # bbox-only datasets keep the stock metric path exactly.
+        validator_cls = (
+            FlatBugSegmentationValidator if self._bbox_only_datasets else yolo.segment.SegmentationValidator
+        )
+        return validator_cls(
             self.test_loader,
             save_dir=self.save_dir,
             args=remove_custom_fb_args(copy(self.args)),

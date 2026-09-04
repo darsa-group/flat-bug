@@ -1,0 +1,10 @@
+# Datasets whose polygons are not trustworthy. Their instances keep full box/cls/dfl
+# supervision; their masks are downgraded to the instance's bounding rectangle and excluded
+# from both the segmentation loss and the mask metrics.
+#
+# Names are matched against the prefix of the image basename, the same convention
+# fb_exclude_datasets uses. Matching is anchored, so "bugbox" does NOT match "bugbox-bulk".
+#
+# Leave empty (the default) and nothing about training changes.
+fb_bbox_only_datasets:
+  - bugbox-bulk

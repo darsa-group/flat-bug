@@ -16,6 +16,7 @@ from ultralytics.data.dataset import LOGGER
 from ultralytics.utils import IterableSimpleNamespace
 
 from flat_bug.augmentations import CenterCrop, FixInstances, FlatBugRandomPerspective, RandomColorInv, RandomCrop
+from flat_bug.bbox_only import compile_bbox_only, downgrade_labels
 
 HELP_URL = "See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data"
 IMG_FORMATS = "bmp", "dng", "jpeg", "jpg", "mpo", "png", "tif", "tiff", "webp", "pfm"  # include image suffixes
@@ -215,16 +216,21 @@ class FlatBugYOLODataset(YOLODataset):  # noqa: D101
     _oversample_factor: int = 2
 
     def __init__(  # noqa: D107
-        self, max_instances: int | float | None, classes: None = None, subset_args: dict | None = None, *args, **kwargs
+        self, max_instances: int | float | None, classes: None = None, subset_args: dict | None = None,
+        bbox_only_datasets: list[str] | None = None, *args, **kwargs
     ):
         self._max_instances = max_instances
         self._include_classes = classes  # Only used so the class list is visible in the subset method
+        self._bbox_only = compile_bbox_only(bbox_only_datasets)
         if subset_args is not None:
             hook_get_labels_with_subset(self, subset_args)
         if "data" in kwargs:
             if "channels" not in kwargs["data"]:
                 kwargs["data"]["channels"] = 3
         super().__init__(classes=classes, *args, **kwargs)
+        # After labels exist, before sample weights: polygons in bbox-only datasets become
+        # their own bounding rectangle, and every label gains a `has_mask` flag.
+        downgrade_labels(self.labels, self.im_files, self._bbox_only)
         self.sample_weights = [
             image_weight * len(label_i["cls"])
             for label_i, image_weight in zip(self.labels, calculate_image_weights(self.im_files))
