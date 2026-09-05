@@ -9,7 +9,12 @@ import numpy as np
 import pytest
 import torch
 
-from flat_bug.bbox_only import compile_bbox_only, downgrade_labels, is_bbox_only
+from flat_bug.bbox_only import (
+    compile_bbox_only,
+    downgrade_labels,
+    fill_missing_segments,
+    is_bbox_only,
+)
 from flat_bug.bbox_only_loss import bbox_only_segmentation_loss
 
 ultralytics_loss = pytest.importorskip("ultralytics.utils.loss")
@@ -178,3 +183,123 @@ def test_mask_metrics_exclude_bbox_only_images():
     e.update_stats(stat(1, True)); e.update_stats(stat(2, True))
     e.process()
     assert np.allclose(c.box.mean_results(), e.box.mean_results()), "box AP must still use both images"
+
+
+# ---------------------------------------------------------------------------------------
+# Box-only label files. These are the regression tests for the failure that killed
+# fb_axb_bbox: artaxor-bbox ships five-field detection labels with no polygon, ultralytics
+# saw len(boxes) != len(segments) over the whole corpus and dropped the segments of EVERY
+# image, so the segmentation head trained on nothing for 2.5 hours.
+# ---------------------------------------------------------------------------------------
+
+def _label(name, boxes, segments=None):
+    return {
+        "im_file": f"/data/{name}",
+        "bboxes": np.asarray(boxes, dtype=np.float32).reshape(-1, 4),
+        "segments": [] if segments is None else segments,
+    }
+
+
+def _totals(labels):
+    """What YOLODataset.get_labels compares right after cache_labels returns."""
+    return sum(len(lb["bboxes"]) for lb in labels), sum(len(lb["segments"]) for lb in labels)
+
+
+def test_box_only_labels_get_a_rectangle_so_counts_reconcile():
+    pattern = compile_bbox_only(["artaxor-bbox"])
+    labels = [
+        _label("artaxor-bbox_a.jpg", [[0.5, 0.5, 0.2, 0.4], [0.1, 0.2, 0.05, 0.05]]),
+        _label("sticky-pi_b.jpg", [[0.5, 0.5, 0.2, 0.2]],
+               [np.array([[0.4, 0.4], [0.6, 0.4], [0.6, 0.6]], dtype=np.float32)]),
+    ]
+    assert _totals(labels) == (3, 1)          # the mismatch that triggers the global wipe
+    assert fill_missing_segments(labels, pattern) == 2
+    boxes, segments = _totals(labels)
+    assert boxes == segments == 3
+
+
+def test_synthetic_rectangle_is_the_box():
+    pattern = compile_bbox_only(["artaxor-bbox"])
+    labels = [_label("artaxor-bbox_a.jpg", [[0.5, 0.5, 0.2, 0.4]])]
+    fill_missing_segments(labels, pattern)
+    rect = labels[0]["segments"][0]
+    assert rect.shape == (4, 2)
+    np.testing.assert_allclose(rect[:, 0].min(), 0.4, atol=1e-6)
+    np.testing.assert_allclose(rect[:, 0].max(), 0.6, atol=1e-6)
+    np.testing.assert_allclose(rect[:, 1].min(), 0.3, atol=1e-6)
+    np.testing.assert_allclose(rect[:, 1].max(), 0.7, atol=1e-6)
+
+
+def test_segmented_datasets_are_untouched():
+    pattern = compile_bbox_only(["artaxor-bbox"])
+    seg = [np.array([[0.4, 0.4], [0.6, 0.4], [0.6, 0.6]], dtype=np.float32)]
+    labels = [_label("sticky-pi_b.jpg", [[0.5, 0.5, 0.2, 0.2]], seg)]
+    assert fill_missing_segments(labels, pattern) == 0
+    assert labels[0]["segments"] is seg
+
+
+def test_bbox_only_dataset_that_does_have_polygons_is_left_for_downgrade():
+    pattern = compile_bbox_only(["bugbox-bulk"])
+    seg = [np.array([[0.4, 0.4], [0.6, 0.4], [0.6, 0.6]], dtype=np.float32)]
+    labels = [_label("bugbox-bulk_a.jpg", [[0.5, 0.5, 0.2, 0.2]], seg)]
+    assert fill_missing_segments(labels, pattern) == 0
+    assert downgrade_labels(labels, [labels[0]["im_file"]], pattern) == 1
+    assert labels[0]["has_mask"] is False
+    assert labels[0]["segments"][0].shape == (4, 2)
+
+
+def test_partially_segmented_bbox_only_image_is_refused():
+    pattern = compile_bbox_only(["artaxor-bbox"])
+    seg = [np.array([[0.4, 0.4], [0.6, 0.4], [0.6, 0.6]], dtype=np.float32)]
+    labels = [_label("artaxor-bbox_a.jpg", [[0.5, 0.5, 0.2, 0.2], [0.1, 0.1, 0.05, 0.05]], seg)]
+    with pytest.raises(ValueError, match="fully segmented or not segmented at all"):
+        fill_missing_segments(labels, pattern)
+
+
+def test_no_bbox_only_config_leaves_a_mixed_corpus_alone():
+    labels = [_label("artaxor-bbox_a.jpg", [[0.5, 0.5, 0.2, 0.4]])]
+    assert fill_missing_segments(labels, None) == 0
+    assert labels[0]["segments"] == []
+
+
+def test_both_directions_compose_as_they_do_in_a_real_run():
+    """A run calls fill_missing_segments (in cache_labels) then downgrade_labels (after init).
+
+    Whichever form the source labels arrive in, the instance must end up with a rectangle and
+    has_mask=False:
+      * boxes, no polygon  -> rectangle built from the box, then downgrade is a no-op on it
+      * polygons           -> fill is a no-op, downgrade shrinks each polygon to its extent
+    """
+    pattern = compile_bbox_only(["artaxor-bbox"])
+    poly = [np.array([[0.30, 0.10], [0.70, 0.25], [0.50, 0.90]], dtype=np.float32)]
+    labels = [
+        _label("artaxor-bbox_boxes.jpg", [[0.5, 0.5, 0.2, 0.4]]),          # box only
+        _label("artaxor-bbox_polys.jpg", [[0.5, 0.5, 0.4, 0.8]], poly),    # polygon
+    ]
+    fill_missing_segments(labels, pattern)
+    downgrade_labels(labels, [lb["im_file"] for lb in labels], pattern)
+
+    for lb in labels:
+        assert lb["has_mask"] is False
+        assert len(lb["segments"]) == len(lb["bboxes"])
+        for r in lb["segments"]:
+            assert r.shape == (4, 2)
+
+    # from the box: exactly the box
+    r = labels[0]["segments"][0]
+    np.testing.assert_allclose([r[:, 0].min(), r[:, 0].max()], [0.4, 0.6], atol=1e-6)
+    np.testing.assert_allclose([r[:, 1].min(), r[:, 1].max()], [0.3, 0.7], atol=1e-6)
+    # from the polygon: the polygon's own extent, not the label's box
+    r = labels[1]["segments"][0]
+    np.testing.assert_allclose([r[:, 0].min(), r[:, 0].max()], [0.30, 0.70], atol=1e-6)
+    np.testing.assert_allclose([r[:, 1].min(), r[:, 1].max()], [0.10, 0.90], atol=1e-6)
+
+
+def test_downgrade_is_idempotent_on_a_synthesised_rectangle():
+    """fill then downgrade must not shrink the rectangle a second time."""
+    pattern = compile_bbox_only(["artaxor-bbox"])
+    labels = [_label("artaxor-bbox_a.jpg", [[0.5, 0.5, 0.2, 0.4]])]
+    fill_missing_segments(labels, pattern)
+    once = labels[0]["segments"][0].copy()
+    downgrade_labels(labels, [labels[0]["im_file"]], pattern)
+    np.testing.assert_allclose(labels[0]["segments"][0], once, atol=1e-7)

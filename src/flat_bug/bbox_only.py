@@ -20,6 +20,24 @@ A missing mask is NOT a neutral signal. With overlap_mask=True the loss builds
 actively trains the model to predict empty masks where a real animal is. That is worse than
 not training on it at all, which is why the flag has to reach the loss rather than simply
 leaving the polygon out.
+
+Why the rectangle has to exist before ultralytics counts
+--------------------------------------------------------
+A bbox-only dataset may ship label files that are pure detection labels - five fields per line,
+no polygon at all. Every one of artaxor-bbox's 7118 annotations is like that. Ultralytics'
+`YOLODataset.get_labels` then finds `len(boxes) != len(segments)` over the whole corpus and
+applies its documented fallback:
+
+    "To resolve this only boxes will be used and all segments will be removed."
+
+That removal is GLOBAL - every image in the run loses its masks, not only the bbox-only ones -
+so the segmentation head trains on nothing. It is a warning rather than an error, so the run
+continues to completion emitting zero losses and zero metrics, which is how it cost a 2.5 hour
+training job before anyone noticed.
+
+Hence `fill_missing_segments`, called from `cache_labels` BEFORE that count. `downgrade_labels`
+then handles the opposite case - a bbox-only dataset that does carry polygons - and sets
+`has_mask` for both.
 """
 
 from __future__ import annotations
@@ -80,3 +98,44 @@ def downgrade_labels(labels: list[dict], im_files: list[str], pattern: re.Patter
     if n_img:
         logger.info(f"bbox-only datasets: downgraded {n_inst} polygons to boxes across {n_img} images")
     return n_img
+
+
+def fill_missing_segments(labels: list[dict], pattern: re.Pattern | None) -> int:
+    """Give every bbox-only instance a rectangle polygon, so box and segment counts agree.
+
+    Must run inside `cache_labels`, i.e. BEFORE `YOLODataset.get_labels` compares the totals -
+    see the module docstring for what happens otherwise. At this stage boxes are normalised
+    xywh (what `verify_image_label` produces) and segments are normalised xy point arrays.
+
+    Returns the number of instances given a synthetic polygon.
+    """
+    if pattern is None:
+        return 0
+    n_inst = n_img = 0
+    for label in labels:
+        if not is_bbox_only(label.get("im_file", ""), pattern):
+            continue
+        boxes = np.asarray(label.get("bboxes"), dtype=np.float32).reshape(-1, 4)
+        segs = label.get("segments") or []
+        if len(segs) == len(boxes):
+            continue
+        if len(segs):
+            # Partly segmented: refuse rather than guess which polygon belongs to which box.
+            raise ValueError(
+                f"{label.get('im_file')}: {len(segs)} segments for {len(boxes)} boxes. A "
+                "bbox-only dataset must be either fully segmented or not segmented at all."
+            )
+        rects = []
+        for cx, cy, w, h in boxes:
+            x0, y0, x1, y1 = cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2
+            # Closed rectangle, matching the point order the augmentation pipeline expects.
+            rects.append(np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], dtype=np.float32))
+            n_inst += 1
+        label["segments"] = rects
+        n_img += 1
+    if n_img:
+        logger.info(
+            f"bbox-only datasets: synthesised {n_inst} rectangle polygons across {n_img} "
+            "box-only images, so segment and box counts reconcile"
+        )
+    return n_inst

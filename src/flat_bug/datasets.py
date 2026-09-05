@@ -16,7 +16,7 @@ from ultralytics.data.dataset import LOGGER
 from ultralytics.utils import IterableSimpleNamespace
 
 from flat_bug.augmentations import CenterCrop, FixInstances, FlatBugRandomPerspective, RandomColorInv, RandomCrop
-from flat_bug.bbox_only import compile_bbox_only, downgrade_labels
+from flat_bug.bbox_only import compile_bbox_only, downgrade_labels, fill_missing_segments
 
 HELP_URL = "See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data"
 IMG_FORMATS = "bmp", "dng", "jpeg", "jpg", "mpo", "png", "tif", "tiff", "webp", "pfm"  # include image suffixes
@@ -309,6 +309,11 @@ class FlatBugYOLODataset(YOLODataset):  # noqa: D101
 
         # Call the superclass `cache_labels` method with the temporary read-only pathlib.Path object
         return_val = super().cache_labels(path=unwriteable_tmp_path)
+
+        # Box-only labels get their rectangle here, while we still can: the caller,
+        # `YOLODataset.get_labels`, compares total boxes against total segments immediately
+        # after this returns and silently drops the segments of EVERY image if they disagree.
+        fill_missing_segments(return_val.get("labels", []), self._bbox_only)
 
         # Remove the temporary file if it still exists
         if os.path.exists(unwriteable_tmp_path):
