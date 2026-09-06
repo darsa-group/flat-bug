@@ -375,16 +375,38 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
             return None
         return ckpt
 
+    @staticmethod
+    def _not_prefixed(names: list[str]) -> str:
+        return f"^(?!({'|'.join(names)}))" if names else ""
+
     @property
     def exclude_pattern(self) -> str:  # noqa: D102
-        return f"^(?!({'|'.join(self._exclude_datasets)}))" if self._exclude_datasets else ""
+        return self._not_prefixed(self._exclude_datasets)
+
+    @property
+    def val_exclude_pattern(self) -> str:
+        """Validation additionally drops the bbox-only datasets.
+
+        Two reasons, both of which make the alternative useless rather than merely noisy:
+
+        * Their masks are the untrustworthy ones - that is why they were declared bbox-only -
+          so a mask metric computed over them measures nothing.
+        * Whether a dataset is excluded outright or kept as boxes changes how many images the
+          validation set holds, so two arms of an A/B would score over different denominators
+          and their per-epoch `results.csv` could not be compared at all.
+
+        Box performance on a bbox-only dataset is still worth knowing; it is measured
+        end-to-end afterwards, where the ground truth is its human-drawn boxes.
+        """
+        return self._not_prefixed(sorted(set(self._exclude_datasets) | set(self._bbox_only_datasets or [])))
 
     def build_dataset(  # noqa: D102
         self, img_path: str, mode: str = "train", batch: int | None = None
     ) -> FlatBugYOLODataset | FlatBugYOLOValidationDataset:
+        pattern = self.exclude_pattern if mode == "train" else self.val_exclude_pattern
         LOGGER.info(
-            f"Building dataset with max instances ({self._max_instances}), "
-            f"max images ({self._max_images}) and exclude pattern ({self.exclude_pattern})."
+            f"Building {mode} dataset with max instances ({self._max_instances}), "
+            f"max images ({self._max_images}) and exclude pattern ({pattern})."
         )
         if mode == "train":
             dataset = FlatBugYOLODataset(
@@ -402,7 +424,7 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
                 max_instances=self._max_instances,
                 bbox_only_datasets=self._bbox_only_datasets,
                 task="segment",
-                subset_args={"n": self._max_images, "pattern": self.exclude_pattern},
+                subset_args={"n": self._max_images, "pattern": pattern},
             )
         else:
             dataset = FlatBugYOLOValidationDataset(
@@ -420,7 +442,7 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
                 max_instances=np.inf,
                 bbox_only_datasets=self._bbox_only_datasets,
                 task="segment",
-                subset_args={"n": self._max_images, "pattern": self.exclude_pattern},
+                subset_args={"n": self._max_images, "pattern": pattern},
             )
 
         return dataset

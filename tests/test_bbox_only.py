@@ -303,3 +303,56 @@ def test_downgrade_is_idempotent_on_a_synthesised_rectangle():
     once = labels[0]["segments"][0].copy()
     downgrade_labels(labels, [labels[0]["im_file"]], pattern)
     np.testing.assert_allclose(labels[0]["segments"][0], once, atol=1e-7)
+
+
+# ---------------------------------------------------------------------------------------
+# Validation must not contain the bbox-only datasets. Without this the excl and bbox arms
+# of an A/B validate over different image sets and results.csv cannot be compared per epoch.
+# ---------------------------------------------------------------------------------------
+
+class _Patterns:
+    """Just the pattern properties, lifted off the trainer so no model has to be built."""
+    def __init__(self, exclude, bbox_only):
+        self._exclude_datasets = exclude
+        self._bbox_only_datasets = bbox_only
+    _not_prefixed = staticmethod(
+        lambda names: f"^(?!({'|'.join(names)}))" if names else "")
+    @property
+    def exclude_pattern(self):
+        return self._not_prefixed(self._exclude_datasets)
+    @property
+    def val_exclude_pattern(self):
+        return self._not_prefixed(sorted(set(self._exclude_datasets) | set(self._bbox_only_datasets or [])))
+
+
+def _from_trainer(exclude, bbox_only):
+    """The real properties, to keep the stand-in above honest."""
+    from flat_bug.trainers import FlatBugSegmentationTrainer as T
+    obj = _Patterns(exclude, bbox_only)
+    return (T.exclude_pattern.fget(obj), T.val_exclude_pattern.fget(obj))
+
+
+def test_val_drops_bbox_only_but_train_keeps_it():
+    train, val = _from_trainer([], ["artaxor-bbox"])
+    assert train == ""                                   # training still sees it
+    assert "artaxor-bbox" in val                         # validation does not
+
+
+def test_excl_and_bbox_arms_validate_on_the_same_set():
+    """The whole point: both arms of the A/B must produce the same val pattern."""
+    _, val_excl = _from_trainer(["artaxor-bbox"], [])     # control: excluded outright
+    _, val_bbox = _from_trainer([], ["artaxor-bbox"])     # treatment: kept as boxes
+    assert val_excl == val_bbox
+
+
+def test_patterns_are_unchanged_when_no_bbox_only_dataset():
+    train, val = _from_trainer(["broto2025"], [])
+    assert train == val
+    train, val = _from_trainer([], [])
+    assert train == val == ""
+
+
+def test_both_lists_are_unioned_without_duplication():
+    _, val = _from_trainer(["broto2025", "artaxor-bbox"], ["artaxor-bbox"])
+    assert val.count("artaxor-bbox") == 1
+    assert "broto2025" in val
