@@ -87,3 +87,54 @@ was missing, so those benchmarks are pessimistic by an unknown amount.
 3456 and 5184 px go from missing native scale to including it, all others unchanged.
 
 **History.** Already fixed in the M2F prototype's predictor but never ported back.
+
+---
+
+## 3. Synthetic touching scenes do not work — do not enable `fb_synth_prob` by default
+
+**Status:** measured and rejected, 2026-09-06. The code on this branch is correct and stays
+here unmerged so it can be revived if the compositor is improved. This section exists so the
+next person measures something new instead of rebuilding this.
+
+**The experiment.** 100-epoch A/B, `fb_synth_off` vs `fb_synth_on`, both on `flatbug-dir`,
+same `yolo26m-seg.pt`, batch 8, imgsz 1024, seed 0, lr0 0.01. One config line differed:
+`fb_synth_prob` 0.0 vs 0.4. Both arms ran to epoch 100; both best at epoch 96. Judged
+end-to-end on one identical held-out set (whole validation images, no crops, no inpainting,
+instances >=32 px, IoU 0.5) — see the note on why crop metrics cannot settle this.
+
+**On the hypothesis it was built for, it fails.** Synthetic scenes target merge and split
+errors on adjacent instances, so the metrics that matter are touch recall and merge rate on
+instances whose gap to the nearest neighbour is <= 0 px:
+
+|                              | control | synth  | delta   |
+|------------------------------|---------|--------|---------|
+| touch recall (n=5452)        | 0.8199  | 0.8085 | -0.0114 |
+| merge rate                   | 0.1462  | 0.1381 | -0.0081 |
+| touch recall, ex broto2025   | 0.8877  | 0.8904 | +0.0027 |
+| merge rate,   ex broto2025   | 0.1351  | 0.1401 | **+0.0050** |
+
+The pooled merge-rate "improvement" is entirely `broto2025`, where the synth arm detects far
+less (touch recall 0.306 -> 0.191) and therefore merges less. Excluding it — 4819 touching
+instances across 15 datasets — touch recall is unchanged and **merging is worse**.
+
+**Overall it is a null.** Pooled end-to-end F1 0.8863 -> 0.8852 (-0.0011), 11 datasets
+improved and 17 worsened of 31. Crop mask mAP50-95 at the matched epoch 96: 0.66405 ->
+0.66336.
+
+**The cost is real.** 29.3 min/epoch against 15.9, so **1.8x wall clock** — 42.5 h vs 26.5 h
+for the same result.
+
+**The one effect that survived every cut:** thin-appendage recall **+0.0123** (0.5151 ->
+0.5274), stable with and without `broto2025` and across both the epoch-86 and epoch-96
+checkpoints. Core-body recall +0.0028. Compositing crops does seem to teach legs and wings,
+plausibly because pasted specimens have crisp complete outlines the model must reproduce.
+That is worth chasing separately and far more cheaply than scene composition.
+
+**Why it does not transfer.** Train seg loss ran ~0.07 lower for the synth arm from epoch 20
+on while **val seg loss was identical**. Lower training loss with unchanged validation loss
+means the composited scenes are *easier* to segment than real crowded ones — sharp paste
+boundaries, cleaner separation — rather than regularising. The limiting factor is the
+compositor's realism, not the idea.
+
+**For scale, what else bought on the same benchmark:** the inpainting-halo fix (issue 1)
++0.028 F1 for a bug fix; doubling training 50 -> 100 epochs +0.009 F1 for 2x compute.
