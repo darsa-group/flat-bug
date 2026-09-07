@@ -1,0 +1,41 @@
+# Does penalising mask that flows outside the box recover ArTaxOr mask quality?
+#
+# Control: the finished fb_axb_excl_2026-09-05_10-11-39 (mask mAP50-95 0.65577).
+# Reference: fb_axb_bbox_2026-09-06_10-48-25, which added artaxor-bbox as boxes-only and was
+# measured end-to-end to gain +0.026 detection F1 on artaxor-bbox while LOSING 0.163 mask F1
+# and 0.071 mask IoU on artaxor-seg. The damage was confined to that one domain - pooled mask
+# IoU across 24,962 matched instances moved +0.0005 - and its direction was over-coverage:
+#
+#     artaxor-seg, matched instances     control    bbox-only
+#       predicted area / true area         1.018        1.277
+#       fraction of prediction outside     0.113        0.238
+#       fraction of truth not covered      0.086        0.029
+#
+# The mask head sees this domain on only 1054 of 5153 ArTaxOr images, so on those images it
+# has no reason to keep the mask tight. This arm gives it one: bbox-only instances now pay for
+# probability predicted outside their ground-truth box. That is the only mask-shaped fact
+# their annotation contains, and the standard loss discards it - upstream single_mask_loss
+# applies crop_mask to the target box, so the exterior is unpenalised for every instance.
+#
+# Everything else is identical to the bbox arm, so the pair isolates the containment penalty.
+#
+# fb_bbox_only_containment 2.0 - deliberately heavy. The term is normalised over its own
+#     population, so the weight is a direct ratio against the ordinary mask loss. If 2.0
+#     over-tightens (mask recall falls, "fraction of truth not covered" rises above the
+#     control's 0.086) the answer is a smaller weight, not a different mechanism.
+
+batch: 8
+model: "yolo26m-seg.pt"
+epochs: 50
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 32
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_prob: 0.0
+fb_exclude_datasets: []
+fb_bbox_only_datasets: ["artaxor-bbox"]
+fb_bbox_only_containment: 2.0

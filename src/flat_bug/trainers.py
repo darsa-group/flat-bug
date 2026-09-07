@@ -47,7 +47,7 @@ from ultralytics.utils.files import increment_path
 from ultralytics.utils.torch_utils import smart_inference_mode, torch_distributed_zero_first
 
 from flat_bug import logger
-from flat_bug.bbox_only_loss import enable_bbox_only_segmentation_loss
+from flat_bug.bbox_only_loss import enable_bbox_only_segmentation_loss, set_containment_weight
 from flat_bug.bbox_only_val import FlatBugSegmentationValidator
 from flat_bug.datasets import FlatBugYOLODataset, FlatBugYOLOValidationDataset
 
@@ -306,6 +306,12 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
         self._exclude_datasets = custom_fb_args["fb_exclude_datasets"]
         # Datasets whose polygons are not trustworthy: boxes are kept, masks ignored.
         self._bbox_only_datasets = list(custom_fb_args.get("fb_bbox_only_datasets") or [])
+        # Penalty on mask predicted outside a bbox-only instance's ground-truth box. Their
+        # annotation cannot say where the animal IS, but it does say where it is not.
+        self._containment = float(custom_fb_args.get("fb_bbox_only_containment", 0.0) or 0.0)
+        if self._containment:
+            set_containment_weight(self._containment)
+            LOGGER.info(f"bbox-only containment penalty: weight {self._containment}")
         if self._bbox_only_datasets:
             # Patch only when the feature is actually used, so runs without it are unchanged.
             enable_bbox_only_segmentation_loss()
