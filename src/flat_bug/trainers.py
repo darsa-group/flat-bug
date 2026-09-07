@@ -47,7 +47,11 @@ from ultralytics.utils.files import increment_path
 from ultralytics.utils.torch_utils import smart_inference_mode, torch_distributed_zero_first
 
 from flat_bug import logger
-from flat_bug.bbox_only_loss import enable_bbox_only_segmentation_loss, set_projection_weight
+from flat_bug.bbox_only_loss import (
+    enable_bbox_only_segmentation_loss,
+    set_pairwise_weight,
+    set_projection_weight,
+)
 from flat_bug.bbox_only_val import FlatBugSegmentationValidator
 from flat_bug.datasets import FlatBugYOLODataset, FlatBugYOLOValidationDataset
 
@@ -309,9 +313,16 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
         # Make a bbox-only instance's predicted mask match the extent of its box. Its
         # annotation carries no mask, but it does fix where the mask starts and stops.
         self._projection = float(custom_fb_args.get("fb_bbox_only_projection", 0.0) or 0.0)
+        # Colour affinity is available but off: measured on this corpus, adjacent pixels inside
+        # an animal differ about as much as pixels across its boundary (AUC 0.52 at proto
+        # resolution), so the prior it relies on does not hold here.
+        self._pairwise = float(custom_fb_args.get("fb_bbox_only_pairwise", 0.0) or 0.0)
         if self._projection:
             set_projection_weight(self._projection)
             LOGGER.info(f"bbox-only box-projection loss: weight {self._projection}")
+        if self._pairwise:
+            set_pairwise_weight(self._pairwise)
+            LOGGER.info(f"bbox-only colour-affinity loss: weight {self._pairwise}")
         if self._bbox_only_datasets:
             # Patch only when the feature is actually used, so runs without it are unchanged.
             enable_bbox_only_segmentation_loss()

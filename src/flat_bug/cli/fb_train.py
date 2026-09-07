@@ -45,6 +45,7 @@ def main():  # noqa: D103
         "save_period": 5,
         "fb_bbox_only_datasets": [],
         "fb_bbox_only_projection": 0.0,
+        "fb_bbox_only_pairwise": 0.0,
         # "optimizer": 'SGD',
         # "lr0": 0.01,
         # "lrf": 0.005,
