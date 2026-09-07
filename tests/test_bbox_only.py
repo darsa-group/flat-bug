@@ -359,41 +359,45 @@ def test_both_lists_are_unioned_without_duplication():
 
 
 # ---------------------------------------------------------------------------------------
-# Containment penalty: a bbox-only instance has no mask to imitate, but its box says where
-# the animal is NOT. Measured motivation: the bbox-only arm produced masks 1.28x the true
-# area on artaxor-seg, spilling 23.8% of their area outside the animal vs 11.3% for control.
+# Box-projection loss for bbox-only instances. Their annotation carries no mask, but it does
+# fix where the mask must start and stop. Motivation, measured end-to-end: the bbox-only arm
+# produced masks 1.28x the true area on artaxor-seg, spilling 23.8% of their area outside the
+# animal against 11.3% for the control.
 # ---------------------------------------------------------------------------------------
 
-def test_containment_is_off_by_default():
+def test_projection_is_off_by_default():
     from flat_bug import bbox_only_loss as m
-    assert m.CONTAINMENT_WEIGHT == 0.0
+    assert m.PROJECTION_WEIGHT == 0.0
 
 
-def test_containment_penalises_mask_outside_the_box_and_ignores_mask_inside():
-    from flat_bug.bbox_only_loss import _containment_loss
-    h = w = 32
-    proto = torch.zeros(2, h, w)
-    proto[0, :16, :] = 1.0     # channel 0 lights the TOP half
-    proto[1, 16:, :] = 1.0     # channel 1 lights the BOTTOM half
-    box = torch.tensor([[0.0, 0.0, float(w), 16.0]])   # GT box = the top half
-    area = torch.tensor([0.5])
-    inside_only = torch.tensor([[6.0, -6.0]])   # confident mask in the top half only
-    outside_too = torch.tensor([[6.0, 6.0]])    # also confident in the bottom half
-    l_in = _containment_loss(inside_only, proto, box, area).item()
-    l_out = _containment_loss(outside_too, proto, box, area).item()
-    assert l_out > l_in, f"spilling outside the box must cost more ({l_out:.4f} vs {l_in:.4f})"
-    assert l_out > 5 * l_in, "the penalty should be decisive, not marginal"
+def test_an_empty_mask_is_not_free():
+    """The point of a two-sided loss: predicting nothing must be penalised.
+
+    A one-sided "do not spill outside the box" penalty is minimised by an empty mask, and with
+    no positive mask supervision on these images that is what it would train for.
+    """
+    from flat_bug.bbox_only_loss import _projection_loss
+    proto = torch.ones(1, 32, 32)
+    box = torch.tensor([[8.0, 8.0, 24.0, 24.0]])
+    empty = _projection_loss(torch.tensor([[-12.0]]), proto, box).item()
+    assert empty > 1.5, f"an empty mask should cost near the 2.0 maximum, got {empty:.3f}"
 
 
-def test_containment_grows_with_the_amount_of_spill():
-    from flat_bug.bbox_only_loss import _containment_loss
-    h = w = 32
-    proto = torch.zeros(1, h, w); proto[0] = 1.0
-    box = torch.tensor([[0.0, 0.0, float(w), 16.0]])
-    area = torch.tensor([0.5])
-    losses = [_containment_loss(torch.tensor([[c]]), proto, box, area).item()
-              for c in (-4.0, 0.0, 4.0)]
-    assert losses[0] < losses[1] < losses[2], f"monotone in predicted probability, got {losses}"
+def _drawn(x0, y0, x1, y1, h=32, w=32):
+    """Two prototype channels: one lights the drawn rectangle, one is a constant offset."""
+    a = torch.zeros(1, h, w); a[0, y0:y1, x0:x1] = 1.0
+    return torch.cat([a, torch.ones(1, h, w)], 0)
+
+
+def test_matching_the_box_beats_both_under_filling_and_over_spilling():
+    from flat_bug.bbox_only_loss import _projection_loss
+    box = torch.tensor([[8.0, 8.0, 24.0, 24.0]])
+    coef = torch.tensor([[14.0, -7.0]])     # ~1 inside the drawn box, ~0 outside
+    exact = _projection_loss(coef, _drawn(8, 8, 24, 24), box).item()
+    small = _projection_loss(coef, _drawn(12, 12, 20, 20), box).item()
+    large = _projection_loss(coef, _drawn(2, 2, 30, 30), box).item()
+    assert exact < small, f"matching must beat under-filling ({exact:.3f} vs {small:.3f})"
+    assert exact < large, f"matching must beat over-spilling ({exact:.3f} vs {large:.3f})"
 
 
 def test_weight_zero_reproduces_the_original_loss_exactly():
@@ -401,14 +405,12 @@ def test_weight_zero_reproduces_the_original_loss_exactly():
     from flat_bug import bbox_only_loss as m
     crit = _Criterion()
     fg, masks, tgi, tb, bi, proto, pm, imgsz = _inputs(bs=2)
-    m.set_containment_weight(0.0)
     m._state.has_mask = torch.tensor([True, False])
+    m.set_projection_weight(0.0)
     a = m._patched_calculate_segmentation_loss(crit, fg, masks, tgi, tb, bi, proto, pm, imgsz)
-    m._state.has_mask = None
-    assert torch.isfinite(a)
-    m.set_containment_weight(2.0)
-    m._state.has_mask = torch.tensor([True, False])
+    m.set_projection_weight(2.0)
     b = m._patched_calculate_segmentation_loss(crit, fg, masks, tgi, tb, bi, proto, pm, imgsz)
     m._state.has_mask = None
-    m.set_containment_weight(0.0)
+    m.set_projection_weight(0.0)
+    assert torch.isfinite(a) and torch.isfinite(b)
     assert b > a, f"a positive weight must add cost ({b:.5f} vs {a:.5f})"

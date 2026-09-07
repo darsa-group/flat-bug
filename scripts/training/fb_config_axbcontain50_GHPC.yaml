@@ -12,17 +12,22 @@
 #       fraction of truth not covered      0.086        0.029
 #
 # The mask head sees this domain on only 1054 of 5153 ArTaxOr images, so on those images it
-# has no reason to keep the mask tight. This arm gives it one: bbox-only instances now pay for
-# probability predicted outside their ground-truth box. That is the only mask-shaped fact
-# their annotation contains, and the standard loss discards it - upstream single_mask_loss
-# applies crop_mask to the target box, so the exterior is unpenalised for every instance.
+# has no reason to keep the mask tight. This arm gives it one: a box derived from the
+# predicted mask must match the annotated box. The extent is taken as a differentiable
+# projection (max along each axis) and matched with a dice loss, which is BoxInst's projection
+# term - the established way to supervise a mask head from boxes alone.
+#
+# It has to be two-sided. A one-sided "do not spill outside the box" penalty is minimised by
+# predicting nothing, and with no positive mask supervision on these images an empty mask is
+# exactly what it would train for. The projection loss instead forces the mask to reach both
+# edges of the box AND stop there; a test pins that an empty mask is not free.
 #
 # Everything else is identical to the bbox arm, so the pair isolates the containment penalty.
 #
-# fb_bbox_only_containment 2.0 - deliberately heavy. The term is normalised over its own
-#     population, so the weight is a direct ratio against the ordinary mask loss. If 2.0
-#     over-tightens (mask recall falls, "fraction of truth not covered" rises above the
-#     control's 0.086) the answer is a smaller weight, not a different mechanism.
+# fb_bbox_only_projection 1.0 - the term is normalised over its own population, so the weight
+#     is a direct ratio against the ordinary mask loss.
+
+
 
 batch: 8
 model: "yolo26m-seg.pt"
@@ -38,4 +43,4 @@ fb_max_images: -1
 fb_synth_prob: 0.0
 fb_exclude_datasets: []
 fb_bbox_only_datasets: ["artaxor-bbox"]
-fb_bbox_only_containment: 2.0
+fb_bbox_only_projection: 1.0

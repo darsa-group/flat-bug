@@ -23,7 +23,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 SRC=$HOME/flat-bug-contain
 ROOT=$HOME/flatbug-dir2
 CFG=$SRC/scripts/training/fb_config_axbcontain50_GHPC.yaml
-grep -q '^fb_bbox_only_containment: 2.0$' "$CFG" || { echo "FAIL: containment weight not set"; exit 1; }
+grep -q '^fb_bbox_only_projection: 1.0$' "$CFG" || { echo "FAIL: projection weight not set"; exit 1; }
 grep -q '^fb_bbox_only_datasets: \["artaxor-bbox"\]$' "$CFG" || { echo "FAIL: bbox-only dataset not set"; exit 1; }
 echo "config:"; grep -E '^fb_|^epochs' "$CFG"
 

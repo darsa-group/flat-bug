@@ -31,43 +31,53 @@ from ultralytics.utils.ops import xyxy2xywh
 
 _state = threading.local()
 
-# Weight on the containment penalty for bbox-only instances. 0 reproduces the original
+# Weight on the box-projection loss for bbox-only instances. 0 reproduces the original
 # behaviour exactly, where such instances contribute nothing to the mask loss.
-CONTAINMENT_WEIGHT = 0.0
+PROJECTION_WEIGHT = 0.0
 
 
-def set_containment_weight(w: float) -> None:
-    """Set the containment weight for bbox-only instances. See `_containment_loss`."""
-    global CONTAINMENT_WEIGHT
-    CONTAINMENT_WEIGHT = float(w)
-
-
-def _containment_loss(pred_masks_i, proto_i, xyxy_i, area_i):
-    """Penalise predicted mask probability that falls OUTSIDE the ground-truth box.
-
-    A bbox-only instance has no mask to imitate, but its box still says where the animal is
-    NOT. Without that constraint the mask head gets no signal at all on these images and, on
-    the domain they belong to, learns to over-cover: measured on artaxor-seg, the arm trained
-    with bbox-only data produced masks 1.28x the true area, spilling 23.8% of their area
-    outside the animal against 11.3% for the control.
-
-    Note this is information the standard loss never uses for ANY instance. Upstream
-    `single_mask_loss` applies `crop_mask(loss, xyxy)`, which zeroes the BCE outside the target
-    box, so mask predicted outside the truth is unpenalised even when a real mask is available.
-
-    The target outside the box is 0, so this is BCE against zeros restricted to the exterior,
-    normalised per instance the same way `single_mask_loss` normalises - mean over the plane
-    divided by box area - so the two terms are on a comparable scale.
-    """
-    pred = torch.einsum("in,nhw->ihw", pred_masks_i, proto_i)
-    inside = crop_mask(torch.ones_like(pred), xyxy_i)
-    outside = 1.0 - inside
-    bce = F.binary_cross_entropy_with_logits(pred, torch.zeros_like(pred), reduction="none")
-    return ((bce * outside).mean(dim=(1, 2)) / area_i).sum()
+def set_projection_weight(w: float) -> None:
+    """Set the projection weight for bbox-only instances. See `_projection_loss`."""
+    global PROJECTION_WEIGHT
+    PROJECTION_WEIGHT = float(w)
 
 
 def _current_has_mask():
     return getattr(_state, "has_mask", None)
+
+
+def _projection_loss(pred_masks_i, proto_i, xyxy_i):
+    """Make the predicted mask's own extent match the ground-truth box.
+
+    A bbox-only instance has no mask to imitate, but its box states exactly where the mask
+    should begin and end. Deriving a box from the predicted mask and comparing it with the
+    annotation gives a signal in BOTH directions, which is what a one-sided "do not spill
+    outside the box" penalty cannot do: that penalty is minimised by predicting nothing, and
+    with no positive mask supervision on these images an empty mask is exactly what it would
+    train for.
+
+    The extent is taken as a differentiable projection rather than a hard argmax. Reducing the
+    mask probability by max along each axis gives its silhouette on x and on y; the target
+    silhouettes are 1 across the box's span and 0 elsewhere. Matching them with a dice loss
+    forces the mask to reach both edges of the box and to stop there. This is the projection
+    term of BoxInst (Tian et al., CVPR 2021), which is the established way to supervise a mask
+    head from boxes alone.
+
+    Returns:
+        Summed loss over the instances, one dice term per axis.
+    """
+    pred = torch.einsum("in,nhw->ihw", pred_masks_i, proto_i).sigmoid()
+    target = crop_mask(torch.ones_like(pred), xyxy_i)
+
+    def dice(a, b, eps=1e-5):
+        num = 2.0 * (a * b).sum(dim=1)
+        den = (a * a).sum(dim=1) + (b * b).sum(dim=1) + eps
+        return 1.0 - num / den
+
+    # silhouette on each axis: max over the other axis
+    loss_x = dice(pred.max(dim=1).values, target.max(dim=1).values)
+    loss_y = dice(pred.max(dim=2).values, target.max(dim=2).values)
+    return (loss_x + loss_y).sum()
 
 
 def _patched_calculate_segmentation_loss(
@@ -75,15 +85,16 @@ def _patched_calculate_segmentation_loss(
 ):
     """As upstream, but images flagged has_mask=False are excluded from the mask loss.
 
-    With CONTAINMENT_WEIGHT > 0 they instead contribute a penalty on mask predicted outside
-    their ground-truth box - the one thing their annotation does tell us. The two terms are
-    normalised over their own populations so the weight controls the balance directly.
+    With PROJECTION_WEIGHT > 0 they instead contribute a loss that makes the mask's own extent
+    match their ground-truth box - the one mask-shaped fact their annotation contains. The two
+    terms are normalised over their own populations, so the weight is a direct ratio between
+    them rather than something that drifts with the dataset mixture.
     """
     _, _, mask_h, mask_w = proto.shape
     loss = 0
     n_valid = 0
-    contain = 0
-    n_contain = 0
+    proj = 0
+    n_proj = 0
 
     has_mask = _current_has_mask()
     target_bboxes_normalized = target_bboxes / imgsz[[1, 0, 1, 0]]
@@ -103,20 +114,19 @@ def _patched_calculate_segmentation_loss(
                 gt_mask, pred_masks_i[fg_mask_i], proto_i, mxyxy_i[fg_mask_i], marea_i[fg_mask_i]
             )
             n_valid += int(fg_mask_i.sum())
-        elif CONTAINMENT_WEIGHT and fg_mask_i.any():
-            # bbox-only image: no mask to imitate, but the box says where the animal is not.
-            contain += _containment_loss(
-                pred_masks_i[fg_mask_i], proto_i, mxyxy_i[fg_mask_i], marea_i[fg_mask_i]
-            )
-            n_contain += int(fg_mask_i.sum())
+        elif PROJECTION_WEIGHT and fg_mask_i.any():
+            # bbox-only image: no mask to imitate, but its box fixes where the mask must start
+            # and stop.
+            proj += _projection_loss(pred_masks_i[fg_mask_i], proto_i, mxyxy_i[fg_mask_i])
+            n_proj += int(fg_mask_i.sum())
         else:
             # WARNING: keeps DDP from reporting unused gradients; also the branch a bbox-only
-            # image takes when containment is off, contributing exactly zero.
+            # image takes when the projection loss is off, contributing exactly zero.
             loss += (proto * 0).sum() + (pred_masks * 0).sum()
 
     out = loss / max(n_valid, 1)
-    if CONTAINMENT_WEIGHT and n_contain:
-        out = out + CONTAINMENT_WEIGHT * contain / n_contain
+    if PROJECTION_WEIGHT and n_proj:
+        out = out + PROJECTION_WEIGHT * proj / n_proj
     return out
 
 
