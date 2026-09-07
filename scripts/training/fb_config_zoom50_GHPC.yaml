@@ -1,0 +1,34 @@
+# Do magnified single-instance crops improve mask quality? 50-epoch arm.
+#
+# The CONTROL for this arm is the already-finished fb_axb_excl_2026-09-05_10-11-39
+# (mask mAP50-95 0.65577 @ep46). Every setting below is copied from the config that produced
+# it, and fb_exclude_datasets keeps artaxor-bbox out exactly as ARM=excl did, so the ONLY
+# difference between the two runs is fb_zoom_prob. That saves re-running a 12-hour control.
+#
+# fb_zoom_prob 0.2   - a fifth of training crops are magnified onto one instance
+# fb_zoom_min_px 100 - only instances at least 100 px across in the ORIGINAL image are chosen,
+#                      because those are the ones whose legs are actually drawn in the
+#                      annotation and so are the only ones that can teach high-resolution
+#                      mask appearance. Smaller instances are dropped and inpainted first.
+#
+# Judge it on: thin-appendage recall and mask IoU end-to-end, expected to rise most on the
+# sub-tile datasets (biodiscover, wehrli2025, NHM-beetles-crops - 97-100% of their images are
+# upscaled at inference, so magnified views are their normal case). Touch recall is the
+# guardrail: a fifth of crops become less crowded, which could cost merge performance.
+
+batch: 8
+model: "yolo26m-seg.pt"
+epochs: 50
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 32
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_prob: 0.0
+fb_exclude_datasets: ["artaxor-bbox"]
+fb_bbox_only_datasets: []
+fb_zoom_prob: 0.2
+fb_zoom_min_px: 100
