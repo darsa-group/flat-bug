@@ -310,8 +310,15 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
         # wide in most training crops. See augmentations.ZoomCrop.
         self._zoom_prob = float(custom_fb_args.get("fb_zoom_prob", 0.0) or 0.0)
         self._zoom_min_px = int(custom_fb_args.get("fb_zoom_min_px", 100) or 100)
+        self._zoom_occupancy = tuple(custom_fb_args.get("fb_zoom_occupancy") or (0.22, 0.45))
+        self._zoom_min_scale = float(custom_fb_args.get("fb_zoom_min_scale", 1.0) or 1.0)
+        self._zoom_jitter = float(custom_fb_args.get("fb_zoom_jitter", 0.25) or 0.25)
         if self._zoom_prob:
-            LOGGER.info(f"zoom crops: p={self._zoom_prob} on instances >= {self._zoom_min_px} px")
+            LOGGER.info(
+                f"zoom crops: p={self._zoom_prob} on instances >= {self._zoom_min_px} px, "
+                f"occupancy {self._zoom_occupancy}, min_scale {self._zoom_min_scale}, "
+                f"jitter {self._zoom_jitter}"
+            )
         self._bbox_only_datasets = list(custom_fb_args.get("fb_bbox_only_datasets") or [])
         if self._bbox_only_datasets:
             # Patch only when the feature is actually used, so runs without it are unchanged.
@@ -432,6 +439,9 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
                 bbox_only_datasets=self._bbox_only_datasets,
                 zoom_prob=self._zoom_prob,
                 zoom_min_px=self._zoom_min_px,
+                zoom_occupancy=self._zoom_occupancy,
+                zoom_min_scale=self._zoom_min_scale,
+                zoom_jitter=self._zoom_jitter,
                 task="segment",
                 subset_args={"n": self._max_images, "pattern": pattern},
             )

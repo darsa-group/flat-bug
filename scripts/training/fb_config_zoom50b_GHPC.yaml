@@ -1,0 +1,46 @@
+# Zoom arm B: every picked instance lands at ~67% of the tile, scaling DOWN where needed.
+#
+# Same control as arm A: the finished fb_axb_excl_2026-09-05_10-11-39 (mask mAP50-95 0.65577).
+# Same tree, same data root, same fb_exclude_datasets - only the zoom settings differ, so this
+# and arm A are directly comparable to each other and to the control.
+#
+# Why these numbers, measured rather than guessed:
+#
+#   fb_zoom_occupancy [0.40, 0.50]
+#       Occupancy is the target's longest side as a fraction of ZoomCrop's 1536px output.
+#       CenterCrop(1024) then crops WITHOUT resizing, so the fraction of the tile the network
+#       actually sees is 1.5x larger: 0.40-0.50 nominal -> 0.60-0.75 of the final tile,
+#       measured median 0.67.
+#
+#   fb_zoom_min_scale 0.15
+#       Arm A left the floor at 1.0, so any instance already larger than 1536*occ was not
+#       magnified at all - measured on the real corpus, 49% of picks were untouched, because
+#       the median picked instance is 479px and the threshold is only 338-691px. Allowing
+#       scale < 1 means a large instance is shrunk to the same target occupancy instead, so
+#       every pick lands at one size and the treatment is uniform.
+#
+#   fb_zoom_jitter 0.08
+#       The jitter offset in output pixels is jitter*1536 regardless of zoom. At 0.25 that is
+#       384px, and with the target half-width at ~345px the target falls outside the 1024
+#       CenterCrop and is dropped AND inpainted by FixInstances(area_thr=0.975). Measured
+#       target retention: 41% at jitter 0.25, 57% at 0.15, 100% at 0.08.
+
+batch: 8
+model: "yolo26m-seg.pt"
+epochs: 50
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 32
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_prob: 0.0
+fb_exclude_datasets: ["artaxor-bbox"]
+fb_bbox_only_datasets: []
+fb_zoom_prob: 0.2
+fb_zoom_min_px: 100
+fb_zoom_occupancy: [0.40, 0.50]
+fb_zoom_min_scale: 0.15
+fb_zoom_jitter: 0.08

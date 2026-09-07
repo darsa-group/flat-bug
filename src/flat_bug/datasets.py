@@ -172,6 +172,9 @@ def train_augmentation_pipeline(  # noqa: D103
     use_keypoints: bool,
     zoom_prob: float = 0.0,
     zoom_min_px: int = 100,
+    zoom_occupancy: tuple[float, float] = (0.22, 0.45),
+    zoom_min_scale: float = 1.0,
+    zoom_jitter: float = 0.25,
 ) -> Compose:
     crop_size = int(image_size * 1.5)
     # A fraction of crops are magnified onto a single large instance, so thin appendages are
@@ -181,7 +184,14 @@ def train_augmentation_pipeline(  # noqa: D103
     if zoom_prob > 0:
         crop = MaybeZoomCrop(
             crop,
-            ZoomCrop(imsize=crop_size, min_px=zoom_min_px, drop_below=min_size),
+            ZoomCrop(
+                imsize=crop_size,
+                min_px=zoom_min_px,
+                drop_below=min_size,
+                occupancy=tuple(zoom_occupancy),
+                min_scale=zoom_min_scale,
+                jitter=zoom_jitter,
+            ),
             p=zoom_prob,
         )
     return Compose([
@@ -240,15 +250,24 @@ class FlatBugYOLODataset(YOLODataset):  # noqa: D101
     # (longest box side, original pixels) eligible to be magnified onto.
     _zoom_prob: float = 0.0
     _zoom_min_px: int = 100
+    _zoom_occupancy: tuple[float, float] = (0.22, 0.45)
+    _zoom_min_scale: float = 1.0
+    _zoom_jitter: float = 0.25
 
     def __init__(  # noqa: D107
         self, max_instances: int | float | None, classes: None = None, subset_args: dict | None = None,
         bbox_only_datasets: list[str] | None = None,
-        zoom_prob: float = 0.0, zoom_min_px: int = 100, *args, **kwargs
+        zoom_prob: float = 0.0, zoom_min_px: int = 100,
+        zoom_occupancy: tuple[float, float] | list[float] | None = None,
+        zoom_min_scale: float = 1.0, zoom_jitter: float = 0.25, *args, **kwargs
     ):
         self._max_instances = max_instances
         self._zoom_prob = float(zoom_prob)
         self._zoom_min_px = int(zoom_min_px)
+        if zoom_occupancy is not None:
+            self._zoom_occupancy = (float(zoom_occupancy[0]), float(zoom_occupancy[1]))
+        self._zoom_min_scale = float(zoom_min_scale)
+        self._zoom_jitter = float(zoom_jitter)
         self._include_classes = classes  # Only used so the class list is visible in the subset method
         self._bbox_only = compile_bbox_only(bbox_only_datasets)
         if subset_args is not None:
@@ -318,6 +337,9 @@ class FlatBugYOLODataset(YOLODataset):  # noqa: D101
             use_keypoints=self.use_keypoints,
             zoom_prob=self._zoom_prob,
             zoom_min_px=self._zoom_min_px,
+            zoom_occupancy=self._zoom_occupancy,
+            zoom_min_scale=self._zoom_min_scale,
+            zoom_jitter=self._zoom_jitter,
         )
 
     def cache_labels(self, path: Path = Path("./labels.cache")):

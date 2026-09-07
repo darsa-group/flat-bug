@@ -711,6 +711,7 @@ class ZoomCrop(Crop):
         drop_below: int = 32,
         occupancy: tuple[float, float] = (0.22, 0.45),
         max_zoom: float = 8.0,
+        min_scale: float = 1.0,
         jitter: float = 0.25,
     ) -> None:
         """.
@@ -731,6 +732,12 @@ class ZoomCrop(Crop):
                 of the tile, against 7.6 and 1.1% for a normal crop - i.e. the crop degrades
                 into a single-instance scene. A lower occupancy keeps more real neighbours.
             max_zoom: Never magnify beyond this, to avoid training on interpolated pixels.
+            min_scale: Lower bound on the scale factor. At the default 1.0 an instance already
+                larger than ``xsize * occupancy`` is left at native scale, which on this corpus
+                means about half of all picks are not magnified at all. Setting it below 1.0
+                lets those be scaled DOWN to the target occupancy instead, so every pick lands
+                at the same size in the tile. Do not set it so low that the source crop
+                (``xsize / zoom``) dwarfs the image, or the tile is mostly padding.
             jitter: Centre offset as a fraction of the crop side.
         """
         super().__init__(imsize)
@@ -738,6 +745,7 @@ class ZoomCrop(Crop):
         self.drop_below = int(drop_below)
         self.occupancy = occupancy
         self.max_zoom = float(max_zoom)
+        self.min_scale = float(min_scale)
         self.jitter = float(jitter)
 
     def __call__(self, labels: dict) -> dict | None:
@@ -760,7 +768,10 @@ class ZoomCrop(Crop):
         t = int(np.random.choice(eligible))
         cx, cy = float(bboxes[t, 0]), float(bboxes[t, 1])
         occ = float(np.random.uniform(*self.occupancy))
-        zoom = float(np.clip(self.xsize * occ / max(sizes[t], 1.0), 1.0, self.max_zoom))
+        # min_scale < 1 lets an instance larger than the target occupancy be scaled DOWN to it,
+        # so every picked instance lands at the same size in the tile instead of half of them
+        # being left untouched at zoom 1.0.
+        zoom = float(np.clip(self.xsize * occ / max(sizes[t], 1.0), self.min_scale, self.max_zoom))
         side = max(int(round(self.xsize / zoom)), 8)
 
         j = self.jitter * side

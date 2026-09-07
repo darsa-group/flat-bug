@@ -44,3 +44,33 @@ def test_p_zero_never_zooms():
         if len(inst._bboxes.bboxes):
             sizes.append(float(np.maximum(inst._bboxes.bboxes[:,2], inst._bboxes.bboxes[:,3]).max()))
     assert sizes and max(sizes) < 900, f"p=0 should never magnify 4x+, saw {max(sizes):.0f}"
+
+
+def test_min_scale_below_one_lets_a_large_instance_be_scaled_down():
+    """Without this, an instance already bigger than xsize*occupancy is left untouched."""
+    big = _labels([(1000, 1000, 1200, 1200)], imsz=3000)
+    z_hi = ZoomCrop(imsize=1536, min_px=100, drop_below=32, occupancy=(0.45, 0.45), min_scale=1.0)
+    z_lo = ZoomCrop(imsize=1536, min_px=100, drop_below=32, occupancy=(0.45, 0.45), min_scale=0.15)
+    def longest(o):
+        i = o["instances"]
+        if i.normalized: i.denormalize(o["img"].shape[1], o["img"].shape[0])
+        if i._bboxes.format != "xywh": i.convert_bbox(format="xywh")
+        b = i._bboxes.bboxes
+        return float(np.maximum(b[:, 2], b[:, 3]).max()) if len(b) else 0.0
+    kept = longest(z_hi(_labels([(1000, 1000, 1200, 1200)], imsz=3000)))
+    shrunk = longest(z_lo(_labels([(1000, 1000, 1200, 1200)], imsz=3000)))
+    assert abs(kept - 1200) < 60, f"min_scale=1.0 should leave it at 1200px, got {kept:.0f}"
+    assert abs(shrunk - 1536*0.45) < 80, f"min_scale=0.15 should bring it to ~691px, got {shrunk:.0f}"
+
+
+def test_occupancy_sets_the_output_size_regardless_of_original_size():
+    z = ZoomCrop(imsize=1536, min_px=100, drop_below=32, occupancy=(0.45, 0.45), min_scale=0.15)
+    out = []
+    for orig in (120, 340, 700, 1500):
+        o = z(_labels([(1500, 1500, orig, orig)], imsz=4000))
+        i = o["instances"]
+        if i.normalized: i.denormalize(o["img"].shape[1], o["img"].shape[0])
+        if i._bboxes.format != "xywh": i.convert_bbox(format="xywh")
+        b = i._bboxes.bboxes
+        out.append(float(np.maximum(b[:, 2], b[:, 3]).max()))
+    assert max(out) - min(out) < 120, f"all should land near 1536*0.45=691px, got {[round(v) for v in out]}"
