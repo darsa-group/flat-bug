@@ -44,6 +44,8 @@ def main():  # noqa: D103
         "optimizer": "auto",
         "save_period": 5,
         "fb_bbox_only_datasets": [],
+        "fb_zoom_prob": 0.0,
+        "fb_zoom_min_px": 100,
         # "optimizer": 'SGD',
         # "lr0": 0.01,
         # "lrf": 0.005,

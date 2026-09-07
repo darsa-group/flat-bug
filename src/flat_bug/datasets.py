@@ -15,7 +15,15 @@ from ultralytics.data.augment import Compose, Format, RandomFlip, RandomHSV
 from ultralytics.data.dataset import LOGGER
 from ultralytics.utils import IterableSimpleNamespace
 
-from flat_bug.augmentations import CenterCrop, FixInstances, FlatBugRandomPerspective, RandomColorInv, RandomCrop
+from flat_bug.augmentations import (
+    CenterCrop,
+    FixInstances,
+    FlatBugRandomPerspective,
+    MaybeZoomCrop,
+    RandomColorInv,
+    RandomCrop,
+    ZoomCrop,
+)
 from flat_bug.bbox_only import compile_bbox_only, downgrade_labels, fill_missing_segments
 
 HELP_URL = "See https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data"
@@ -162,10 +170,23 @@ def train_augmentation_pipeline(  # noqa: D103
     min_size: int,
     use_segments: bool,
     use_keypoints: bool,
+    zoom_prob: float = 0.0,
+    zoom_min_px: int = 100,
 ) -> Compose:
+    crop_size = int(image_size * 1.5)
+    # A fraction of crops are magnified onto a single large instance, so thin appendages are
+    # trained at a resolution where they exist. See ZoomCrop for why instances below
+    # `min_size` are dropped and inpainted BEFORE magnification rather than after.
+    crop = RandomCrop(imsize=crop_size)
+    if zoom_prob > 0:
+        crop = MaybeZoomCrop(
+            crop,
+            ZoomCrop(imsize=crop_size, min_px=zoom_min_px, drop_below=min_size),
+            p=zoom_prob,
+        )
     return Compose([
         # Crop to slightly larger than needed for training
-        RandomCrop(imsize=int(image_size * 1.5)),
+        crop,
         # Affine transformation at same size as above
         FlatBugRandomPerspective(imgsz=int(image_size * 1.5), degrees=180, translate=0, scale=0),
         # Crop to needed size
@@ -215,11 +236,19 @@ class FlatBugYOLODataset(YOLODataset):  # noqa: D101
     # How much do we allow the dataset to grow when oversampling, used to ensure larger images are not underrepresented
     _oversample_factor: int = 2
 
+    # Fraction of training crops magnified onto one instance, and the smallest instance
+    # (longest box side, original pixels) eligible to be magnified onto.
+    _zoom_prob: float = 0.0
+    _zoom_min_px: int = 100
+
     def __init__(  # noqa: D107
         self, max_instances: int | float | None, classes: None = None, subset_args: dict | None = None,
-        bbox_only_datasets: list[str] | None = None, *args, **kwargs
+        bbox_only_datasets: list[str] | None = None,
+        zoom_prob: float = 0.0, zoom_min_px: int = 100, *args, **kwargs
     ):
         self._max_instances = max_instances
+        self._zoom_prob = float(zoom_prob)
+        self._zoom_min_px = int(zoom_min_px)
         self._include_classes = classes  # Only used so the class list is visible in the subset method
         self._bbox_only = compile_bbox_only(bbox_only_datasets)
         if subset_args is not None:
@@ -287,6 +316,8 @@ class FlatBugYOLODataset(YOLODataset):  # noqa: D101
             min_size=self._min_size,
             use_segments=self.use_segments,
             use_keypoints=self.use_keypoints,
+            zoom_prob=self._zoom_prob,
+            zoom_min_px=self._zoom_min_px,
         )
 
     def cache_labels(self, path: Path = Path("./labels.cache")):

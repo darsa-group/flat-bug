@@ -677,6 +677,158 @@ class RandomCrop(Crop):  # noqa: D101
         return labels
 
 
+class ZoomCrop(Crop):
+    """Crop centred on one instance and magnified, so appendages are seen at high resolution.
+
+    ``RandomCrop`` places crops uniformly over the image and draws its scale as
+    ``uniform(ratio, 1) ** 2``, which biases towards downscaling a whole image into the tile.
+    The consequence is that a leg three pixels wide is three pixels wide in most training
+    crops, and a network cannot learn a structure it cannot resolve. This crop does the
+    opposite: it picks one sufficiently large instance and magnifies it to fill a set
+    fraction of the tile.
+
+    It matches inference rather than departing from it - flat-bug predicts over a scale
+    pyramid, so magnified views are already what the finest pyramid level presents.
+
+    Two rules keep it honest:
+
+    - Instances below ``drop_below`` px in the ORIGINAL image are removed and inpainted
+      before any magnification. Without this, zooming 5x would lift a 20px instance over
+      the 32px floor that ``FixInstances`` applies downstream, smuggling in exactly the
+      poorly resolved annotations that floor exists to exclude.
+    - Every other instance falling in the crop keeps its label. Dropping a label while
+      leaving its pixels manufactures a false negative, which is the failure the Telea
+      inpainting in ``FixInstances`` exists to prevent.
+
+    The centre is jittered so the target does not always sit dead-centre, which would teach
+    "one object, middle of frame" and hurt on the crowded scenes flat-bug is built for.
+    """
+
+    def __init__(
+        self,
+        imsize: int | tuple[int, int] | list[int] | np.ndarray,
+        min_px: int = 100,
+        drop_below: int = 32,
+        occupancy: tuple[float, float] = (0.22, 0.45),
+        max_zoom: float = 8.0,
+        jitter: float = 0.25,
+    ) -> None:
+        """.
+
+        Args:
+            imsize: Output crop size.
+            min_px: An instance must be at least this many px (longest box side) in the
+                original image to be chosen as the zoom target. Large instances are chosen
+                because their annotations are the trustworthy ones - their legs are actually
+                drawn - so they are what should teach high-resolution mask appearance.
+            drop_below: Instances smaller than this in the original image are removed and
+                inpainted before magnification.
+            occupancy: Fraction of the tile the target should span, sampled uniformly. Kept
+                modest deliberately: magnification shrinks the crop in SOURCE pixels, so at
+                6x a 1536px tile sees only ~250px of original image and nearly every
+                neighbour is clipped by the frame. Measured on a crowded synthetic plate,
+                occupancy (0.30, 0.60) left 1.2 of 40 instances labelled and painted out 5.1%
+                of the tile, against 7.6 and 1.1% for a normal crop - i.e. the crop degrades
+                into a single-instance scene. A lower occupancy keeps more real neighbours.
+            max_zoom: Never magnify beyond this, to avoid training on interpolated pixels.
+            jitter: Centre offset as a fraction of the crop side.
+        """
+        super().__init__(imsize)
+        self.min_px = int(min_px)
+        self.drop_below = int(drop_below)
+        self.occupancy = occupancy
+        self.max_zoom = float(max_zoom)
+        self.jitter = float(jitter)
+
+    def __call__(self, labels: dict) -> dict | None:
+        """Crop and magnify, or return None if no instance is large enough to zoom on."""
+        instances = cast(Instances, labels["instances"])
+        if instances.segments is None or len(instances.segments) == 0:
+            return None
+        h, w = labels["img"].shape[:2]
+        if instances.normalized:
+            instances.denormalize(w, h)
+        if instances._bboxes.format != "xywh":
+            instances.convert_bbox(format="xywh")
+        bboxes = instances._bboxes.bboxes
+        sizes = np.maximum(bboxes[:, 2], bboxes[:, 3])
+
+        eligible = np.nonzero(sizes >= self.min_px)[0]
+        if len(eligible) == 0:  # nothing worth zooming on; caller falls back
+            return None
+
+        t = int(np.random.choice(eligible))
+        cx, cy = float(bboxes[t, 0]), float(bboxes[t, 1])
+        occ = float(np.random.uniform(*self.occupancy))
+        zoom = float(np.clip(self.xsize * occ / max(sizes[t], 1.0), 1.0, self.max_zoom))
+        side = max(int(round(self.xsize / zoom)), 8)
+
+        j = self.jitter * side
+        cx += float(np.random.uniform(-j, j))
+        cy += float(np.random.uniform(-j, j))
+        labels = self.crop_image(labels, int(round(cx - side / 2)), int(round(cy - side / 2)), side, side)
+
+        # Drop the too-small instances and inpaint their pixels AFTER cropping but BEFORE the
+        # magnifying resample. Sizes are still in source pixels here, so the rule is applied
+        # at the original scale exactly as if it had run on the whole image - but the
+        # inpainting touches only the ~side^2 crop instead of the entire source image, which
+        # on flat-bug's larger images is the difference between a cheap call and a very
+        # expensive one.
+        inst = cast(Instances, labels["instances"])
+        bb = inst._bboxes.bboxes
+        sz = np.maximum(bb[:, 2], bb[:, 3])
+        vis = np.array([
+            s[:, 0].max() > 0 and s[:, 1].max() > 0 and s[:, 0].min() < side and s[:, 1].min() < side
+            for s in inst.segments
+        ]) if len(inst.segments) else np.zeros(0, bool)
+        tiny = np.nonzero((sz < self.drop_below) & vis)[0]
+        if len(tiny):
+            keep = np.nonzero(~((sz < self.drop_below) & vis))[0]
+            telea_inpaint_polys(
+                img=labels["img"],
+                polys=[np.asarray(s, dtype=np.int32) for s in inst.segments[tiny]],
+                exclude_polys=[np.asarray(s, dtype=np.int32) for s in inst.segments[keep]],
+                downscale_factor=6,
+                contourIdx=-1,
+                thickness=-1,
+                lineType=cv2.LINE_4,
+            )
+            inst.segments = inst.segments[keep]
+            inst._bboxes.bboxes = bb[keep]
+            labels["cls"] = labels["cls"][keep]
+            labels["instances"] = inst
+
+        return scale_labels(labels, self.xsize / side)
+
+
+class MaybeZoomCrop:
+    """Take a magnified single-instance crop with probability ``p``, else the usual crop.
+
+    The fallback is not just for the probability draw: ``ZoomCrop`` returns None whenever an
+    image holds no instance at least ``min_px`` across, which is common in the small-animal
+    sub-datasets, and those images must still contribute normal crops.
+    """
+
+    def __init__(self, random_crop: "RandomCrop", zoom_crop: ZoomCrop, p: float) -> None:
+        """.
+
+        Args:
+            random_crop: The standard crop, used for the remaining ``1 - p``.
+            zoom_crop: The magnifying crop.
+            p: Probability of attempting a zoomed crop.
+        """
+        self.random_crop = random_crop
+        self.zoom_crop = zoom_crop
+        self.p = float(p)
+
+    def __call__(self, labels: dict) -> dict:  # noqa: D102
+        if self.p > 0 and np.random.random() < self.p:
+            out = self.zoom_crop(labels)
+            if out is not None:
+                return out
+        return self.random_crop(labels)
+
+
 class FixInstances:
     """Removes instances that are too small or which overlap less than a certain threshold with the image."""
 

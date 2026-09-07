@@ -305,6 +305,13 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
         self._max_images = custom_fb_args["fb_max_images"]
         self._exclude_datasets = custom_fb_args["fb_exclude_datasets"]
         # Datasets whose polygons are not trustworthy: boxes are kept, masks ignored.
+        # Magnified single-instance crops. RandomCrop draws its scale as uniform(ratio, 1) ** 2,
+        # which biases towards whole-image views, so a leg three pixels wide stays three pixels
+        # wide in most training crops. See augmentations.ZoomCrop.
+        self._zoom_prob = float(custom_fb_args.get("fb_zoom_prob", 0.0) or 0.0)
+        self._zoom_min_px = int(custom_fb_args.get("fb_zoom_min_px", 100) or 100)
+        if self._zoom_prob:
+            LOGGER.info(f"zoom crops: p={self._zoom_prob} on instances >= {self._zoom_min_px} px")
         self._bbox_only_datasets = list(custom_fb_args.get("fb_bbox_only_datasets") or [])
         if self._bbox_only_datasets:
             # Patch only when the feature is actually used, so runs without it are unchanged.
@@ -423,6 +430,8 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
                 single_cls=self.args.single_cls or False,
                 max_instances=self._max_instances,
                 bbox_only_datasets=self._bbox_only_datasets,
+                zoom_prob=self._zoom_prob,
+                zoom_min_px=self._zoom_min_px,
                 task="segment",
                 subset_args={"n": self._max_images, "pattern": pattern},
             )
