@@ -414,3 +414,67 @@ def test_weight_zero_reproduces_the_original_loss_exactly():
     m.set_projection_weight(0.0)
     assert torch.isfinite(a) and torch.isfinite(b)
     assert b > a, f"a positive weight must add cost ({b:.5f} vs {a:.5f})"
+
+
+# ---------------------------------------------------------------------------------------
+# The bug that made the whole feature a no-op for a full 50-epoch run.
+#
+# YOLO26 wraps two v8SegmentationLoss instances in E2ELoss, whose __call__ invokes
+# `self.one2many.loss(...)` and `self.one2one.loss(...)` DIRECTLY. A wrapper on __call__ is
+# therefore never reached, has_mask stays None, `usable` is True for every image, and each
+# bbox-only instance trains its fabricated rectangle as if it were a real mask - the exact
+# outcome the feature exists to prevent. Nothing failed; losses and metrics looked normal.
+# ---------------------------------------------------------------------------------------
+
+def test_the_flags_reach_the_loss_through_the_path_E2ELoss_uses():
+    """E2ELoss bypasses __call__, so the wrapper must sit on `loss`.
+
+    Driven by calling `loss` directly, which is exactly what E2ELoss does.
+    """
+    from ultralytics.utils.loss import v8SegmentationLoss
+    from flat_bug import bbox_only_loss as m
+
+    seen = []
+    original = v8SegmentationLoss.loss
+
+    def spy(self, preds, batch):
+        seen.append(m._current_has_mask())
+        return None
+
+    v8SegmentationLoss.loss = spy          # stand in for the real body
+    try:
+        with m.bbox_only_segmentation_loss():          # wraps whatever `loss` currently is
+            flags = torch.tensor([True, False])
+            v8SegmentationLoss.loss(None, {}, {"has_mask": flags, "img": None})
+    finally:
+        v8SegmentationLoss.loss = original
+
+    assert seen, "`loss` was never called"
+    assert seen[0] is not None, (
+        "has_mask was None inside the loss: the wrapper is not on the code path E2ELoss uses, "
+        "so every bbox-only image would train its rectangle as if it were a real mask"
+    )
+    assert bool(seen[0][0]) is True and bool(seen[0][1]) is False
+
+
+def test_state_is_cleared_after_the_loss_returns():
+    """A leaked flag would silently apply to the next batch, which may be all-masked."""
+    from ultralytics.utils.loss import v8SegmentationLoss
+    from flat_bug import bbox_only_loss as m
+    original = v8SegmentationLoss.loss
+    v8SegmentationLoss.loss = lambda self, preds, batch: None
+    try:
+        with m.bbox_only_segmentation_loss():
+            v8SegmentationLoss.loss(None, {}, {"has_mask": torch.tensor([True]), "img": None})
+            assert m._current_has_mask() is None, "the flag leaked past the loss call"
+    finally:
+        v8SegmentationLoss.loss = original
+
+
+def test_enable_patches_loss_and_not_call():
+    from ultralytics.utils.loss import v8SegmentationLoss
+    from flat_bug import bbox_only_loss as m
+    before = v8SegmentationLoss.loss
+    with m.bbox_only_segmentation_loss():
+        assert v8SegmentationLoss.loss is not before, "`loss` must be wrapped - E2ELoss calls it directly"
+    assert v8SegmentationLoss.loss is before, "the context manager must restore `loss`"
