@@ -1849,15 +1849,29 @@ class Predictor:
         scoring only the instances the refiner actually touched against the GT polygons:
 
             checkpoint      n     mask IoU            thin recall
-            zoom-trained  640   0.863 -> 0.851      0.601 -> 0.711
-            control       460   0.879 -> 0.839      0.661 -> 0.666
+            zoom-trained  550   0.869 -> 0.867      0.619 -> 0.703
+            control       448   0.880 -> 0.842      0.662 -> 0.659
 
-        The zoom-trained model trades a little boundary agreement for a large gain in
-        appendage recall; the control pays three times the IoU for nothing. `REFINE` therefore
-        defaults to False. Note that even the good case loses IoU: mask IoU is close to blind
-        to legs and antennae - a mask that misses every leg still scores ~0.96 - while a 1px
-        boundary shift costs it ~0.1, so it systematically misprices exactly this trade. The
-        arm has to be settled end-to-end, not on IoU.
+        The zoom-trained model buys a large gain in appendage recall at no cost in boundary
+        agreement. The control gets nothing and pays heavily, and the `REFINE_MAX_GROWTH` cap
+        does not rescue it - its refinements are not merges, they are simply wrong, which is
+        what "off-distribution" means for a model that never saw magnified crops. `REFINE`
+        therefore defaults to False.
+
+        It is also strongly dataset-dependent, and worth gating per source rather than running
+        globally. Best and worst by thin recall on the zoom-trained checkpoint:
+
+            ubc-scanned-sticky-cards +0.20    cao2022    -0.18
+            biodiscover-arm          +0.19    gernat2018 -0.08
+            DIRT                     +0.16    AMT        -0.08
+
+        Finally, do not read the IoU column as the verdict. Mask IoU is close to blind to legs
+        and antennae - a mask that misses every one still scores ~0.96 - while a 1px boundary
+        shift costs it ~0.1, so it systematically misprices exactly this trade. An earlier
+        version of this pass scored +0.11 thin recall purely by merging masks with their
+        neighbours, which an area-matched dilation of the ORIGINAL mask reproduced almost
+        exactly; that is the measurement `REFINE_MAX_GROWTH` exists to defeat. The arm has to
+        be settled end-to-end.
 
         Efficiency
             One crop-and-resize per instance, then a single stacked forward per `BATCH_SIZE`
