@@ -1865,13 +1865,25 @@ class Predictor:
             biodiscover-arm          +0.19    gernat2018 -0.08
             DIRT                     +0.16    AMT        -0.08
 
-        Both columns are also measured against annotation that is itself weakest exactly where
-        this pass acts. Tracing every tarsus and antenna by hand is slow and, on a 200px animal,
-        close to guesswork, so ground-truth polygons tend to cut appendages short. A refinement
-        that recovers a real leg the annotator skipped is scored as a false positive twice over
-        - once as lost IoU, once as lost precision. The measurements above are therefore a lower
-        bound on this pass, and inspecting the contours is not optional garnish; on this data it
-        is the more reliable instrument.
+        Both columns are also measured against annotation with a known shape of error, and it
+        is not symmetric. flat-bug's ground truth is CONSERVATIVE: a human tracing an animal
+        encloses every appendage, but does not hug them, and will bridge two adjacent legs into
+        one lobe rather than thread between them. So GT is close to an outer hull - it contains
+        the animal, with slack.
+
+        That has a direct consequence for which of these numbers can be trusted:
+
+        precision  Trustworthy, and strict. GT already contains everything real, so predicted
+            pixels OUTSIDE it are genuinely wrong. The refiner's -0.023 is real leakage.
+        recall, and thin recall  Biased UPWARDS by bloat. The GT slack between two bridged legs
+            is scored as animal, so a mask that fills that gap is rewarded and a mask that
+            correctly threads between them is punished. This is why an area-matched dilation of
+            the original scores nearly as well as the refiner on thin recall.
+        IoU  Mixed, since it contains both effects.
+
+        A tighter, anatomically correct mask therefore cannot outscore a slightly bloated one on
+        this data, whatever the metric. That is the ceiling of GT-based scoring here, and the
+        reason the contours - not the aggregates - are what caught the merge bug.
 
         Finally, do not read the IoU column as the verdict. Mask IoU is close to blind to legs
         and antennae - a mask that misses every one still scores ~0.96 - while a 1px boundary
