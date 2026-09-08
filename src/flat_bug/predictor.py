@@ -1837,9 +1837,21 @@ class Predictor:
         6000px photo is only ever segmented at 200px however many scales are searched. This
         second pass crops a window around each detection and magnifies it to fill
         `REFINE_OCCUPANCY` of a tile, which is the regime a model trained with `fb_zoom_prob`
-        has seen. Measured on 10 instances of 150-260px, magnifying moved thin-appendage recall
-        by -0.031 for a normally-trained model and +0.058 for a zoom-trained one, so this is
-        only worth enabling for the latter - hence `REFINE` defaulting to False.
+        has seen.
+
+        Whether that pays depends entirely on the checkpoint. Over 150 validation images,
+        scoring only the instances the refiner actually touched against the GT polygons:
+
+            checkpoint      n     mask IoU            thin recall
+            zoom-trained  640   0.863 -> 0.851      0.601 -> 0.711
+            control       460   0.879 -> 0.839      0.661 -> 0.666
+
+        The zoom-trained model trades a little boundary agreement for a large gain in
+        appendage recall; the control pays three times the IoU for nothing. `REFINE` therefore
+        defaults to False. Note that even the good case loses IoU: mask IoU is close to blind
+        to legs and antennae - a mask that misses every leg still scores ~0.96 - while a 1px
+        boundary shift costs it ~0.1, so it systematically misprices exactly this trade. The
+        arm has to be settled end-to-end, not on IoU.
 
         Efficiency
             One crop-and-resize per instance, then a single stacked forward per `BATCH_SIZE`
