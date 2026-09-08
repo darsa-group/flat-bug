@@ -31,6 +31,7 @@ CFG_PARAMS = [
     "REFINE_MIN_PX",
     "REFINE_OCCUPANCY",
     "REFINE_MIN_AGREEMENT",
+    "REFINE_MAX_GROWTH",
 ]
 
 CFG_DESCRIPTION = {
@@ -50,6 +51,7 @@ CFG_DESCRIPTION = {
     "REFINE_MIN_PX": "An instance must be at least this many px across to be refined. Below it, magnifying only interpolates pixels that were never resolved.",
     "REFINE_OCCUPANCY": "Fraction of the refine tile the instance should span. Also sets the upper size bound: an instance already larger than TILE_SIZE * this would have to be shrunk, so it is left alone.",
     "REFINE_MIN_AGREEMENT": "A refined mask is accepted only if it overlaps the original by at least this IoU. Below it the refiner has most likely locked onto a different animal in the crop, and the original is kept.",
+    "REFINE_MAX_GROWTH": "A refined mask may not be more than this many times the area of the original. IoU alone cannot catch a refinement that swallows a neighbour, since a mask of twice the area that contains the original still scores 0.5; measured per-instance, refinements that grow more than ~1.15x lose both IoU and precision.",
 }
 
 DEFAULT_CFG = {
@@ -69,6 +71,7 @@ DEFAULT_CFG = {
     "REFINE_MIN_PX": 96,
     "REFINE_OCCUPANCY": 0.67,
     "REFINE_MIN_AGREEMENT": 0.5,
+    "REFINE_MAX_GROWTH": 1.15,
 }
 
 LEGACY_CFG = {
@@ -88,6 +91,7 @@ LEGACY_CFG = {
     "REFINE_MIN_PX": 96,
     "REFINE_OCCUPANCY": 0.67,
     "REFINE_MIN_AGREEMENT": 0.5,
+    "REFINE_MAX_GROWTH": 1.15,
 }
 # ruff: enable[E501]
 

@@ -1544,6 +1544,12 @@ class Predictor:
     to be accepted. Below it, the refiner has most likely locked onto a \\
     different animal in the crop, and the original is kept.
     """
+    REFINE_MAX_GROWTH: float = None  # type: ignore
+    """
+    The most a refined mask may grow relative to the original, as an area ratio. \\
+    IoU alone cannot catch a refinement that swallows a neighbour: a mask of twice \\
+    the area that fully contains the original scores exactly 0.5.
+    """
 
     # Enable debug mode, only for development
     DEBUG = False
@@ -1866,14 +1872,25 @@ class Predictor:
 
         If the refined instance differs a lot from the original
             It is rejected and the original kept. The refiner sees one window, not the whole
-            pyramid, so a crowded crop can well contain a neighbouring animal; a mask that
-            barely overlaps the original is far more likely to BE that neighbour than to be a
-            correction of the original. Every candidate in the crop is matched against the
-            original by polygon IoU and the best one is accepted only if it clears
-            `REFINE_MIN_AGREEMENT` (default 0.5). Disagreement is read as evidence against the
-            refiner rather than against the first pass, because the first pass had more context
-            and its detection already survived pyramid NMS. Rejections are counted and logged,
-            so a run where the threshold is doing too much work is visible.
+            pyramid, so a crowded crop can well contain a neighbouring animal, and a refinement
+            that disagrees is far more likely to BE that neighbour than to be a correction.
+            Disagreement is read as evidence against the refiner rather than against the first
+            pass, because the first pass had more context and its detection already survived
+            pyramid NMS.
+
+            Two separate tests are needed, because they catch different failures:
+
+            `REFINE_MIN_AGREEMENT`  polygon IoU with the original, default 0.5. Catches a
+                refinement that has wandered off to a different animal.
+            `REFINE_MAX_GROWTH`     area ratio to the original, default 1.15. Catches a
+                refinement that has MERGED with a neighbour, which IoU cannot see: a mask of
+                twice the area that fully contains the original scores exactly 0.5, so the IoU
+                test passes it. Measured per instance, refinements that grow by less than 1.15x
+                gain IoU (+0.004) while those past it lose it heavily (-0.033 at 1.15-1.3x,
+                -0.150 beyond 1.5x). Without this test the pass is net IoU-negative.
+
+            Both are counted and logged, so a run where either threshold is doing too much work
+            is visible.
 
         If no instance is found in the crop
             The original is kept unchanged. This is the fallback for every failure mode -
@@ -1931,7 +1948,7 @@ class Predictor:
             if c - a >= 2 and d - b >= 2:
                 windows.append((i, a, b, c, d))
 
-        accepted = rejected = missed = 0
+        accepted = rejected = missed = oversized = 0
         # `no_grad` outside, `inference_mode` only around the forward - the same split
         # `_detect_instances`/`_process_batch` use. Tensors created under `inference_mode` are
         # marked as such for life, and writing one into `preds.polygons` would make every later
@@ -1970,9 +1987,10 @@ class Predictor:
                     edge_margin=0,
                 )
                 for res, (i, a, b, c, d) in zip(results, chunk):
-                    match = self._best_refinement(
+                    match, n_oversized = self._best_refinement(
                         res["masks"], preds.polygons[i], (a, b, c, d), tile
                     )
+                    oversized += n_oversized
                     if match is None:
                         missed += 1
                         continue
@@ -1994,8 +2012,10 @@ class Predictor:
 
         logger.info(
             f"Refinement: {accepted} accepted, {rejected} rejected for disagreeing with the "
-            f"original, {missed} not found in their crop, {n - len(windows)} outside the "
-            f"refinable size range ({self.REFINE_MIN_PX}-{int(tile * occ)} px)"
+            f"original, {oversized} candidates dropped for growing past "
+            f"{self.REFINE_MAX_GROWTH}x, {missed} not found in their crop, "
+            f"{n - len(windows)} outside the refinable size range "
+            f"({self.REFINE_MIN_PX}-{int(tile * occ)} px)"
         )
         return preds
 
@@ -2005,20 +2025,25 @@ class Predictor:
         original: torch.Tensor,
         window: tuple[int, int, int, int],
         tile: int,
-    ) -> tuple[torch.Tensor, float] | None:
+    ) -> tuple[tuple[torch.Tensor, float] | None, int]:
         """Pick the crop mask that best matches `original`, returned in original-image coordinates.
 
         Masks come out of `postprocess` at proto resolution, so they are contoured the same way
         `merge_tile_results` does it - upsampled 3x first, which buys sub-pixel smoothness on
         the boundary - then mapped tile -> window -> image.
 
+        Candidates that exceed `REFINE_MAX_GROWTH` times the original's area are discarded
+        BEFORE ranking, not after. A merged mask that has swallowed a neighbour usually also has
+        the highest IoU with the original - it contains it - so ranking first and filtering
+        second would throw away the correct, smaller candidate sitting behind it.
+
         Returns:
-            `(polygon, IoU)` for the best candidate, or None when the crop yielded nothing that
-            could be turned into a valid polygon.
+            `((polygon, IoU), n_oversized)`, where the first element is None if the crop yielded
+            nothing usable, and `n_oversized` counts the candidates dropped for growing too much.
 
         """
         if masks is None or len(masks) == 0:
-            return None
+            return None, 0
         a, b, c, d = window
         # tile px -> source px; x and y differ only when the window was clipped by the image edge
         sx, sy = (c - a) / tile, (d - b) / tile
@@ -2026,9 +2051,10 @@ class Predictor:
 
         reference = shapely.polygons(original.detach().cpu().numpy().astype(np.float64)).buffer(0)
         if reference.is_empty or reference.area <= 0:
-            return None
+            return None, 0
+        max_area = reference.area * self.REFINE_MAX_GROWTH
 
-        best, best_iou = None, 0.0
+        best, best_iou, oversized = None, 0.0, 0
         for mask in masks:
             contour = find_contours(resize_masks(mask, [masks.shape[-2] * 3, masks.shape[-1] * 3]), True)
             points = torch.as_tensor(contour, dtype=torch.float64).cpu().reshape(-1, 2) * mask_scale
@@ -2039,14 +2065,17 @@ class Predictor:
             candidate = shapely.polygons(points.numpy()).buffer(0)
             if candidate.is_empty or candidate.area <= 0:
                 continue
+            if candidate.area > max_area:
+                oversized += 1
+                continue
             intersection = reference.intersection(candidate).area
             union = reference.area + candidate.area - intersection
             iou = intersection / union if union > 0 else 0.0
             if iou > best_iou:
                 best_iou, best = iou, points
         if best is None:
-            return None
-        return best.float(), best_iou
+            return None, oversized
+        return (best.float(), best_iou), oversized
 
     def pyramid_predictions(
         self,

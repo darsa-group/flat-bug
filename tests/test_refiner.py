@@ -59,14 +59,17 @@ def make_preds(polygon=SQUARE):
     return tp
 
 
-def crop_mask(cover, size=256):
+def crop_mask(cover, size=256, shift=0.0):
     """A proto-resolution mask covering the central `cover` fraction of the crop.
 
     The refiner magnifies an instance to `REFINE_OCCUPANCY` of the tile, so `cover=OCC`
     reproduces the original instance and smaller values are progressively worse disagreements.
+    `shift` displaces it as a fraction of the crop, to make a candidate that is the right size
+    but in the wrong place.
     """
     m = torch.zeros((1, size, size))
-    lo, hi = int(size * (1 - cover) / 2), int(size * (1 + cover) / 2)
+    off = int(size * shift)
+    lo, hi = int(size * (1 - cover) / 2) + off, int(size * (1 + cover) / 2) + off
     m[0, lo:hi, lo:hi] = 1.0
     return m
 
@@ -121,6 +124,43 @@ class TestRefineInstances:  # noqa: D101
 
         assert len(out) == 1, "the refiner deleted a detection"
         assert torch.equal(out.polygons[0], before)
+
+    def test_oversized_refinement_is_rejected(self, predictor, monkeypatch):
+        """A mask that swallowed a neighbour is rejected even though it contains the original.
+
+        This is the case IoU alone cannot see: a mask of twice the area that fully contains the
+        original still scores 0.5, so `REFINE_MIN_AGREEMENT` passes it. Measured per-instance,
+        refinements past ~1.15x area lose both IoU and precision.
+        """
+        # sqrt(2) x the linear size is 2x the area, and it contains the original entirely
+        monkeypatch.setattr(
+            predictor_module, "postprocess", stub_postprocess(crop_mask(OCC * 2 ** 0.5))
+        )
+        preds = make_preds()
+        before = preds.polygons[0].clone()
+        out = predictor.refine_instances(preds)
+        assert torch.equal(out.polygons[0], before), "a merged refinement was accepted"
+
+    def test_oversized_candidate_does_not_mask_a_good_one(self, predictor, monkeypatch):
+        """Oversized candidates are dropped before ranking, not after.
+
+        A merged mask usually has the HIGHEST IoU with the original, because it contains it. If
+        candidates were ranked first and size-checked second, the merged one would win the rank
+        and its rejection would discard the correct, smaller candidate sitting behind it.
+        """
+        merged = crop_mask(OCC * 1.4 ** 0.5)          # 1.4x area, IoU ~0.71 - would win on rank
+        offset = crop_mask(OCC, shift=0.08)           # right size, displaced - lower IoU
+        monkeypatch.setattr(
+            predictor_module, "postprocess", stub_postprocess(torch.cat([merged, offset]))
+        )
+        preds = make_preds()
+        before = preds.polygons[0].clone()
+        out = predictor.refine_instances(preds)
+        assert not torch.equal(out.polygons[0], before), "the good candidate was discarded"
+        # it must be the displaced one, not the merged one: same size, moved down-right
+        assert out.polygons[0].amax(dim=0).min() > before.amax(dim=0).min()
+        span = out.polygons[0].amax(dim=0) - out.polygons[0].amin(dim=0)
+        assert float(span.max()) < 260, "the merged candidate was accepted"
 
     def test_disabled_is_a_no_op(self, predictor, monkeypatch):
         """With `REFINE` off the model is never called."""
