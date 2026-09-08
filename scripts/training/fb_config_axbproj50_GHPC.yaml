@@ -1,0 +1,71 @@
+# Projection arm: bbox-only instances are supervised by their own extent.
+#
+# Runs ALONGSIDE fb_axbcontain50 (projection 0.0), which is the plain boxes-only baseline.
+# The two differ in one line, so the pair isolates the projection loss, and both compare to
+# the finished fb_axb_excl_2026-09-05_10-11-39 (mask mAP50-95 0.65577).
+#
+# NOTE this is the first arm in which the bbox-only masking actually works. Everything before
+# commit 4e2e3cf ran with has_mask never reaching the loss - E2ELoss calls
+# v8SegmentationLoss.loss directly, bypassing the __call__ the wrapper sat on - so bbox-only
+# images had their fabricated rectangles trained as real masks, and the projection branch,
+# being an elif on that flag, could never fire.
+#
+# Does penalising mask that flows outside the box recover ArTaxOr mask quality?
+#
+# Control: the finished fb_axb_excl_2026-09-05_10-11-39 (mask mAP50-95 0.65577).
+# Reference: fb_axb_bbox_2026-09-06_10-48-25, which added artaxor-bbox as boxes-only and was
+# measured end-to-end to gain +0.026 detection F1 on artaxor-bbox while LOSING 0.163 mask F1
+# and 0.071 mask IoU on artaxor-seg. The damage was confined to that one domain - pooled mask
+# IoU across 24,962 matched instances moved +0.0005 - and its direction was over-coverage:
+#
+#     artaxor-seg, matched instances     control    bbox-only
+#       predicted area / true area         1.018        1.277
+#       fraction of prediction outside     0.113        0.238
+#       fraction of truth not covered      0.086        0.029
+#
+# The mask head sees this domain on only 1054 of 5153 ArTaxOr images, so on those images it
+# has no reason to keep the mask tight. This arm gives it one: a box derived from the
+# predicted mask must match the annotated box. The extent is taken as a differentiable
+# projection (max along each axis) and matched with a dice loss, which is BoxInst's projection
+# term - the established way to supervise a mask head from boxes alone.
+#
+# It has to be two-sided. A one-sided "do not spill outside the box" penalty is minimised by
+# predicting nothing, and with no positive mask supervision on these images an empty mask is
+# exactly what it would train for. The projection loss instead forces the mask to reach both
+# edges of the box AND stop there; a test pins that an empty mask is not free.
+#
+# KNOWN RISK, stated before the run rather than after. Projection constrains the silhouette
+# only, so a mask that FILLS the box satisfies it perfectly - measured, both score 0.0000. A
+# real mask occupies a median 0.558 of its own box (0.347 on artaxor-seg), so if this term
+# dominates it could push over-coverage from the measured 1.28x toward 1.79x rather than back
+# to 1.0. The guardrail is the same measurement that found the problem: predicted-area/true-area
+# and spill fraction on artaxor-seg matched instances, control 1.018/0.113, bbox arm 1.277/0.238.
+#
+# Everything else is identical to the bbox arm, so the pair isolates the containment penalty.
+#
+# fb_bbox_only_projection 1.0 - the term is normalised over its own population, so the weight
+#     is a direct ratio against the ordinary mask loss.
+
+
+
+batch: 8
+model: "yolo26m-seg.pt"
+epochs: 50
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 32
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_prob: 0.0
+fb_exclude_datasets: []
+fb_bbox_only_datasets: ["artaxor-bbox"]
+fb_bbox_only_projection: 1.0
+# Colour affinity is implemented but left OFF. It is the term that would stop the projection
+# loss being satisfied by a mask that simply fills the box, but measured on this corpus the
+# prior it rests on does not hold: adjacent pixels inside an animal differ about as much as
+# pixels across its boundary (AUC 0.52 at proto resolution, 0.49 at mask_ratio 2, 0.48 at full
+# resolution). Enabling it would weight pairs close to at random.
+fb_bbox_only_pairwise: 0.0
