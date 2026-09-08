@@ -27,6 +27,10 @@ CFG_PARAMS = [
     "TIME",
     "TILE_SIZE",
     "BATCH_SIZE",
+    "REFINE",
+    "REFINE_MIN_PX",
+    "REFINE_OCCUPANCY",
+    "REFINE_MIN_AGREEMENT",
 ]
 
 CFG_DESCRIPTION = {
@@ -42,6 +46,10 @@ CFG_DESCRIPTION = {
     "TIME": "Enable to print time taken for each step. Can incur a performance penalty.",
     "TILE_SIZE": "Fixed by the model architecture - do not change unless you know what you are doing.",
     "BATCH_SIZE": "Used for model initialization and batched tile processing.",
+    "REFINE": "Run a second pass that re-segments each detection from a magnified crop of itself. Costs one extra forward per batch of instances; only worth enabling with a model trained on magnified crops (see fb_zoom_prob).",
+    "REFINE_MIN_PX": "An instance must be at least this many px across to be refined. Below it, magnifying only interpolates pixels that were never resolved.",
+    "REFINE_OCCUPANCY": "Fraction of the refine tile the instance should span. Also sets the upper size bound: an instance already larger than TILE_SIZE * this would have to be shrunk, so it is left alone.",
+    "REFINE_MIN_AGREEMENT": "A refined mask is accepted only if it overlaps the original by at least this IoU. Below it the refiner has most likely locked onto a different animal in the crop, and the original is kept.",
 }
 
 DEFAULT_CFG = {
@@ -57,6 +65,10 @@ DEFAULT_CFG = {
     "TIME": False,
     "TILE_SIZE": 1024,
     "BATCH_SIZE": 16,
+    "REFINE": False,
+    "REFINE_MIN_PX": 96,
+    "REFINE_OCCUPANCY": 0.67,
+    "REFINE_MIN_AGREEMENT": 0.5,
 }
 
 LEGACY_CFG = {
@@ -72,6 +84,10 @@ LEGACY_CFG = {
     "TIME": False,
     "TILE_SIZE": 1024,
     "BATCH_SIZE": 16,
+    "REFINE": False,
+    "REFINE_MIN_PX": 96,
+    "REFINE_OCCUPANCY": 0.67,
+    "REFINE_MIN_AGREEMENT": 0.5,
 }
 # ruff: enable[E501]
 

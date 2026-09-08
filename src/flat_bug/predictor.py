@@ -14,6 +14,7 @@ from typing import Any, cast
 
 import cv2
 import numpy as np
+import shapely
 import torch
 import torch.types
 import torchvision
@@ -46,6 +47,9 @@ from flat_bug.yolo_helpers import (
     resize_masks,
     stack_masks,
 )
+
+BOX_PAD = 5
+"""Pixels by which boxes are grown so they are guaranteed to enclose their mask."""
 
 
 class AsyncExecutor:  # noqa: D101
@@ -1516,6 +1520,31 @@ class Predictor:
     Increasing this value may improve performance, but will also increase memory usage.
     """
 
+    REFINE: bool = None  # type: ignore
+    """
+    Whether to run a second pass that re-segments each detection from a magnified \\
+    crop of itself. Only helps a model that was trained with zoomed-in crops; \\
+    see `Predictor.refine_instances`.
+    """
+    REFINE_MIN_PX: int = None  # type: ignore
+    """
+    The smallest instance, in pixels of the original image, that refinement is \\
+    attempted on. Below this, magnification only interpolates detail that was \\
+    never resolved.
+    """
+    REFINE_OCCUPANCY: float = None  # type: ignore
+    """
+    The fraction of the tile the instance should span in its refinement crop. \\
+    This also sets the upper size bound: an instance larger than \\
+    `TILE_SIZE * REFINE_OCCUPANCY` is left alone rather than shrunk.
+    """
+    REFINE_MIN_AGREEMENT: float = None  # type: ignore
+    """
+    The minimum IoU between a refined mask and the original for the refinement \\
+    to be accepted. Below it, the refiner has most likely locked onto a \\
+    different animal in the crop, and the original is kept.
+    """
+
     # Enable debug mode, only for development
     DEBUG = False
 
@@ -1801,6 +1830,212 @@ class Predictor:
             dtype=self._dtype
         )
 
+    def refine_instances(self, preds: "TensorPredictions") -> "TensorPredictions":
+        """Re-segment every detection from a magnified crop of itself, in batches.
+
+        The pyramid never magnifies an image that is larger than a tile, so a 200px animal in a
+        6000px photo is only ever segmented at 200px however many scales are searched. This
+        second pass crops a window around each detection and magnifies it to fill
+        `REFINE_OCCUPANCY` of a tile, which is the regime a model trained with `fb_zoom_prob`
+        has seen. Measured on 10 instances of 150-260px, magnifying moved thin-appendage recall
+        by -0.031 for a normally-trained model and +0.058 for a zoom-trained one, so this is
+        only worth enabling for the latter - hence `REFINE` defaulting to False.
+
+        Efficiency
+            One crop-and-resize per instance, then a single stacked forward per `BATCH_SIZE`
+            instances, so the GPU sees the same batch shape it does during tiling. Everything
+            except the shapely matching stays on device.
+
+        Which instances are refined
+            Those between `REFINE_MIN_PX` and `TILE_SIZE * REFINE_OCCUPANCY` across. Below the
+            floor, magnification interpolates detail that was never resolved in the first place.
+            Above the ceiling the instance would have to be SHRUNK to hit the target occupancy,
+            which is the opposite of the point, so it is left exactly as it was.
+
+        If the refined instance differs a lot from the original
+            It is rejected and the original kept. The refiner sees one window, not the whole
+            pyramid, so a crowded crop can well contain a neighbouring animal; a mask that
+            barely overlaps the original is far more likely to BE that neighbour than to be a
+            correction of the original. Every candidate in the crop is matched against the
+            original by polygon IoU and the best one is accepted only if it clears
+            `REFINE_MIN_AGREEMENT` (default 0.5). Disagreement is read as evidence against the
+            refiner rather than against the first pass, because the first pass had more context
+            and its detection already survived pyramid NMS. Rejections are counted and logged,
+            so a run where the threshold is doing too much work is visible.
+
+        If no instance is found in the crop
+            The original is kept unchanged. This is the fallback for every failure mode -
+            nothing above `SCORE_THRESHOLD`, a mask too small to contour, a degenerate polygon.
+            The pass may improve a mask; it may never delete a detection. A magnified view is
+            off-distribution for low-contrast or heavily occluded animals, so a miss here is not
+            evidence that nothing is there, and dropping the detection would trade a mask
+            improvement for a recall regression.
+
+        Confidence, class and scale are always carried over from the first pass. The crop's own
+        confidence is not comparable - different field of view, different effective scale - and
+        letting it through would perturb ranking and any downstream confidence threshold.
+
+        Args:
+            preds: predictions in original-image coordinates, i.e. post-NMS output of
+                `pyramid_predictions`.
+
+        Returns:
+            The same object, with `polygons` and `boxes` updated in place for the refinements
+            that were accepted.
+
+        """
+        n = len(preds)
+        if not self.REFINE or n == 0:
+            return preds
+        if not preds.PREFER_POLYGONS:
+            logger.warning("`refine_instances` is only implemented for polygons; skipping refinement")
+            return preds
+
+        tile = self.TILE_SIZE
+        occ = float(self.REFINE_OCCUPANCY)
+        image = preds.image
+        img_h, img_w = image.shape[1:]
+
+        boxes = preds.boxes.float()
+        sizes = torch.maximum(boxes[:, 2] - boxes[:, 0], boxes[:, 3] - boxes[:, 1])
+        todo = torch.nonzero((sizes >= self.REFINE_MIN_PX) & (sizes <= tile * occ)).flatten().tolist()
+        if not todo:
+            logger.debug(f"Refinement: none of the {n} instances are in the refinable size range")
+            return preds
+
+        # A square window per instance, sized so the animal spans `occ` of it. Where that runs
+        # off the image the window is slid back inside rather than shrunk, so the magnification
+        # stays the one the model was trained on; it is only shrunk when the image itself is
+        # smaller than the window.
+        windows = []
+        for i in todo:
+            x0, y0, x1, y1 = boxes[i, :4].tolist()
+            side = min(max(float(sizes[i]) / occ, 16), min(img_w, img_h))
+            a = int(round((x0 + x1 - side) / 2))
+            b = int(round((y0 + y1 - side) / 2))
+            a = max(0, min(a, img_w - int(side)))
+            b = max(0, min(b, img_h - int(side)))
+            c, d = min(img_w, a + int(side)), min(img_h, b + int(side))
+            if c - a >= 2 and d - b >= 2:
+                windows.append((i, a, b, c, d))
+
+        accepted = rejected = missed = 0
+        # `no_grad` outside, `inference_mode` only around the forward - the same split
+        # `_detect_instances`/`_process_batch` use. Tensors created under `inference_mode` are
+        # marked as such for life, and writing one into `preds.polygons` would make every later
+        # in-place operation on that prediction raise.
+        with torch.no_grad():
+            for start in range(0, len(windows), self.BATCH_SIZE):
+                chunk = windows[start : start + self.BATCH_SIZE]
+                batch = torch.stack([
+                    torch.nn.functional.interpolate(
+                        torchvision.transforms.functional.convert_image_dtype(
+                            image[:, b:d, a:c], self._dtype
+                        ).unsqueeze(0),
+                        size=(tile, tile),
+                        mode="bilinear",
+                        align_corners=False,
+                        antialias=False,  # every crop is being magnified, never minified
+                    )[0]
+                    for _, a, b, c, d in chunk
+                ]).to(device=self._device, dtype=self._dtype)
+
+                with torch.inference_mode():
+                    raw_results = self._model(batch)
+
+                results = postprocess(
+                    raw_results,
+                    imgs=batch,
+                    max_det=100,
+                    min_confidence=self.SCORE_THRESHOLD,
+                    overlap_threshold=self.OVERLAP_THRESHOLD,
+                    overlap_metric=self.OVERLAP_METRIC,
+                    nms=3,
+                    # The instance is centred and magnified on purpose, so neither the pyramid's
+                    # size window nor its edge margin - both of which exist to hand instances off
+                    # between scales and tiles - applies here.
+                    valid_size_range=None,
+                    edge_margin=0,
+                )
+                for res, (i, a, b, c, d) in zip(results, chunk):
+                    match = self._best_refinement(
+                        res["masks"], preds.polygons[i], (a, b, c, d), tile
+                    )
+                    if match is None:
+                        missed += 1
+                        continue
+                    polygon, agreement = match
+                    if agreement < self.REFINE_MIN_AGREEMENT:
+                        rejected += 1
+                        continue
+                    preds.polygons[i] = polygon.to(device=preds.device, dtype=preds.dtype)
+                    # Rebuild the box from the new polygon the same way the pyramid does:
+                    # outward-rounded, padded by BOX_PAD, clamped, integral.
+                    box = torch.cat([
+                        polygon.amin(dim=0).floor() - BOX_PAD,
+                        polygon.amax(dim=0).ceil() + BOX_PAD,
+                    ])
+                    box[0::2] = box[0::2].clamp(0, img_w - 1)
+                    box[1::2] = box[1::2].clamp(0, img_h - 1)
+                    preds.boxes[i, :4] = box.to(device=preds.boxes.device, dtype=preds.boxes.dtype)
+                    accepted += 1
+
+        logger.info(
+            f"Refinement: {accepted} accepted, {rejected} rejected for disagreeing with the "
+            f"original, {missed} not found in their crop, {n - len(windows)} outside the "
+            f"refinable size range ({self.REFINE_MIN_PX}-{int(tile * occ)} px)"
+        )
+        return preds
+
+    def _best_refinement(
+        self,
+        masks: torch.Tensor,
+        original: torch.Tensor,
+        window: tuple[int, int, int, int],
+        tile: int,
+    ) -> tuple[torch.Tensor, float] | None:
+        """Pick the crop mask that best matches `original`, returned in original-image coordinates.
+
+        Masks come out of `postprocess` at proto resolution, so they are contoured the same way
+        `merge_tile_results` does it - upsampled 3x first, which buys sub-pixel smoothness on
+        the boundary - then mapped tile -> window -> image.
+
+        Returns:
+            `(polygon, IoU)` for the best candidate, or None when the crop yielded nothing that
+            could be turned into a valid polygon.
+
+        """
+        if masks is None or len(masks) == 0:
+            return None
+        a, b, c, d = window
+        # tile px -> source px; x and y differ only when the window was clipped by the image edge
+        sx, sy = (c - a) / tile, (d - b) / tile
+        mask_scale = tile / masks.shape[-1] / 3  # proto px -> tile px, after the 3x upsample
+
+        reference = shapely.polygons(original.detach().cpu().numpy().astype(np.float64)).buffer(0)
+        if reference.is_empty or reference.area <= 0:
+            return None
+
+        best, best_iou = None, 0.0
+        for mask in masks:
+            contour = find_contours(resize_masks(mask, [masks.shape[-2] * 3, masks.shape[-1] * 3]), True)
+            points = torch.as_tensor(contour, dtype=torch.float64).cpu().reshape(-1, 2) * mask_scale
+            if points.shape[0] < 3:
+                continue
+            points[:, 0] = points[:, 0] * sx + a
+            points[:, 1] = points[:, 1] * sy + b
+            candidate = shapely.polygons(points.numpy()).buffer(0)
+            if candidate.is_empty or candidate.area <= 0:
+                continue
+            intersection = reference.intersection(candidate).area
+            union = reference.area + candidate.area - intersection
+            iou = intersection / union if union > 0 else 0.0
+            if iou > best_iou:
+                best_iou, best = iou, points
+        if best is None:
+            return None
+        return best.float(), best_iou
+
     def pyramid_predictions(
         self,
         image: torch.Tensor | str,
@@ -1935,7 +2170,7 @@ class Predictor:
             .offset_scale_pad(
                 offset=-padding_offset,
                 scale=1 / scale_before,
-                pad=5,  # pad the boxes a bit to ensure they encapsulate the masks
+                pad=BOX_PAD,  # pad the boxes a bit to ensure they encapsulate the masks
             )
             .non_max_suppression(
                 overlap_threshold=self.OVERLAP_THRESHOLD,
@@ -1943,6 +2178,11 @@ class Predictor:
                 group_first=self.EXPERIMENTAL_NMS_OPTIMIZATION,
             )
         )
+
+        # Second pass: re-segment each detection from a magnified crop of itself. Off by default;
+        # it only helps a model trained with zoomed-in crops. See `refine_instances`.
+        if self.REFINE:
+            all_preds = self.refine_instances(all_preds)
 
         if self.TIME:
             # Finish timing calculations
