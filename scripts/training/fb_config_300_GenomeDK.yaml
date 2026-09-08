@@ -1,0 +1,61 @@
+# The 300-epoch run: everything we have learned, on the full corpus.
+#
+# Three changes from the 50-epoch A/B arms, each justified by a measurement in this repo
+# rather than by preference:
+#
+# 1. artaxor-bbox is INCLUDED, as boxes-only, instead of excluded.
+#    The 50-epoch A/B ran both ways. On pooled crop metrics it was a null (mask mAP50-95
+#    0.6544 including vs 0.6558 excluding, i.e. within noise), but end-to-end ON ARTAXOR it
+#    was positive on both halves of the hypothesis:
+#        detection on artaxor-bbox (742 val imgs)  F1 0.5170 -> 0.5508   (+0.034)
+#        mask on artaxor-seg      (204 val imgs)   F1 0.6319 -> 0.6621   (+0.030)
+#    The corpus average hides it because artaxor-bbox is ~4k of ~15.5k images. Boxes-only
+#    supervision therefore helps the domain it comes from and costs nothing elsewhere.
+#
+# 2. Zoom augmentation is ON, at arm B's settings.
+#    fb_zoom50b finished marginally BELOW its control (0.65382 vs 0.65577). That loss is
+#    accepted deliberately: it is what makes the inference-time refiner work, and the refiner
+#    is worth more than the loss (thin-appendage recall 0.619 -> 0.703 at flat IoU on the
+#    instances it touches, versus nothing at all for a normally-trained checkpoint).
+#    See `Predictor.refine_instances`. Occupancy/min_scale/jitter are unchanged from
+#    fb_config_zoom50b_GHPC.yaml, where each was measured rather than guessed.
+#
+# 3. The projection loss is OFF.
+#    The boxes-only + BoxInst projection arm sat ~0.015 below the plain boxes-only arm at
+#    every matched epoch. Weight 1.0 is too strong; it is not worth carrying into a long run.
+#
+# The refiner itself is an INFERENCE setting, not a training one - it costs nothing here.
+# Enable it at prediction time with REFINE=true (see fb_predict_refine.yaml).
+
+batch: 8
+model: "yolo26m-seg.pt"
+epochs: 300
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 32
+
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_prob: 0.0
+
+# Nothing is dropped from training any more.
+fb_exclude_datasets: []
+
+# Datasets whose boxes are trustworthy and whose polygons are not. Their instances keep full
+# box/cls/dfl supervision; their masks are downgraded to the bounding rectangle and excluded
+# from the segmentation loss and mask metrics. Names match the image-basename prefix.
+# PENDING: confirm against the CVAT inventory before launching.
+fb_bbox_only_datasets:
+  - artaxor-bbox
+  - bugbox-bulk
+  - MAMBOcrops-bbox
+  - AMI-traps-bbox
+
+fb_zoom_prob: 0.2
+fb_zoom_min_px: 100
+fb_zoom_occupancy: [0.40, 0.50]
+fb_zoom_min_scale: 0.15
+fb_zoom_jitter: 0.08

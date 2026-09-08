@@ -1,0 +1,12 @@
+# Inference config for a zoom-trained checkpoint: run the magnified second pass.
+#
+# Only worth enabling on a model trained with fb_zoom_prob > 0. Measured over 150 validation
+# images, on the instances the pass actually touches:
+#     zoom-trained   mask IoU 0.869 -> 0.867   thin-appendage recall 0.619 -> 0.703
+#     control        mask IoU 0.880 -> 0.842   thin-appendage recall 0.662 -> 0.659
+# See `Predictor.refine_instances` for the two rejection guards and why both are needed.
+REFINE: true
+REFINE_MIN_PX: 96
+REFINE_OCCUPANCY: 0.67
+REFINE_MIN_AGREEMENT: 0.5
+REFINE_MAX_GROWTH: 1.15
