@@ -1865,6 +1865,14 @@ class Predictor:
             biodiscover-arm          +0.19    gernat2018 -0.08
             DIRT                     +0.16    AMT        -0.08
 
+        Both columns are also measured against annotation that is itself weakest exactly where
+        this pass acts. Tracing every tarsus and antenna by hand is slow and, on a 200px animal,
+        close to guesswork, so ground-truth polygons tend to cut appendages short. A refinement
+        that recovers a real leg the annotator skipped is scored as a false positive twice over
+        - once as lost IoU, once as lost precision. The measurements above are therefore a lower
+        bound on this pass, and inspecting the contours is not optional garnish; on this data it
+        is the more reliable instrument.
+
         Finally, do not read the IoU column as the verdict. Mask IoU is close to blind to legs
         and antennae - a mask that misses every one still scores ~0.96 - while a 1px boundary
         shift costs it ~0.1, so it systematically misprices exactly this trade. An earlier
