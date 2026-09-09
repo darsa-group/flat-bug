@@ -313,6 +313,8 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
         self._zoom_occupancy = tuple(custom_fb_args.get("fb_zoom_occupancy") or (0.22, 0.45))
         self._zoom_min_scale = float(custom_fb_args.get("fb_zoom_min_scale", 1.0) or 1.0)
         self._zoom_jitter = float(custom_fb_args.get("fb_zoom_jitter", 0.25) or 0.25)
+        self._sample_weight = str(custom_fb_args.get("fb_sample_weight") or "current")
+        self._samples_per_epoch = custom_fb_args.get("fb_samples_per_epoch") or None
         if self._zoom_prob:
             LOGGER.info(
                 f"zoom crops: p={self._zoom_prob} on instances >= {self._zoom_min_px} px, "
@@ -440,6 +442,8 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
                 zoom_prob=self._zoom_prob,
                 zoom_min_px=self._zoom_min_px,
                 zoom_occupancy=self._zoom_occupancy,
+                sample_weight=self._sample_weight,
+                samples_per_epoch=self._samples_per_epoch,
                 zoom_min_scale=self._zoom_min_scale,
                 zoom_jitter=self._zoom_jitter,
                 task="segment",

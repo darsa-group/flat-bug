@@ -1,0 +1,66 @@
+# Coverage-10 experiment, ARM C: area alone, dropping the instance-count factor. A vs C isolates whether
+# weighting a crowded image above an empty one of the same size earns its place.
+#
+# Trains on 10 datasets chosen to cover the DINOv2 embedding space (see
+# splits/coverage10.json) and is scored end-to-end on the 24 held out. The question is not
+# crop mAP on the training domains - it is whether a sampling scheme helps on domains the
+# model has never seen.
+#
+# All arms of this experiment MUST share:
+#   * the same exclude list (so the training corpus is identical)
+#   * the same number of samples per epoch and the same epoch count
+#     -> identical gradient steps, identical LR schedule, identical compute
+# Only the composition of those samples (or their loss weights) may differ. Without that,
+# a sampler that happens to yield a longer epoch also gets more training, and the comparison
+# measures compute rather than sampling.
+
+batch: 8
+model: "yolo26m-seg.pt"
+epochs: 50
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 32
+
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_prob: 0.0
+fb_bbox_only_datasets: []
+
+# zoom off: it is an orthogonal intervention and would confound the sampler comparison
+fb_zoom_prob: 0.0
+
+# identical budget in every arm: same gradient steps, same LR schedule, same compute
+fb_samples_per_epoch: 10000
+
+# everything not in the 10 training datasets
+fb_exclude_datasets:
+  - ALUS
+  - AMI-traps
+  - BugNet
+  - CollembolAI
+  - DIRT
+  - Diopsis
+  - DiversityScanner
+  - EntoScan-well
+  - InsectMorphoAI
+  - Massid45
+  - abram2023
+  - amarathunga2022
+  - anTraX
+  - artaxor-bbox
+  - artaxor-seg
+  - biodiscover-arm
+  - blair2020
+  - broto2025
+  - bugbox
+  - cao2022
+  - pinoy2023
+  - sittinger2023
+  - sticky-pi
+  - ubc-pitfall-traps
+  - ubc-scanned-sticky-cards
+
+fb_sample_weight: area

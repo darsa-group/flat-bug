@@ -254,12 +254,18 @@ class FlatBugYOLODataset(YOLODataset):  # noqa: D101
     _zoom_min_scale: float = 1.0
     _zoom_jitter: float = 0.25
 
+    # Which image-weighting scheme decides how often an image is drawn, and the epoch length
+    _sample_weight: str = "current"
+    _samples_per_epoch: int | None = None
+
     def __init__(  # noqa: D107
         self, max_instances: int | float | None, classes: None = None, subset_args: dict | None = None,
         bbox_only_datasets: list[str] | None = None,
         zoom_prob: float = 0.0, zoom_min_px: int = 100,
         zoom_occupancy: tuple[float, float] | list[float] | None = None,
-        zoom_min_scale: float = 1.0, zoom_jitter: float = 0.25, *args, **kwargs
+        zoom_min_scale: float = 1.0, zoom_jitter: float = 0.25,
+        sample_weight: str = "current", samples_per_epoch: int | None = None,
+        *args, **kwargs
     ):
         self._max_instances = max_instances
         self._zoom_prob = float(zoom_prob)
@@ -268,6 +274,8 @@ class FlatBugYOLODataset(YOLODataset):  # noqa: D101
             self._zoom_occupancy = (float(zoom_occupancy[0]), float(zoom_occupancy[1]))
         self._zoom_min_scale = float(zoom_min_scale)
         self._zoom_jitter = float(zoom_jitter)
+        self._sample_weight = str(sample_weight)
+        self._samples_per_epoch = int(samples_per_epoch) if samples_per_epoch else None
         self._include_classes = classes  # Only used so the class list is visible in the subset method
         self._bbox_only = compile_bbox_only(bbox_only_datasets)
         if subset_args is not None:
@@ -279,11 +287,31 @@ class FlatBugYOLODataset(YOLODataset):  # noqa: D101
         # After labels exist, before sample weights: polygons in bbox-only datasets become
         # their own bounding rectangle, and every label gains a `has_mask` flag.
         downgrade_labels(self.labels, self.im_files, self._bbox_only)
-        self.sample_weights = [
-            image_weight * len(label_i["cls"])
-            for label_i, image_weight in zip(self.labels, calculate_image_weights(self.im_files))
-        ]
-        self.__indices = generate_indices(self.sample_weights, target_size=len(self.im_files) * self._oversample_factor)
+        # How often each image appears in an epoch. The scheme is selectable so that
+        # sampling can be compared as an experimental arm; see scripts/training/splits.
+        #   current  area x instances - the historical default
+        #   area     area alone, dropping the instance-count factor
+        #   uniform  every image once
+        # Comparing arms requires an IDENTICAL epoch length: ultralytics drives warmup and
+        # lrf off the epoch index, so arms with different epoch lengths would silently train
+        # under different learning-rate schedules as well as different budgets.
+        areas = calculate_image_weights(self.im_files)
+        if self._sample_weight == "uniform":
+            self.sample_weights = [1.0 for _ in self.labels]
+        elif self._sample_weight == "area":
+            self.sample_weights = list(areas)
+        elif self._sample_weight == "current":
+            self.sample_weights = [
+                a * len(label_i["cls"]) for label_i, a in zip(self.labels, areas)
+            ]
+        else:
+            raise ValueError(f"Unknown fb_sample_weight: {self._sample_weight!r}")
+        target = self._samples_per_epoch or (len(self.im_files) * self._oversample_factor)
+        self.__indices = generate_indices(self.sample_weights, target_size=int(target))
+        LOGGER.info(
+            f"sampler '{self._sample_weight}': {len(self.im_files)} images -> "
+            f"{len(self.__indices)} samples/epoch (target {int(target)})"
+        )
 
     def _debug_write_loaded_images(self, out, index):
         m = np.ascontiguousarray(out["masks"].detach().numpy().transpose(1, 2, 0)) * 255
