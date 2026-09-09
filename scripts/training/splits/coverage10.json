@@ -1,0 +1,49 @@
+{
+ "name": "coverage10",
+ "purpose": "Train on 10 datasets, evaluate end-to-end on the 24 held out, to measure whether a sampling scheme improves generalisation to UNSEEN domains. The held-out sets span a novelty gradient (cosine distance 0.63-1.01 to the nearest training dataset), so a scheme can be shown to help only on the far end rather than uniformly.",
+ "selection": "Greedy farthest-point on per-dataset DINOv2 centroids, seeded with the largest segmentation dataset. Maximises coverage of the embedding space rather than picking the biggest or most typical datasets.",
+ "excluded_entirely": {
+  "artaxor-bbox": "0% polygon labels - cannot train or test a mask head"
+ },
+ "train": {
+  "biodiscover": 2463,
+  "miniMon": 598,
+  "PeMaToEuroPep": 240,
+  "wehrli2025": 781,
+  "AMT": 86,
+  "NHM-beetles-crops": 624,
+  "BIOSCAN": 414,
+  "gernat2018": 31,
+  "Mothitor": 11,
+  "2025-drosophila-biomass": 84
+ },
+ "test": {
+  "ALUS": 303,
+  "AMI-traps": 131,
+  "BugNet": 365,
+  "CollembolAI": 32,
+  "DIRT": 232,
+  "Diopsis": 41,
+  "DiversityScanner": 447,
+  "EntoScan-well": 415,
+  "InsectMorphoAI": 187,
+  "Massid45": 32,
+  "abram2023": 33,
+  "amarathunga2022": 471,
+  "anTraX": 178,
+  "artaxor-seg": 1054,
+  "biodiscover-arm": 38,
+  "blair2020": 212,
+  "broto2025": 85,
+  "bugbox": 830,
+  "cao2022": 47,
+  "pinoy2023": 58,
+  "sittinger2023": 328,
+  "sticky-pi": 378,
+  "ubc-pitfall-traps": 132,
+  "ubc-scanned-sticky-cards": 36
+ },
+ "train_images": 5332,
+ "test_images": 6065,
+ "caveat": "Deliberately unbalanced: biodiscover is 46% of the training images, and Mothitor (11) and gernat2018 (31) are included for coverage, not size."
+}
