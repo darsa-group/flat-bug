@@ -1,0 +1,61 @@
+# The 300-epoch run on the resynced corpus.
+#
+# Requires scripts/training/resync_cvat_data.sh to have been run first: this config assumes
+# the corpus rebuilt from CVAT on or after 2026-09-10, which excludes broto2025 and includes
+# the new boxes-only datasets.
+#
+# Choices, each traceable to a measurement in this repo rather than preference:
+#
+# fb_sample_weight: area
+#     Drops the instance-count factor from the historical weighting. In the coverage-10
+#     experiment (10 train / 24 held-out datasets) `area` cost 0.012 crop mask mAP50-95
+#     against `current` in-domain, but the held-out end-to-end comparison could not separate
+#     them: two identical runs differing only by seed varied by 0.023 mean F1 across the 24
+#     held-out datasets, which is larger than any difference between the samplers. So this is
+#     chosen for being simpler and not measurably worse, NOT for being better.
+#
+# fb_zoom_prob: 0.2
+#     Realised rate is ~17%, not 20% - ZoomCrop returns None when an image holds no instance
+#     at least fb_zoom_min_px across, and MaybeZoomCrop then falls back to a normal crop.
+#     Occupancy/min_scale/jitter are arm B's measured values; see fb_config_zoom50b_GHPC.yaml.
+#     Costs ~0.002 mask mAP50-95, and is what makes the inference-time refiner work at all.
+#
+# fb_bbox_only_datasets
+#     Boxes trusted, polygons not. Names must match the image-basename prefix that
+#     fb_prepare_data derives from the CVAT task name. MAMBOcrops-bbox is absent because only
+#     3 of its 38 jobs are complete, so it will not be in the resynced corpus.
+#
+# fb_samples_per_epoch: 20000
+#     Fixes the epoch length rather than letting the weighting decide it, so the LR schedule
+#     is defined independently of the sampler. 300 x 20000 = 6.0M samples, about 58 h on one
+#     L40S. The partition allows 45 days, so this fits in a single job.
+
+batch: 8
+model: "yolo26m-seg.pt"
+epochs: 300
+device: 0
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 24
+
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_prob: 0.0
+
+fb_sample_weight: area
+fb_samples_per_epoch: 20000
+
+fb_exclude_datasets: []
+fb_bbox_only_datasets:
+  - artaxor-bbox
+  - AMI-traps-2024-bbox
+  - UrbanInsects-bbox
+  - bugbox-bulk-bbox
+
+fb_zoom_prob: 0.2
+fb_zoom_min_px: 100
+fb_zoom_occupancy: [0.40, 0.50]
+fb_zoom_min_scale: 0.15
+fb_zoom_jitter: 0.08
