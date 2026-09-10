@@ -140,6 +140,10 @@ def main():
     args = args_parse.parse_args()
     option_dict = vars(args)
 
+    # Absolute, not DATASET_NAME: ultralytics resolves a relative `path` against its own
+    # settings.json datasets_dir, which points somewhere unrelated. Single-GPU training
+    # tolerates that, but the DDP workers are spawned from a temp script with a different
+    # working directory and fail with "images not found".
     data_yaml = {"path": DATASET_NAME,
                  "train": "images/train",
                  "val": "images/val",
@@ -158,6 +162,9 @@ def main():
 
     os.makedirs(PREPARED_DATA_TARGET_SUBDIR, exist_ok=True)
 
+    # Write `path` absolute. See the note above data_yaml: a relative path is resolved
+    # against ultralytics' datasets_dir, which breaks the DDP workers.
+    data_yaml["path"] = os.path.abspath(os.path.join(PREPARED_DATA_TARGET, DATASET_NAME))
     with open(os.path.join(PREPARED_DATA_TARGET, "data.yaml"), "w") as f:
         yaml.dump(data_yaml, f)
     datasets = []  # [d for d in os.listdir(COCO_DATA_ROOT) if os.path.isdir(os.path.join(COCO_DATA_ROOT, d))]
