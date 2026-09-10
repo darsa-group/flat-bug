@@ -6,11 +6,14 @@
 #SBATCH --mem=120000
 #SBATCH -t 96:00:00
 #SBATCH -J fb300v2
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:2
 #SBATCH -o /usr/home/qgg/qgeiss/flatbug-dir/logs/fb300v2_%j.out
 #SBATCH -e /usr/home/qgg/qgeiss/flatbug-dir/logs/fb300v2_%j.err
-# 300 epochs on the resynced corpus. ~58 h at 20000 samples/epoch; -t 96 leaves headroom.
-# -n 1 -c 24 with srun follows the GHPC GPU template (one task, 24 CPUs for its dataloader).
+# 300 epochs on the resynced corpus, on both GPUs of the node.
+# Measured 1.67x over one GPU (10:03 vs 16:49 per epoch on the same corpus), so ~64 h;
+# -t 96 leaves headroom. -n 1 -c 24 with srun follows the GHPC GPU template: ONE task,
+# which ultralytics then forks into two ranks itself. Asking slurm for -n 2 would start
+# two independent trainings competing for the same GPUs.
 set -eu
 ROOT=/usr/home/qgg/qgeiss/flatbug-dir3
 REPO=/usr/home/qgg/qgeiss/flat-bug-zoom

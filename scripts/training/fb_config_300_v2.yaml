@@ -37,18 +37,41 @@
 #     satisfying the floor and the weighting does nothing. At 20000 on ~18.6k images, 94% of
 #     images sat at the floor; at 2x it is ~35%, matching every run to date.
 #
-#     Cost: 300 x ~37k = 11.2M samples, about 107 h on one L40S. Two GPUs would bring that to
-#     roughly 60 h - see train_300_v2_GHPC.sh.
+#     Cost: 300 x ~37k = 11.2M samples, about 107 h on one L40S, or ~64 h on two.
+#
+# device: [0, 1] and batch: 16  -- READ THIS BEFORE CHANGING EITHER
+#     Measured on the same corpus (~31.3k samples/epoch): one GPU at batch 8 runs an epoch in
+#     16:49 (31.0 img/s), two GPUs at batch 16 in 10:03 (52.1 img/s). That is 1.67x, not 2x -
+#     find_unused_parameters, gradient all-reduce and worker contention take the rest.
+#
+#     ultralytics treats `batch` as the TOTAL across ranks and divides it, so batch 16 is 8 per
+#     GPU. That choice is deliberate, and it is a trade-off with no free side, because this
+#     ultralytics build has no sync_bn:
+#       batch 16 -> 8 per GPU. BatchNorm sees 8 samples, exactly as every previous flat-bug
+#                   run did, but gradients are averaged over 16, so the EFFECTIVE OPTIMISATION
+#                   BATCH DOUBLES and the run takes half as many optimiser steps per epoch
+#                   (1962 vs 3908).
+#       batch 8  -> 4 per GPU. Optimiser semantics match previous runs exactly, but BatchNorm
+#                   statistics come from 4 samples, and the smaller per-device batch gives up
+#                   much of the speedup.
+#     Taken here: batch 16. lr0 is left at 0.01 rather than linearly scaled to 0.02, because
+#     doubling the learning rate of an SGD run is not something this repo has ever measured and
+#     early instability would cost more than the schedule mismatch. If the loss curve looks
+#     slack against fb_axbcontain over the first epochs, lr0 is the knob.
+#
+# workers: 12
+#     nw = min(os.cpu_count() // n_devices, workers), applied PER RANK. 12 x 2 ranks = 24,
+#     which is the -c 24 the sbatch asks for. Leaving this at 24 would spawn 48 workers.
 
-batch: 8
+batch: 16
 model: "yolo26m-seg.pt"
 epochs: 300
-device: 0
+device: [0, 1]
 patience: 9999
 lr0: 0.01
 lrf: 0.00001
 optimizer: 'SGD'
-workers: 24
+workers: 12
 
 fb_max_instances: 9999
 fb_max_images: -1
