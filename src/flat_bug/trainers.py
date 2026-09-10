@@ -1,5 +1,6 @@
 """Custom modified YOLO segmentation training class and associated utilities."""
 
+import contextlib
 import glob
 import json
 import os
@@ -287,6 +288,39 @@ def apply_overrides_to_checkpoint(overrides):  # noqa: D103
     return overrides
 
 
+@contextlib.contextmanager
+
+def _ddp_allows_unused_parameters():
+    """Force `find_unused_parameters=True` on the DDP wrapper ultralytics builds.
+
+    flat-bug's loss leaves some parameters without a gradient on *some* batches, so the set of
+    unused parameters is data-dependent. Two consequences:
+
+      * plain DDP raises "Expected to have finished reduction in the prior iteration" the first
+        time such a batch comes up - which is mid-epoch, not at step 2, so it looks like a
+        transient rather than the structural thing it is;
+      * `static_graph=True` (what ultralytics passes when compile is on) is the WRONG relaxation:
+        it assumes the unused set is the same every iteration. It is not. So it is cleared here.
+
+    This patches the constructor rather than re-wrapping the model afterwards: DDP registers
+    autograd hooks on the parameters it is given, so building a second wrapper over the same
+    parameters would leave the first reducer's hooks attached and all-reduce every gradient
+    twice.
+    """
+    orig = torch.nn.parallel.DistributedDataParallel.__init__
+
+    def patched(self, module, *args, **kwargs):
+        kwargs["find_unused_parameters"] = True
+        kwargs.pop("static_graph", None)
+        return orig(self, module, *args, **kwargs)
+
+    torch.nn.parallel.DistributedDataParallel.__init__ = patched
+    try:
+        yield
+    finally:
+        torch.nn.parallel.DistributedDataParallel.__init__ = orig
+
+
 class FlatBugSegmentationTrainer(SegmentationTrainer):
     """Modified YOLO Segmentation trainer used for training flatbug."""
 
@@ -363,6 +397,17 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
 
         # Reproducibility
         self._reproducibility_setup()
+
+    def _setup_train(self, *args, **kwargs):
+        """As upstream, but the DDP wrapper tolerates a data-dependent unused-parameter set.
+
+        `*args` because ultralytics has moved `world_size` between a parameter and
+        `self.world_size` across versions; this override only needs to wrap the call.
+        """
+        if getattr(self, "world_size", 1) > 1:
+            with _ddp_allows_unused_parameters():
+                return super()._setup_train(*args, **kwargs)
+        return super()._setup_train(*args, **kwargs)
 
     def log_lr(self):  # noqa: D102
         LOGGER.info(f"LR: {self.scheduler.get_last_lr() if self.scheduler is not None else 'NaN'}")
