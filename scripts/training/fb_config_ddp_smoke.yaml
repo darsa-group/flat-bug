@@ -1,0 +1,30 @@
+# Three-epoch two-GPU smoke test. Not an experiment - it answers three questions:
+#   1. does DDP start at all? fb_train carries "TODO: fixme, we don't actually support
+#      multiple DDP", and no 2-GPU job has run on this cluster in at least six weeks
+#   2. do both ranks build the SAME epoch? each rank constructs its own dataset, and
+#      generate_indices must be deterministic or the ranks would disagree on composition
+#   3. what is the real throughput ratio against one GPU?
+#
+# batch 16, not 8: ultralytics treats `batch` as the TOTAL across ranks and divides it, so
+# batch 8 on two GPUs would give 4 per GPU and quietly halve the per-device batch every
+# previous run used.
+batch: 16
+model: "yolo26m-seg.pt"
+epochs: 3
+device: [0, 1]
+patience: 9999
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 12
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_prob: 0.0
+fb_sample_weight: area
+fb_exclude_datasets: []
+fb_bbox_only_datasets: ["artaxor-bbox"]
+fb_zoom_prob: 0.2
+fb_zoom_min_px: 100
+fb_zoom_occupancy: [0.40, 0.50]
+fb_zoom_min_scale: 0.15
+fb_zoom_jitter: 0.08
