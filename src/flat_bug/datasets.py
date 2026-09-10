@@ -35,6 +35,47 @@ def get_area(image_path):  # noqa: D103
         return image.size[0] * image.size[1]
 
 
+def pyramid_tile_count(w: int, h: int, tile: int = 1024, overlap: int = 384,
+                       edge: int = 16, increment: float = 2 / 3) -> int:
+    """Tiles the inference pyramid would run over an image of this size.
+
+    Area understates the work for a large image and overstates it for a small one: the
+    pyramid pads by EDGE_CASE_MARGIN, overlaps tiles by MINIMUM_TILE_OVERLAP, and repeats the
+    whole grid at every scale from TILE/max_dim up to native. Counting tiles captures all
+    three, so an image is weighted by what it actually costs to infer rather than by how many
+    pixels it happens to contain.
+
+    Mirrors `Predictor.pyramid_predictions`; keep the two in step if the ladder changes.
+    """
+    from flat_bug.geometric import calculate_tile_offsets
+    pad = 4 * edge
+    w, h = w + pad, h + pad
+    s = tile / max(w, h)
+    scales = [s] if s >= 1 else []
+    if s < 1:
+        while s <= 0.9:
+            scales.append(s)
+            s /= increment
+        if s != 1:
+            scales.append(1.0)
+    n = 0
+    for sc in scales:
+        sw = max(round(w * sc / 4) * 4, tile)
+        sh = max(round(h * sc / 4) * 4, tile)
+        n += len(calculate_tile_offsets((sw, sh), tile, overlap))
+    return max(n, 1)
+
+
+def calculate_pyramid_weights(image_paths: list[str]) -> list[float]:
+    """Per-image weight equal to its pyramid tile count."""
+    out = []
+    for p in image_paths:
+        with Image.open(p) as im:
+            w, h = im.size
+        out.append(float(pyramid_tile_count(w, h)))
+    return out
+
+
 def calculate_image_weights(image_paths: list[str]) -> list[float]:
     """Calculate normalized weights for each image based on the file sizes.
 
@@ -291,6 +332,7 @@ class FlatBugYOLODataset(YOLODataset):  # noqa: D101
         # sampling can be compared as an experimental arm; see scripts/training/splits.
         #   current  area x instances - the historical default
         #   area     area alone, dropping the instance-count factor
+        #   pyramid  tiles the inference pyramid would run over the image
         #   uniform  every image once
         # Comparing arms requires an IDENTICAL epoch length: ultralytics drives warmup and
         # lrf off the epoch index, so arms with different epoch lengths would silently train
@@ -300,6 +342,10 @@ class FlatBugYOLODataset(YOLODataset):  # noqa: D101
             self.sample_weights = [1.0 for _ in self.labels]
         elif self._sample_weight == "area":
             self.sample_weights = list(areas)
+        elif self._sample_weight == "pyramid":
+            # what the image costs at INFERENCE: tiles summed over the pyramid, including
+            # overlap and every scale, rather than a bare pixel count
+            self.sample_weights = calculate_pyramid_weights(self.im_files)
         elif self._sample_weight == "current":
             self.sample_weights = [
                 a * len(label_i["cls"]) for label_i, a in zip(self.labels, areas)

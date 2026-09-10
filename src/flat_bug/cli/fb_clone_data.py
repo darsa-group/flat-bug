@@ -72,6 +72,38 @@ def md5_file(path: Path, chunk=1024 * 1024) -> str:
     return h.hexdigest()
 
 
+def completed_frame_names(task) -> set | None:
+    """Basenames of the frames that are ready to use, or None meaning "all of them".
+
+    A task whose status is 'completed' contributes everything. A task still in annotation
+    contributes only the frames belonging to jobs that ARE completed, so partially annotated
+    material can be used without waiting for the whole task - MAMBOcrops-bbox is 3 jobs of 38,
+    and 2025-agrivolt 1 of 2.
+
+    Deleted frames need no handling here: CVAT's COCO export already omits them (verified on
+    2023-danish-spiders, 47 frames with 14 deleted exporting exactly 33).
+
+    Returns None for a complete task, a set for a partial one, and an empty set for a task
+    with no completed jobs, which the caller skips.
+    """
+    if getattr(task, "status", None) == "completed":
+        return None
+    try:
+        jobs = list(task.get_jobs())
+    except Exception:
+        return set()
+    done = [j for j in jobs if str(getattr(j, "state", "")) == "completed"]
+    if not done:
+        return set()
+    if len(done) == len(jobs):
+        return None
+    frames = set()
+    for j in done:
+        frames |= set(range(int(j.start_frame), int(j.stop_frame) + 1))
+    names = [f.name for f in task.get_meta().frames]
+    return {os.path.basename(names[i]) for i in frames if i < len(names)}
+
+
 def task_is_completed(task) -> bool:
     """Check if a task is done.
 
@@ -316,8 +348,25 @@ def sync_s3_prefix_to_local(
     return True
 
 
+def _restrict_coco(path: Path, allowed: set, task_id: int) -> None:
+    """Keep only the images whose basename is in `allowed`, and their annotations."""
+    with open(path) as fh:
+        coco = json.load(fh)
+    before = len(coco.get("images", []))
+    keep = [im for im in coco.get("images", []) if os.path.basename(im["file_name"]) in allowed]
+    ids = {im["id"] for im in keep}
+    coco["images"] = keep
+    n_ann = len(coco.get("annotations", []))
+    coco["annotations"] = [a for a in coco.get("annotations", []) if a["image_id"] in ids]
+    with open(path, "w") as fh:
+        json.dump(coco, fh)
+    print(f"[Task {task_id}] partial task: kept {len(keep)}/{before} images, "
+          f"{len(coco['annotations'])}/{n_ann} annotations")
+
+
 def _process_one_task(
-    task_id: int, task_name: str, cfg_cvat: dict, s3, s3_bucket: str, s3_prefix_root: str, target_dir: Path
+    task_id: int, task_name: str, cfg_cvat: dict, s3, s3_bucket: str, s3_prefix_root: str,
+    target_dir: Path, allowed_names: set | None = None,
 ):
     """Runs in a thread. Returns (task_id, ok, msg)."""  # noqa: D401
     CVAT_HOST = cfg_cvat.get("host", "https://app.cvat.ai")
@@ -355,12 +404,14 @@ def _process_one_task(
                 client.organization_slug = ORG_SLUG
             t = client.tasks.retrieve(task_id)  # get fresh task handle
             t.fetch()
-            if not task_is_completed(t):
+            if allowed_names is None and not task_is_completed(t):
                 return task_id, False, "Skipping: not completed"
 
             coco_json_path = task_dir / "instances_default.json"
             print(f"[Task {task_id}] Exporting COCO -> {coco_json_path}")
             export_coco_annotations_for_task(t, coco_json_path, s3_prefix_root)
+            if allowed_names:
+                _restrict_coco(coco_json_path, allowed_names, task_id)
 
         return task_id, True, "ok"
     except Exception as e:
@@ -428,10 +479,14 @@ def main():
         items = []
         for t in tasks:
             t.fetch()
-            items.append((t.id, t.name, task_is_completed(t)))
-
-    # Filter to completed tasks (we'll still re-check in threads for safety)
-    items = [(tid, tname) for (tid, tname, ok) in items if ok]
+            allowed = completed_frame_names(t)
+            # None = whole task; a set = only those frames; empty set = nothing ready
+            if allowed is not None and not allowed:
+                print(f"Skipping '{t.name}': no completed jobs")
+                continue
+            if allowed:
+                print(f"'{t.name}': partial - {len(allowed)} frames from completed jobs")
+            items.append((t.id, t.name, allowed))
     if not items:
         print("No completed tasks to process.")
         print("✅ Done.")
@@ -442,7 +497,7 @@ def main():
 
     futures = []
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        for tid, tname in items:
+        for tid, tname, allowed in items:
             futures.append(
                 ex.submit(
                     _process_one_task,
@@ -453,6 +508,7 @@ def main():
                     S3_BUCKET,
                     S3_PREFIX,
                     TARGET_DIR,
+                    allowed,
                 )
             )
 

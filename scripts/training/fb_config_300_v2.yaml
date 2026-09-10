@@ -25,10 +25,15 @@
 #     fb_prepare_data derives from the CVAT task name. MAMBOcrops-bbox is absent because only
 #     3 of its 38 jobs are complete, so it will not be in the resynced corpus.
 #
-# fb_samples_per_epoch: 20000
-#     Fixes the epoch length rather than letting the weighting decide it, so the LR schedule
-#     is defined independently of the sampler. 300 x 20000 = 6.0M samples, about 58 h on one
-#     L40S. The partition allows 45 days, so this fits in a single job.
+# fb_samples_per_epoch: absent
+#     Left unset so the epoch is the historical 2 x corpus (_oversample_factor = 2), which on
+#     the resynced corpus is ~37k samples. Setting it lower is actively harmful: generate_indices
+#     floors every image at one draw, so a budget near the image count spends nearly all of it
+#     satisfying the floor and the weighting does nothing. At 20000 on ~18.6k images, 94% of
+#     images sat at the floor; at 2x it is ~35%, matching every run to date.
+#
+#     Cost: 300 x ~37k = 11.2M samples, about 107 h on one L40S. Two GPUs would bring that to
+#     roughly 60 h - see train_300_v2_GHPC.sh.
 
 batch: 8
 model: "yolo26m-seg.pt"
@@ -45,7 +50,6 @@ fb_max_images: -1
 fb_synth_prob: 0.0
 
 fb_sample_weight: area
-fb_samples_per_epoch: 20000
 
 fb_exclude_datasets: []
 fb_bbox_only_datasets:
