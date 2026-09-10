@@ -59,6 +59,20 @@
 #     early instability would cost more than the schedule mismatch. If the loss curve looks
 #     slack against fb_axbcontain over the first epochs, lr0 is the knob.
 #
+# save_period: 25
+#     Two things at once, because flat-bug's trainer gates validation on it:
+#     `validate()` runs only when epoch % save_period == 0, and ultralytics additionally writes
+#     an archival epochN.pt on the same schedule. Validation is not cheap - measured ~450 s a
+#     time from fb_axbcontain (55,160 s wall minus 50 x 1009 s of training, over the 10
+#     validations its 40 "Skipped validation" lines imply). At the fb_train default of 5 that
+#     is 60 validations, 7.5 h; at 25 it is 12, about 1.5 h.
+#
+#     Safe to lengthen because last.pt is written EVERY epoch regardless of save_period, so a
+#     crash still costs at most one epoch. What does change: `fitness` only updates on a
+#     validated epoch, so best.pt is reconsidered 12 times rather than 60. With patience 9999
+#     there is no early-stopping interaction, and for a run whose checkpoint we pick by
+#     end-to-end evaluation afterwards rather than by fitness, that granularity is not load-bearing.
+#
 # workers: 12
 #     nw = min(os.cpu_count() // n_devices, workers), applied PER RANK. 12 x 2 ranks = 24,
 #     which is the -c 24 the sbatch asks for. Leaving this at 24 would spawn 48 workers.
@@ -68,6 +82,7 @@ model: "yolo26m-seg.pt"
 epochs: 300
 device: [0, 1]
 patience: 9999
+save_period: 25
 lr0: 0.01
 lrf: 0.00001
 optimizer: 'SGD'
