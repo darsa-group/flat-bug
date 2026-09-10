@@ -393,6 +393,9 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
 
         self._val_metrics = None
         self._val_fitness = None
+        # Rank-invariant "have we validated yet"; see validate() for why _val_metrics cannot
+        # serve this purpose under DDP.
+        self._have_validated = False
         self.cfg = cfg
 
         # Reproducibility
@@ -541,7 +544,21 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
             Validation metrics and the fitness if available (if not `fitness=float("nan")`).
 
         """
-        if self.epoch % self.save_period == 0 or self._val_metrics is None:
+        # Whether to validate MUST be decided identically on every rank. Upstream validate()
+        # opens with `dist.broadcast` over the EMA buffers when world_size > 1, and _do_train
+        # calls it unguarded on all ranks, so a rank that takes the `else` branch never enters
+        # that collective and every other rank blocks in it forever.
+        #
+        # `self._val_metrics is None` used to stand in for "never validated", and it is exactly
+        # the wrong test: upstream validate() returns (None, None) on non-zero ranks, so
+        # _val_metrics is permanently None there. Rank 0 would skip while rank 1 validated,
+        # rank 1 blocked in the broadcast, and rank 0 then hung in the next epoch's gradient
+        # all-reduce waiting for a peer that had left the training loop.
+        #
+        # _have_validated flips on every rank that reaches the branch, and the remaining terms
+        # are rank-invariant, so all ranks agree.
+        if self.epoch % self.save_period == 0 or not self._have_validated:
+            self._have_validated = True
             torch.cuda.empty_cache()
 
             # YOLOv26's one2many head assigns many positive anchors per GT instance.
