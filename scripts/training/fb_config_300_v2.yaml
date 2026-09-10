@@ -22,8 +22,13 @@
 #
 # fb_bbox_only_datasets
 #     Boxes trusted, polygons not. Names must match the image-basename prefix that
-#     fb_prepare_data derives from the CVAT task name. MAMBOcrops-bbox is absent because only
-#     3 of its 38 jobs are complete, so it will not be in the resynced corpus.
+#     fb_prepare_data derives from the CVAT task name. Verified against the cloned COCO on
+#     2026-09-10: each of these carries 0% polygon annotations, every other dataset >=96.7%.
+#     MAMBOcrops-bbox IS included now - fb_clone_data pulls the frames of individually
+#     completed jobs, so its 3-of-38 finished jobs contribute 599 images. Leaving it out while
+#     its rectangles are in the corpus is the failure that cost 0.19 mask F1 on ArTaxOr.
+#     bugbox-bulk-bbox is a prefix: the task is bugbox-bulk-bbox-downscaled, and it does not
+#     match the separate `bugbox` segmentation dataset.
 #
 # fb_samples_per_epoch: absent
 #     Left unset so the epoch is the historical 2 x corpus (_oversample_factor = 2), which on
@@ -57,6 +62,7 @@ fb_bbox_only_datasets:
   - AMI-traps-2024-bbox
   - UrbanInsects-bbox
   - bugbox-bulk-bbox
+  - MAMBOcrops-bbox
 
 fb_zoom_prob: 0.2
 fb_zoom_min_px: 100

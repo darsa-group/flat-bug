@@ -104,6 +104,34 @@ def completed_frame_names(task) -> set | None:
     return {os.path.basename(names[i]) for i in frames if i < len(names)}
 
 
+def storage_prefix_for_task(task, s3_prefix_root: str) -> str:
+    """Where this task's images actually live in the bucket, as a key prefix without a trailing /.
+
+    The task name is NOT a reliable answer. CVAT tasks are frequently created against a bucket
+    folder with a different name - MAMBOcrops-bbox reads `data/MAMBOcrops`, UrbanInsects-bbox
+    reads `data/UrbanInsects`, bugbox-bulk-bbox-downscaled reads `data/bugbox-bulk-cvat` - and
+    deriving the prefix from the name silently syncs nothing for those tasks, which then fail
+    much later with "N images in ..." from fb_prepare_data.
+
+    CVAT does know the answer: each frame's `name` is its key relative to the bucket root. So
+    take the directory those frames share. `cloud_storage_id` is not usable for this - it reads
+    None on most of these tasks even though they are cloud-backed.
+
+    Falls back to the task-name prefix when the frames disagree or cannot be read, which is the
+    historical behaviour and correct for every task whose folder does match its name.
+    """
+    fallback = f"{s3_prefix_root}/{safe_segment(task.name)}" if s3_prefix_root else safe_segment(task.name)
+    try:
+        names = [f.name for f in task.get_meta().frames]
+    except Exception:
+        return fallback
+    dirs = {os.path.dirname(n) for n in names if n}
+    if len(dirs) != 1:
+        return fallback
+    prefix = dirs.pop().strip("/")
+    return prefix or fallback
+
+
 def task_is_completed(task) -> bool:
     """Check if a task is done.
 
@@ -171,7 +199,7 @@ def ensure_parent(path: Path):
 
 #
 # ------------------ COCO Export ------------------
-def export_coco_annotations_for_task(task, output_json_path: Path, s3_prefix):
+def export_coco_annotations_for_task(task, output_json_path: Path, s3_prefix: str):
     """Export COCO for task.
 
     Export task dataset (COCO 1.0, annotations only) to a temp zip,
@@ -222,7 +250,7 @@ def export_coco_annotations_for_task(task, output_json_path: Path, s3_prefix):
         for im in coco.get("images", []):
             orig = im.get("file_name", "")
             # Make sure we don't accidentally duplicate prefixes
-            im["file_name"] = os.path.relpath(orig, os.path.join(s3_prefix, safe_segment(task.name)))
+            im["file_name"] = os.path.relpath(orig, s3_prefix)
 
         # Write back modified JSON
         with open(output_json_path, "w", encoding="utf-8") as f:
@@ -366,7 +394,7 @@ def _restrict_coco(path: Path, allowed: set, task_id: int) -> None:
 
 def _process_one_task(
     task_id: int, task_name: str, cfg_cvat: dict, s3, s3_bucket: str, s3_prefix_root: str,
-    target_dir: Path, allowed_names: set | None = None,
+    target_dir: Path, allowed_names: set | None = None, storage_prefix: str | None = None,
 ):
     """Runs in a thread. Returns (task_id, ok, msg)."""  # noqa: D401
     CVAT_HOST = cfg_cvat.get("host", "https://app.cvat.ai")
@@ -379,8 +407,9 @@ def _process_one_task(
     task_dir = target_dir / task_dir_name
     task_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build S3 prefix: <root>/<task_name>/
-    prefix = f"{s3_prefix_root}/{task_name}/" if s3_prefix_root else f"{task_name}/"
+    # Where the images really are - resolved from CVAT frame paths, not from the task name.
+    base = storage_prefix or (f"{s3_prefix_root}/{task_name}" if s3_prefix_root else task_name)
+    prefix = base.rstrip("/") + "/"
 
     try:
         # Check S3 existence (lightweight)
@@ -409,7 +438,7 @@ def _process_one_task(
 
             coco_json_path = task_dir / "instances_default.json"
             print(f"[Task {task_id}] Exporting COCO -> {coco_json_path}")
-            export_coco_annotations_for_task(t, coco_json_path, s3_prefix_root)
+            export_coco_annotations_for_task(t, coco_json_path, base)
             if allowed_names:
                 _restrict_coco(coco_json_path, allowed_names, task_id)
 
@@ -486,7 +515,11 @@ def main():
                 continue
             if allowed:
                 print(f"'{t.name}': partial - {len(allowed)} frames from completed jobs")
-            items.append((t.id, t.name, allowed))
+            storage_prefix = storage_prefix_for_task(t, S3_PREFIX)
+            expected = f"{S3_PREFIX}/{safe_segment(t.name)}" if S3_PREFIX else safe_segment(t.name)
+            if storage_prefix != expected:
+                print(f"'{t.name}': images live under s3 '{storage_prefix}', not '{expected}'")
+            items.append((t.id, t.name, allowed, storage_prefix))
     if not items:
         print("No completed tasks to process.")
         print("✅ Done.")
@@ -497,7 +530,7 @@ def main():
 
     futures = []
     with ThreadPoolExecutor(max_workers=max_workers) as ex:
-        for tid, tname, allowed in items:
+        for tid, tname, allowed, storage_prefix in items:
             futures.append(
                 ex.submit(
                     _process_one_task,
@@ -509,6 +542,7 @@ def main():
                     S3_PREFIX,
                     TARGET_DIR,
                     allowed,
+                    storage_prefix,
                 )
             )
 
