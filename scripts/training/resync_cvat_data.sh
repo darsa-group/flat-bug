@@ -7,18 +7,18 @@
 #   fb_prepare_data  joins those into a single YOLO dataset, splitting train/val by md5 of the
 #                    filename so the split is stable across resyncs
 #
-# What "completed" means, and why it is the exclusion mechanism: fb_clone_data keeps a task
-# only if its status is 'completed' or every one of its jobs is. Setting a task to any other
-# status removes it from the corpus without deleting anything. As of 2026-09-10 that excludes:
-#     broto2025        100f  (validation)   <- deliberately excluded
-#     2025-agrivolt    500f  (annotation)   <- still being curated
-#     ArTaxOr         1050f  (annotation)   <- superseded by artaxor-seg + artaxor-bbox
-#     aquamonitor     2981f  (annotation)
-#     MAMBOcrops-bbox 7514f  (annotation)   <- only 3 of 38 jobs done, so it will NOT sync
-# leaving 38 tasks / 21,930 images.
+# What gets in: a task whose status is 'completed', plus - for a task still in annotation -
+# the frames belonging to its individually completed JOBS, minus any frame marked deleted.
+# So setting a task to a non-completed status no longer removes it wholesale; it narrows it to
+# the work actually finished. As of 2026-09-10:
+#     broto2025        100f  (validation)   <- excluded: no completed job
+#     ArTaxOr         1050f  (annotation)   <- excluded: superseded by artaxor-seg/-bbox
+#     aquamonitor     2981f  (annotation)   <- excluded: no completed job
+#     2025-agrivolt    500f  (annotation)   <- PARTIAL, completed jobs only
+#     MAMBOcrops-bbox 7514f  (annotation)   <- PARTIAL, completed jobs only
 set -eu
 ROOT=${1:-/usr/home/qgg/qgeiss/flatbug-dir3}
-SECRETS=${2:-/usr/home/qgg/qgeiss/flat-bug-zoom/scripts/training/.secrets.yaml}
+SECRETS=${2:-/usr/home/qgg/qgeiss/flat-bug/scripts/training/.secrets.yaml}
 CLONE=$ROOT/coco
 YOLO=$ROOT/flat-bug-data
 echo "[$(date +%H:%M)] cloning CVAT project into $CLONE"
