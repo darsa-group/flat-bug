@@ -19,6 +19,7 @@ import torch.types
 import torchvision
 import torchvision.transforms as transforms
 from PIL import Image
+from PIL.TiffImagePlugin import IFDRational
 from torch._prims_common import DeviceLikeType
 from torchvision.io import ImageReadMode, decode_image
 from tqdm.auto import tqdm
@@ -175,6 +176,88 @@ class Prepared_Results:
 
 
 # Class for containing the results from multiple _detect_instances calls
+# WebP refuses anything larger than this on either axis; such crops fall back to PNG.
+WEBP_MAX_DIM = 16383
+
+# EXIF tags for physical resolution. Written on every crop, whatever the container, because
+# `dpi=` reaches only PNG/JPEG/TIFF - the WebP encoder accepts and silently discards it.
+_EXIF_X_RESOLUTION = 0x011A
+_EXIF_Y_RESOLUTION = 0x011B
+_EXIF_RESOLUTION_UNIT = 0x0128
+_EXIF_UNIT_INCH = 2
+
+
+def source_dpi(image_path: str | None) -> tuple[float, float] | None:
+    """Physical resolution of the source image, or None if it does not record one.
+
+    Crops are pixel-exact slices of the original image - `pyramid_predictions` keeps the
+    unscaled tensor and maps boxes back by 1/scale_before - so the source DPI applies to a crop
+    unchanged, with no correction for the inference scale.
+
+    The value has to be read from the file: flat-bug decodes images with
+    `torchvision.decode_image`, which returns bare pixel data and consults EXIF only for
+    orientation, so by the time a crop exists every trace of physical resolution is gone.
+    """
+    if image_path is None or not os.path.isfile(image_path):
+        return None
+    try:
+        with Image.open(image_path) as im:
+            dpi = im.info.get("dpi")
+            if dpi is None:
+                exif = im.getexif()
+                x, y = exif.get(_EXIF_X_RESOLUTION), exif.get(_EXIF_Y_RESOLUTION)
+                if x is None or y is None:
+                    return None
+                if exif.get(_EXIF_RESOLUTION_UNIT) == 3:  # centimetres
+                    x, y = float(x) * 2.54, float(y) * 2.54
+                dpi = (x, y)
+            dpi = (float(dpi[0]), float(dpi[1]))
+    except Exception as e:
+        logger.debug(f"Could not read DPI from {image_path}: {type(e).__name__}: {e}")
+        return None
+    # A 1x1 placeholder is what TIFF writes when it has nothing to say; treat it as nothing.
+    if not all(d > 1 for d in dpi):
+        return None
+    return dpi
+
+
+def _dpi_exif(dpi: tuple[float, float]) -> "Image.Exif":
+    exif = Image.Exif()
+    exif[_EXIF_X_RESOLUTION] = IFDRational(dpi[0])
+    exif[_EXIF_Y_RESOLUTION] = IFDRational(dpi[1])
+    exif[_EXIF_RESOLUTION_UNIT] = _EXIF_UNIT_INCH
+    return exif
+
+
+def crop_save_kwargs(
+    fmt: str, has_alpha: bool, lossless: bool, quality: int, dpi: tuple[float, float] | None
+) -> dict:
+    """Encoder arguments for one crop, keyed on the container actually being written."""
+    fmt = fmt.upper()
+    kwargs: dict = {}
+    if fmt == "WEBP":
+        if lossless:
+            # method 4 is Pillow's default. method 6 was measured to cost 2.3x the encode time
+            # for a byte-identical file, so there is nothing to buy by raising it.
+            kwargs["lossless"] = True
+        else:
+            kwargs["quality"] = quality
+    elif fmt == "PNG":
+        kwargs["compress_level"] = 1
+    elif fmt in ("JPEG", "JPG"):
+        if has_alpha:
+            raise ValueError("JPEG cannot store the alpha channel of a masked crop")
+        kwargs["quality"] = quality
+    if dpi is not None:
+        kwargs["exif"] = _dpi_exif(dpi)
+        if fmt != "WEBP":
+            # Native density fields, which more readers understand than EXIF. WebP has none -
+            # it accepts `dpi=` and drops it - so there EXIF is the only route.
+            kwargs["dpi"] = dpi
+    return kwargs
+
+
+
 class TensorPredictions:
     """Result class for combining the results from multiple YOLOv8 detections at different scales into a single object.
 
@@ -188,6 +271,10 @@ class TensorPredictions:
 
     DUPLICATE_THRESHOLD = 1
     PREFER_POLYGONS = True  # If True, will use shapely Polygons instead of masks for NMS and drawing
+    # How crops are written. Defaults mirror DEFAULT_CFG; a Predictor passes its own through.
+    CROP_FORMAT = "webp"
+    CROP_LOSSLESS = True
+    CROP_QUALITY = 95
     # These are simply initialized here to decrease clutter in the __init__ function and arguments
     mask_width = None
     mask_height = None
@@ -203,6 +290,9 @@ class TensorPredictions:
         "mask_width",
         "BOX_IS_EQUAL_MARGIN",
         "PREFER_POLYGONS",
+        "CROP_FORMAT",
+        "CROP_LOSSLESS",
+        "CROP_QUALITY",
     )
 
     def __init__(
@@ -1088,10 +1178,26 @@ class TensorPredictions:
         crop: torch.Tensor,
         mask: torch.Tensor | None,
         path: str,
+        dpi: tuple[float, float] | None = None,
+        lossless: bool = True,
+        quality: int = 95,
     ) -> str:
-        Image.fromarray(
+        image = Image.fromarray(
             obj=chw2hwc_uint8(crop, mask).detach().cpu().numpy(), mode="RGB" if mask is None else "RGBA"
-        ).save(path, compress_level=1)
+        )
+        fmt = (os.path.splitext(path)[1].lstrip(".") or "png").upper()
+        if fmt == "JPG":
+            fmt = "JPEG"
+        if fmt == "WEBP" and max(image.size) > WEBP_MAX_DIM:
+            # WebP has a hard 16383 px limit per axis. Falling back keeps the crop rather than
+            # losing it, and PNG is the only other lossless container here.
+            logger.warning(
+                f"Crop {image.size} exceeds WebP's {WEBP_MAX_DIM} px limit, writing PNG instead: {path}"
+            )
+            path = os.path.splitext(path)[0] + ".png"
+            fmt = "PNG"
+        kwargs = crop_save_kwargs(fmt, mask is not None, lossless, quality, dpi)
+        image.save(path, **kwargs)
         return path
 
     def save_crops(
@@ -1101,19 +1207,45 @@ class TensorPredictions:
         mask: bool = False,
         identifier: str | None = None,
         wait: bool = False,
+        dpi: tuple[float, float] | None = None,
     ) -> list[str]:
-        """Save prediction crops."""
+        """Save prediction crops.
+
+        Args:
+            outdir: Directory to write the crops into.
+            basename: Stem for the crop filenames. Defaults to the source image's stem.
+            mask: Write the instance mask as an alpha channel.
+            identifier: Optional UUID field for the filename.
+            wait: Block until every crop has been written.
+            dpi: Physical resolution to record, as (x, y). Defaults to the source image's own,
+                read from the file - crops are pixel-exact slices of it, so it transfers
+                unchanged. Pass a value explicitly for sources that carry no DPI, such as a
+                calibrated scanner whose files record none.
+
+        """
         if outdir is None or not os.path.exists(outdir) or not os.path.isdir(outdir):
             raise RuntimeError(f"Invalid outdir {outdir}, does not exist or is not a directory")
         if self.image_path is not None:
             if basename is None:
                 assert self.image_path is not None, RuntimeError("Cannot save crops without image_path")
                 basename, _ = os.path.splitext(os.path.basename(self.image_path))
-            _, image_ext = os.path.splitext(os.path.basename(self.image_path))
+            _, source_ext = os.path.splitext(os.path.basename(self.image_path))
         else:
-            basename, image_ext = str(uuid.uuid4()), ".jpg"
-        if mask:
-            image_ext = ".png"
+            basename, source_ext = str(uuid.uuid4()), ".jpg"
+
+        if self.CROP_FORMAT == "inherit":
+            image_ext = source_ext
+            # JPEG cannot hold the alpha channel, and neither can a source format we do not
+            # recognise, so masked crops keep falling back to PNG as they always have.
+            if mask and image_ext.lower() not in (".png", ".webp", ".tif", ".tiff"):
+                image_ext = ".png"
+        else:
+            image_ext = "." + self.CROP_FORMAT.lstrip(".").lower()
+
+        if dpi is None:
+            dpi = source_dpi(self.image_path)
+        if dpi is None:
+            logger.debug(f"No DPI recorded for {self.image_path}; crops are written without one")
         if identifier is None:
             identifier_field = ""
         else:
@@ -1132,7 +1264,15 @@ class TensorPredictions:
         for crop, _mask, path in zip(crops, crop_masks, crop_paths):
             if isinstance(_mask, torch.Tensor):
                 _mask = _mask.detach().cpu().clone()
-            _executor.submit(self._save_1_crop, crop.detach().cpu().clone(), _mask, path)
+            _executor.submit(
+                self._save_1_crop,
+                crop.detach().cpu().clone(),
+                _mask,
+                path,
+                dpi,
+                self.CROP_LOSSLESS,
+                self.CROP_QUALITY,
+            )
         if wait:
             _executor.flush()
 
@@ -1487,6 +1627,22 @@ class Predictor:
     Whether to prefer representing the instance segmentation using polygons \\
     instead of masks. This is a much more compact representation, but cannot \\
     represent complex shapes (like holes in the mask), only concave polygons.
+    """
+    CROP_FORMAT: str = None  # type: ignore
+    """
+    Container for saved crops: "webp", "png", "jpg", or "inherit" to follow \\
+    the source image's extension. WebP stores crops losslessly in less space \\
+    than PNG and, unlike PNG, also carries the alpha channel of masked crops.
+    """
+    CROP_LOSSLESS: bool = None  # type: ignore
+    """
+    Write crops with no compression loss. Only formats that offer a choice \\
+    are affected (webp); PNG is always lossless and JPEG never is.
+    """
+    CROP_QUALITY: int = None  # type: ignore
+    """
+    Quality for lossy crop formats, 1-100. Ignored when CROP_LOSSLESS is set \\
+    and the format can be lossless.
     """
     EXPERIMENTAL_NMS_OPTIMIZATION: bool = None  # type: ignore
     """
@@ -1931,6 +2087,9 @@ class Predictor:
                 device=self._device,
                 time=self.TIME,
                 PREFER_POLYGONS=self.PREFER_POLYGONS,
+                CROP_FORMAT=self.CROP_FORMAT,
+                CROP_LOSSLESS=self.CROP_LOSSLESS,
+                CROP_QUALITY=self.CROP_QUALITY,
             )
             .offset_scale_pad(
                 offset=-padding_offset,

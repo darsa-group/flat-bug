@@ -27,6 +27,9 @@ CFG_PARAMS = [
     "TIME",
     "TILE_SIZE",
     "BATCH_SIZE",
+    "CROP_FORMAT",
+    "CROP_LOSSLESS",
+    "CROP_QUALITY",
 ]
 
 CFG_DESCRIPTION = {
@@ -42,6 +45,9 @@ CFG_DESCRIPTION = {
     "TIME": "Enable to print time taken for each step. Can incur a performance penalty.",
     "TILE_SIZE": "Fixed by the model architecture - do not change unless you know what you are doing.",
     "BATCH_SIZE": "Used for model initialization and batched tile processing.",
+    "CROP_FORMAT": "Image format for saved crops: 'webp', 'png', 'jpg', or 'inherit' to use the source image's extension. WebP is the default because it stores crops losslessly in less space than PNG, and unlike PNG it also carries the alpha channel of masked crops.",
+    "CROP_LOSSLESS": "Write crops with no compression loss. Only meaningful for formats that offer a choice (webp); PNG is always lossless and JPEG never is.",
+    "CROP_QUALITY": "Quality for lossy crop formats, 1-100. Ignored when CROP_LOSSLESS is enabled and the format supports lossless.",
 }
 
 DEFAULT_CFG = {
@@ -57,6 +63,9 @@ DEFAULT_CFG = {
     "TIME": False,
     "TILE_SIZE": 1024,
     "BATCH_SIZE": 16,
+    "CROP_FORMAT": "webp",
+    "CROP_LOSSLESS": True,
+    "CROP_QUALITY": 95,
 }
 
 LEGACY_CFG = {
@@ -72,6 +81,9 @@ LEGACY_CFG = {
     "TIME": False,
     "TILE_SIZE": 1024,
     "BATCH_SIZE": 16,
+    "CROP_FORMAT": "inherit",
+    "CROP_LOSSLESS": False,
+    "CROP_QUALITY": 80,
 }
 # ruff: enable[E501]
 
