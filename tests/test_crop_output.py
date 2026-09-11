@@ -131,6 +131,23 @@ def test_other_formats_get_both_dpi_and_exif():
     assert kw["dpi"] == (600, 600) and "exif" in kw
 
 
+def test_jpeg_asks_for_444_chroma():
+    """Pillow writes 4:2:0 at every quality; subsampling is the floor under worst-case error."""
+    kw = crop_save_kwargs("JPEG", has_alpha=False, lossless=False, quality=95, dpi=None)
+    assert kw["subsampling"] == 0
+
+
+def test_jpeg_crop_is_written_as_444(tmp_path, rgb):
+    import torch
+    from PIL import JpegImagePlugin
+
+    out = TensorPredictions._save_1_crop(
+        torch.from_numpy(rgb).permute(2, 0, 1), None, str(tmp_path / "c.jpg"), None, False, 95
+    )
+    with Image.open(out) as im:
+        assert JpegImagePlugin.get_sampling(im) == 0, "crop was written with chroma subsampling"
+
+
 def test_jpeg_refuses_alpha():
     with pytest.raises(ValueError, match="alpha"):
         crop_save_kwargs("JPEG", has_alpha=True, lossless=False, quality=95, dpi=None)
