@@ -237,9 +237,11 @@ def crop_save_kwargs(
     kwargs: dict = {}
     if fmt == "WEBP":
         if lossless:
-            # method 4 is Pillow's default. method 6 was measured to cost 2.3x the encode time
-            # for a byte-identical file, so there is nothing to buy by raising it.
+            # In lossless mode libwebp reads `quality` as encoder EFFORT, not fidelity: the
+            # output is exact either way, and 0 encodes in 5.0 ms against 60.2 ms at the
+            # default for 12% more bytes. Passing it through makes CROP_QUALITY the speed knob.
             kwargs["lossless"] = True
+            kwargs["quality"] = quality
         else:
             kwargs["quality"] = quality
     elif fmt == "PNG":
@@ -273,7 +275,7 @@ class TensorPredictions:
     PREFER_POLYGONS = True  # If True, will use shapely Polygons instead of masks for NMS and drawing
     # How crops are written. Defaults mirror DEFAULT_CFG; a Predictor passes its own through.
     CROP_FORMAT = "webp"
-    CROP_LOSSLESS = True
+    CROP_LOSSLESS = False
     CROP_QUALITY = 95
     # These are simply initialized here to decrease clutter in the __init__ function and arguments
     mask_width = None

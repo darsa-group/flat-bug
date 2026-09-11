@@ -92,9 +92,27 @@ def test_source_dpi_handles_missing_and_unreadable(tmp_path):
 
 
 def test_webp_gets_lossless_not_compress_level():
-    """compress_level is a PNG argument; the WebP encoder ignores it, so quality was Pillow's 80."""
-    kw = crop_save_kwargs("WEBP", has_alpha=False, lossless=True, quality=95, dpi=None)
-    assert kw == {"lossless": True}
+    """compress_level is a PNG argument; the WebP encoder ignores it, so quality was Pillow's 80.
+
+    In lossless mode `quality` is encoder effort rather than fidelity, so it is still passed -
+    0 writes an exact crop in 5.0 ms against 60.2 ms at the default, for 12% more bytes.
+    """
+    kw = crop_save_kwargs("WEBP", has_alpha=False, lossless=True, quality=0, dpi=None)
+    assert kw == {"lossless": True, "quality": 0}
+    assert "compress_level" not in kw
+
+
+def test_lossless_effort_setting_still_round_trips_exactly(tmp_path, rgb):
+    """The speed knob must not quietly become a fidelity knob."""
+    import torch
+
+    crop = torch.from_numpy(rgb).permute(2, 0, 1)
+    for q in (0, 50, 100):
+        out = TensorPredictions._save_1_crop(
+            crop, None, str(tmp_path / f"q{q}.webp"), None, True, q
+        )
+        with Image.open(out) as im:
+            assert np.array_equal(np.asarray(im.convert("RGB")), rgb), f"effort {q} was not exact"
 
 
 def test_webp_lossy_uses_quality():
