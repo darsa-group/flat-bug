@@ -356,3 +356,58 @@ def test_both_lists_are_unioned_without_duplication():
     _, val = _from_trainer(["broto2025", "artaxor-bbox"], ["artaxor-bbox"])
     assert val.count("artaxor-bbox") == 1
     assert "broto2025" in val
+
+
+def test_has_mask_reaches_the_loss_under_e2e():
+    """The flag must survive YOLO26's E2ELoss, which bypasses `__call__`.
+
+    This is the regression that cost a 300-epoch run. E2ELoss holds two v8SegmentationLoss
+    instances and calls `self.one2many.loss(...)` / `self.one2one.loss(...)` directly, so a
+    wrapper placed on `__call__` never fires. Nothing errors: has_mask simply stays None, the
+    patched loop reads `usable = has_mask is None or ...` as True for every image, and every
+    bbox-only rectangle is trained as a real mask. The measured cost on ArTaxOr was -0.163
+    mask F1 and -0.071 mask IoU.
+
+    The stand-in replaces v8SegmentationLoss.loss on the CLASS rather than overriding it in a
+    subclass: a subclass method would shadow the patch and read None whether or not the fix is
+    present, which is exactly the mistake that made the first diagnosis of this bug ambiguous.
+    """
+    from ultralytics.utils.loss import E2ELoss
+
+    from flat_bug.bbox_only_loss import _current_has_mask, bbox_only_segmentation_loss
+
+    seen = []
+
+    def recorder(self, preds, batch):
+        seen.append(_current_has_mask())
+        return (torch.zeros(1), torch.zeros(4))
+
+    class Probe(ultralytics_loss.v8SegmentationLoss):
+        def __init__(self):
+            pass
+
+    original = ultralytics_loss.v8SegmentationLoss.loss
+    ultralytics_loss.v8SegmentationLoss.loss = recorder
+    try:
+        with bbox_only_segmentation_loss():
+            e2e = E2ELoss.__new__(E2ELoss)
+            e2e.one2many, e2e.one2one = Probe(), Probe()
+            e2e.o2m = e2e.o2o = 1.0
+            e2e.one2many.parse_output = lambda p: {"one2many": None, "one2one": None}
+            flags = [False, True, True]
+            e2e(None, {"has_mask": flags, "img": None})
+    finally:
+        ultralytics_loss.v8SegmentationLoss.loss = original
+
+    assert len(seen) == 2, "both heads must be covered, not just one"
+    for got in seen:
+        assert got is not None, "has_mask never reached the loss - bbox-only masking is inert"
+        assert list(got) == flags
+
+
+def test_state_is_restored_after_the_loss():
+    """A leaked flag would apply the previous batch's masking to the next one."""
+    from flat_bug.bbox_only_loss import _current_has_mask, bbox_only_segmentation_loss
+
+    with bbox_only_segmentation_loss():
+        assert _current_has_mask() is None

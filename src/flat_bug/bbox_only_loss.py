@@ -1,9 +1,13 @@
 """Exclude bbox-only images from the segmentation loss, without touching anything else.
 
 `calculate_segmentation_loss` receives no `batch`, so the per-image `has_mask` flag is stashed
-by wrapping the criterion's `__call__` and read by the patched loop. Both patches are applied
-to the CLASS, because YOLO26 wraps two `v8SegmentationLoss` instances inside `E2ELoss`
+by wrapping the criterion's `loss` and read by the patched loop. Both patches are applied to
+the CLASS, because YOLO26 wraps two `v8SegmentationLoss` instances inside `E2ELoss`
 (one2many and one2one) and an instance-level patch would miss both.
+
+`loss` and not `__call__`: E2ELoss calls `self.one2many.loss(...)` directly, so a wrapper on
+`__call__` never runs and every bbox-only rectangle gets trained as a real mask without any
+error being raised. `test_has_mask_reaches_the_loss_under_e2e` pins this.
 
 Two things this must get right:
 
@@ -69,15 +73,24 @@ def _patched_calculate_segmentation_loss(
     return loss / max(n_valid, 1)
 
 
-def _wrap_call(orig):
-    def call(self, preds, batch):
+def _wrap_loss(orig):
+    """Stash the batch's has_mask flags around one loss evaluation.
+
+    This wraps `loss`, NOT `__call__`. YOLO26's E2ELoss holds two v8SegmentationLoss instances
+    and calls `self.one2many.loss(...)` / `self.one2one.loss(...)` directly, so `__call__` is
+    never reached and a wrapper placed there never fires: has_mask stays None, the patched loop
+    reads `usable = has_mask is None or ...` as True for every image, and bbox-only rectangles
+    are trained as real masks - silently, because nothing errors. `loss` covers both paths,
+    since `__call__` delegates to it and E2ELoss invokes it directly.
+    """
+    def loss(self, preds, batch):
         prev = getattr(_state, "has_mask", None)
         _state.has_mask = batch.get("has_mask") if isinstance(batch, dict) else None
         try:
             return orig(self, preds, batch)
         finally:
             _state.has_mask = prev
-    return call
+    return loss
 
 
 _ENABLED = False
@@ -93,7 +106,7 @@ def enable_bbox_only_segmentation_loss() -> None:
     if _ENABLED:
         return
     v8SegmentationLoss.calculate_segmentation_loss = _patched_calculate_segmentation_loss
-    v8SegmentationLoss.__call__ = _wrap_call(v8SegmentationLoss.__call__)
+    v8SegmentationLoss.loss = _wrap_loss(v8SegmentationLoss.loss)
     _ENABLED = True
 
 
@@ -101,11 +114,11 @@ def enable_bbox_only_segmentation_loss() -> None:
 def bbox_only_segmentation_loss():
     """Enable per-image mask-loss masking for the duration of the block (used by tests)."""
     o_calc = v8SegmentationLoss.calculate_segmentation_loss
-    o_call = v8SegmentationLoss.__call__
+    o_loss = v8SegmentationLoss.loss
     v8SegmentationLoss.calculate_segmentation_loss = _patched_calculate_segmentation_loss
-    v8SegmentationLoss.__call__ = _wrap_call(o_call)
+    v8SegmentationLoss.loss = _wrap_loss(o_loss)
     try:
         yield
     finally:
         v8SegmentationLoss.calculate_segmentation_loss = o_calc
-        v8SegmentationLoss.__call__ = o_call
+        v8SegmentationLoss.loss = o_loss
