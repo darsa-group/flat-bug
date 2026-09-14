@@ -28,6 +28,14 @@ def test_resume_load_is_not_weights_only():
     )
 
 
+def test_resume_load_maps_to_cpu():
+    """The checkpoint records the device its tensors lived on; loading it elsewhere raises."""
+    src = inspect.getsource(T.apply_overrides_to_checkpoint)
+    assert 'map_location="cpu"' in src, (
+        "without map_location a checkpoint saved on cuda:0 cannot be read on a CPU-only host"
+    )
+
+
 def test_custom_eval_keys_are_optional():
     """A config that omits the fb_custom_eval keys must not raise, which is the resume case."""
     src = inspect.getsource(T.FlatBugSegmentationTrainer.__init__)

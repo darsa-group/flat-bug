@@ -240,7 +240,10 @@ def apply_overrides_to_checkpoint(overrides):  # noqa: D103
     # weights_only=False: a training checkpoint holds the pickled model and optimiser state,
     # not just tensors, and torch >= 2.6 defaults weights_only to True - so the stock call
     # raises UnpicklingError on every flat-bug checkpoint.
-    resume_ckpt = torch.load(resume_model, weights_only=False)
+    # map_location="cpu": the checkpoint records the device its tensors lived on, so loading
+    # it anywhere without a matching CUDA device raises. The trainer moves the model to the
+    # target device afterwards, so CPU is both safe and correct here.
+    resume_ckpt = torch.load(resume_model, weights_only=False, map_location="cpu")
     logger.debug("Replacing values in `resume_ckpt`...")
     # Enforce overrides
     for k, v in overrides.items():
