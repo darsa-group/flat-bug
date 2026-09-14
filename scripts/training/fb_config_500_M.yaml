@@ -1,0 +1,127 @@
+# 500 epochs, medium backbone, on the EXIF-corrected corpus (flatbug-dir4).
+#
+# Why 500 and not 300: the finished 300-epoch run had NOT converged. Loss reduction per
+# 25-epoch window accelerated through the last third rather than decaying - box loss fell 2.9%
+# in the 150-175 window against 5.5% in 275-300 - and validation mask mAP50-95 rose at every
+# one of its twelve validation points, gaining +0.0085 in the last measured interval (251-276),
+# more than the +0.0030 of the interval before it. End-to-end F1 likewise, 0.8928 at epoch 225
+# to 0.8982 at 250. The run was cut off mid-descent, so schedule length, not capacity, looks
+# like the binding constraint.
+#
+# The learning rate is what ties this together: with linear decay, `epochs` sets where the
+# anneal ends, so 300 was not a stopping point the model reached but one the schedule imposed.
+# At 500 the same lr0/lrf span 500 epochs, so the decay is gentler and the run spends longer at
+# useful learning rates - it is not simply "300 plus 200 more".
+#
+# Cost: 500 x ~12 min = ~100 h, which EXCEEDS the 96 h wall limit. Hence --resume must work,
+# and it now does (three faults fixed). Submit the continuation against last.pt if the wall is
+# hit; last.pt is written every epoch whatever save_period says.
+#
+#
+# Requires scripts/training/resync_cvat_data.sh to have been run first: this config assumes
+# the corpus rebuilt from CVAT on or after 2026-09-10, which excludes broto2025 and includes
+# the new boxes-only datasets.
+#
+# Choices, each traceable to a measurement in this repo rather than preference:
+#
+# fb_sample_weight: area
+#     Drops the instance-count factor from the historical weighting. In the coverage-10
+#     experiment (10 train / 24 held-out datasets) `area` cost 0.012 crop mask mAP50-95
+#     against `current` in-domain, but the held-out end-to-end comparison could not separate
+#     them: two identical runs differing only by seed varied by 0.023 mean F1 across the 24
+#     held-out datasets, which is larger than any difference between the samplers. So this is
+#     chosen for being simpler and not measurably worse, NOT for being better.
+#
+# fb_zoom_prob: 0.2
+#     Realised rate is ~17%, not 20% - ZoomCrop returns None when an image holds no instance
+#     at least fb_zoom_min_px across, and MaybeZoomCrop then falls back to a normal crop.
+#     Occupancy/min_scale/jitter are arm B's measured values; see fb_config_zoom50b_GHPC.yaml.
+#     Costs ~0.002 mask mAP50-95, and is what makes the inference-time refiner work at all.
+#
+# fb_bbox_only_datasets
+#     Boxes trusted, polygons not. Names must match the image-basename prefix that
+#     fb_prepare_data derives from the CVAT task name. Verified against the cloned COCO on
+#     2026-09-10: each of these carries 0% polygon annotations, every other dataset >=96.7%.
+#     MAMBOcrops-bbox IS included now - fb_clone_data pulls the frames of individually
+#     completed jobs, so its 3-of-38 finished jobs contribute 599 images. Leaving it out while
+#     its rectangles are in the corpus is the failure that cost 0.19 mask F1 on ArTaxOr.
+#     bugbox-bulk-bbox is a prefix: the task is bugbox-bulk-bbox-downscaled, and it does not
+#     match the separate `bugbox` segmentation dataset.
+#
+# fb_samples_per_epoch: absent
+#     Left unset so the epoch is the historical 2 x corpus (_oversample_factor = 2), which on
+#     the resynced corpus is ~37k samples. Setting it lower is actively harmful: generate_indices
+#     floors every image at one draw, so a budget near the image count spends nearly all of it
+#     satisfying the floor and the weighting does nothing. At 20000 on ~18.6k images, 94% of
+#     images sat at the floor; at 2x it is ~35%, matching every run to date.
+#
+#     Cost: 300 x ~37k = 11.2M samples, about 107 h on one L40S, or ~64 h on two.
+#
+# device: [0, 1] and batch: 16  -- READ THIS BEFORE CHANGING EITHER
+#     Measured on the same corpus (~31.3k samples/epoch): one GPU at batch 8 runs an epoch in
+#     16:49 (31.0 img/s), two GPUs at batch 16 in 10:03 (52.1 img/s). That is 1.67x, not 2x -
+#     find_unused_parameters, gradient all-reduce and worker contention take the rest.
+#
+#     ultralytics treats `batch` as the TOTAL across ranks and divides it, so batch 16 is 8 per
+#     GPU. That choice is deliberate, and it is a trade-off with no free side, because this
+#     ultralytics build has no sync_bn:
+#       batch 16 -> 8 per GPU. BatchNorm sees 8 samples, exactly as every previous flat-bug
+#                   run did, but gradients are averaged over 16, so the EFFECTIVE OPTIMISATION
+#                   BATCH DOUBLES and the run takes half as many optimiser steps per epoch
+#                   (1962 vs 3908).
+#       batch 8  -> 4 per GPU. Optimiser semantics match previous runs exactly, but BatchNorm
+#                   statistics come from 4 samples, and the smaller per-device batch gives up
+#                   much of the speedup.
+#     Taken here: batch 16. lr0 is left at 0.01 rather than linearly scaled to 0.02, because
+#     doubling the learning rate of an SGD run is not something this repo has ever measured and
+#     early instability would cost more than the schedule mismatch. If the loss curve looks
+#     slack against fb_axbcontain over the first epochs, lr0 is the knob.
+#
+# save_period: 25
+#     Two things at once, because flat-bug's trainer gates validation on it:
+#     `validate()` runs only when epoch % save_period == 0, and ultralytics additionally writes
+#     an archival epochN.pt on the same schedule. Validation is not cheap - measured ~450 s a
+#     time from fb_axbcontain (55,160 s wall minus 50 x 1009 s of training, over the 10
+#     validations its 40 "Skipped validation" lines imply). At the fb_train default of 5 that
+#     is 60 validations, 7.5 h; at 25 it is 12, about 1.5 h.
+#
+#     Safe to lengthen because last.pt is written EVERY epoch regardless of save_period, so a
+#     crash still costs at most one epoch. What does change: `fitness` only updates on a
+#     validated epoch, so best.pt is reconsidered 12 times rather than 60. With patience 9999
+#     there is no early-stopping interaction, and for a run whose checkpoint we pick by
+#     end-to-end evaluation afterwards rather than by fitness, that granularity is not load-bearing.
+#
+# workers: 12
+#     nw = min(os.cpu_count() // n_devices, workers), applied PER RANK. 12 x 2 ranks = 24,
+#     which is the -c 24 the sbatch asks for. Leaving this at 24 would spawn 48 workers.
+
+batch: 16
+model: "yolo26m-seg.pt"
+epochs: 500
+device: [0, 1]
+patience: 9999
+save_period: 25
+lr0: 0.01
+lrf: 0.00001
+optimizer: 'SGD'
+workers: 12
+
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_prob: 0.0
+
+fb_sample_weight: area
+
+fb_exclude_datasets: []
+fb_bbox_only_datasets:
+  - artaxor-bbox
+  - AMI-traps-2024-bbox
+  - UrbanInsects-bbox
+  - bugbox-bulk-bbox
+  - MAMBOcrops-bbox
+
+fb_zoom_prob: 0.2
+fb_zoom_min_px: 100
+fb_zoom_occupancy: [0.40, 0.50]
+fb_zoom_min_scale: 0.15
+fb_zoom_jitter: 0.08
