@@ -234,7 +234,13 @@ def apply_overrides_to_checkpoint(overrides):  # noqa: D103
         raise FileNotFoundError(f"Resume checkpoint {resume_model} not found.")
     # Load original checkpoint
     logger.debug(f"Loading checkpoint for resuming {resume_model} to `resume_ckpt`")
-    resume_ckpt = torch.load(resume_model)
+    # weights_only=False: a training checkpoint holds the pickled model and optimiser state,
+    # not just tensors, and torch >= 2.6 defaults weights_only to True, so the stock call
+    # raises UnpicklingError on every flat-bug checkpoint.
+    # map_location="cpu": the checkpoint records the device its tensors lived on, so loading it
+    # anywhere without a matching CUDA device raises. The trainer moves the model to the target
+    # device afterwards, so CPU is both safe and correct here.
+    resume_ckpt = torch.load(resume_model, weights_only=False, map_location="cpu")
     logger.debug("Replacing values in `resume_ckpt`...")
     # Enforce overrides
     for k, v in overrides.items():
@@ -302,9 +308,12 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
         self._max_instances = custom_fb_args["fb_max_instances"]
         self._max_images = custom_fb_args["fb_max_images"]
         self._exclude_datasets = custom_fb_args["fb_exclude_datasets"]
-        self.custom_eval = custom_fb_args["fb_custom_eval"]
+        # .get with defaults, not hard indexing: on resume, fb_train rebuilds `overrides` from
+        # the checkpoint rather than from DEFAULT_CONF, so any fb_* key the config does not set
+        # is simply absent and a hard index raises KeyError before training can start.
+        self.custom_eval = custom_fb_args.get("fb_custom_eval", False)
         self._do_custom_eval = False  # This is a dynamic signalling flag, not a hyperparameter
-        self._custom_num_images = custom_fb_args["fb_custom_eval_num_images"]
+        self._custom_num_images = custom_fb_args.get("fb_custom_eval_num_images", -1)
         assert self._custom_num_images != 0, (
             "fb_custom_eval_num_images/custom_eval_num_images cannot be 0. "
             "If you mean to disable custom eval set fb_custom_eval/custom_eval=False."
