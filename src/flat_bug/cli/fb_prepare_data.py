@@ -10,6 +10,7 @@ import shutil
 import tempfile
 
 import yaml
+from PIL import Image, ImageOps
 from ultralytics.data.converter import convert_coco
 
 # TODO: fixme
@@ -104,6 +105,64 @@ def prepare_coco_file(source_file, image_list, out):
         json.dump(coco, f)
 
 
+# EXIF orientation, unnamed in the file but 0x0112 in the spec.
+_EXIF_ORIENTATION = 274
+
+
+def copy_image_upright(src: str, dst: str) -> bool:
+    """Copy an image, baking in any EXIF rotation. Returns True if it had to be re-encoded.
+
+    Annotators see the EXIF-upright image - CVAT applies the tag and records the rotated
+    width/height - so the exported COCO boxes, and the YOLO labels derived from them, live in
+    the upright frame. The consumers then disagree: training reads with `cv2.imread`, which
+    ignores EXIF, while `Predictor` reads with `decode_image(apply_exif_orientation=True)`,
+    which does not. On a tagged image those two frames differ by a transpose, so the labels
+    land somewhere else entirely during training - with no error, no warning, and no symptom
+    beyond a dataset that mysteriously underperforms.
+
+    Normalising here fixes every consumer at once, which patching two loaders would not.
+    Untagged images are copied byte-for-byte, so only the handful that carry a rotation are
+    re-encoded and the corpus takes no generation loss it did not already have.
+    """
+    try:
+        with Image.open(src) as im:
+            if im.getexif().get(_EXIF_ORIENTATION, 1) in (1, None):
+                shutil.copy(src, dst)
+                return False
+            ImageOps.exif_transpose(im).convert("RGB").save(dst, quality=97, subsampling=0)
+            return True
+    except Exception as e:
+        logging.warning(f"Could not read EXIF from {src} ({type(e).__name__}); copying as-is")
+        shutil.copy(src, dst)
+        return False
+
+
+def assert_no_exif_rotation(directory: str) -> None:
+    """Fail loudly if any prepared image still carries a rotation tag.
+
+    The invariant this protects: the prepared corpus is orientation-free, so it does not
+    matter which loader reads it. Only one dataset of 40 has ever had the tag, which is
+    exactly why it needs an assertion rather than vigilance.
+    """
+    bad = []
+    for root, _, files in os.walk(directory):
+        for f in files:
+            if not f.lower().endswith((".jpg", ".jpeg")):
+                continue
+            path = os.path.join(root, f)
+            try:
+                with Image.open(path) as im:
+                    if im.getexif().get(_EXIF_ORIENTATION, 1) not in (1, None):
+                        bad.append(path)
+            except Exception:
+                continue
+    assert not bad, (
+        f"{len(bad)} prepared images still carry EXIF orientation, so training (cv2, ignores "
+        f"EXIF) and inference (decode_image, applies it) would disagree: {bad[:3]}"
+    )
+
+
+
 def main():
     args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
 
@@ -176,6 +235,7 @@ def main():
                 datasets.append(d)
     assert len(datasets) > 0, f"Did not find any datasets in {COCO_DATA_ROOT}"
 
+    n_rotated = 0
     for d in datasets:
         source_dir = os.path.join(COCO_DATA_ROOT, d)
         tmp_dir = tempfile.mkdtemp(prefix="tmp-fb-")
@@ -239,7 +299,10 @@ def main():
                 logging.info(f"{im_basename} -> {subset}")
 
                 shutil.move(f, os.path.join(tmp_dir, OUT_COCO_CONVERTER, os.path.join(subset, new_bn_se + ".txt")))
-                shutil.copy(im_path, os.path.join(tmp_dir, OUT_COCO_CONVERTER_IMAGES, subset, new_bn_se + ".jpg"))
+                if copy_image_upright(
+                    im_path, os.path.join(tmp_dir, OUT_COCO_CONVERTER_IMAGES, subset, new_bn_se + ".jpg")
+                ):
+                    n_rotated += 1
 
             if len(validation_files) == 0:
                 logging.warning(f"No validation files for {d}")
@@ -266,6 +329,13 @@ def main():
         finally:
             if os.path.isdir(tmp_dir):
                 shutil.rmtree(tmp_dir)
+
+    if n_rotated:
+        logging.info(
+            f"Baked EXIF rotation into {n_rotated} images so training (cv2) and inference "
+            f"(decode_image) see the same frame"
+        )
+    assert_no_exif_rotation(PREPARED_DATA_TARGET_SUBDIR)
 
     for subset in {"val", "train"}:
         all_json = [f for f in sorted(glob.glob(os.path.join(PREPARED_DATA_TARGET_SUBDIR, "labels", subset, "*.json")))]
