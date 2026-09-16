@@ -47,6 +47,16 @@ except ImportError:
 from ultralytics.utils.files import increment_path
 from ultralytics.utils.torch_utils import smart_inference_mode, torch_distributed_zero_first
 
+try:  # ultralytics >= 8.4 canonicalises `device` for us
+    from ultralytics.utils.torch_utils import parse_device
+except ImportError:  # older releases leave the list alone, and `_setup_ddp` cannot split it
+
+    def parse_device(device):  # noqa: D103
+        if isinstance(device, (list, tuple)):
+            return ",".join(str(d) for d in device)
+        return device
+
+
 from flat_bug import logger
 from flat_bug.bbox_only_loss import enable_bbox_only_segmentation_loss
 from flat_bug.bbox_only_val import FlatBugSegmentationValidator
@@ -405,6 +415,14 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
         super().__init__(cfg, overrides, _callbacks, *args, **kwargs)
         if updated_overrides.get("resume", False):
             self.args.__dict__.update(updated_overrides)
+            # `BaseTrainer.__init__` normalises some args and derives attributes from others.
+            # Slamming the raw config dict in afterwards bypasses both: `device: [0, 1, ...]`
+            # goes back to a list, which `_setup_ddp` cannot `.split(",")`, and epochs/batch/
+            # save_period stop agreeing with the values the training loop actually reads.
+            self.args.device = parse_device(self.args.device)
+            self.epochs = self.args.epochs or 100
+            self.batch_size = self.args.batch
+            self.save_period = self.args.save_period
         
         # But we need to add them back, otherwise they will be missing in DDP mode
         self.args.__dict__.update(custom_fb_args)

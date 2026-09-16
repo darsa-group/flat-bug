@@ -29,7 +29,7 @@ import ultralytics.utils as ultralytics_utils
 import yaml
 
 from flat_bug import logger
-from flat_bug.trainers import FlatBugSegmentationTrainer
+from flat_bug.trainers import FlatBugSegmentationTrainer, parse_device
 
 
 def _make_parser() -> argparse.ArgumentParser:
@@ -189,6 +189,11 @@ def main():  # noqa: D103
     ):
         os.environ["MKL_THREADING_LAYER"] = "GNU"
         os.environ["OMP_NUM_THREADS"] = str(overrides["workers"])
+
+    # `device: [0, 1, ...]` is the natural spelling in a YAML config, but ultralytics wants the
+    # canonical comma string: `_setup_ddp` does `args.device.split(",")[LOCAL_RANK]`. Normalising
+    # it here means the list never survives into the checkpoint or the generated DDP file.
+    overrides["device"] = parse_device(overrides["device"])
 
     # Ensure that `~` is not interpreted literally in arguments
     for k in overrides:

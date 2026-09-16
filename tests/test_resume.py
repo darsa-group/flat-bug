@@ -173,3 +173,23 @@ def test_stripped_checkpoint_falls_back_to_the_csv(tmp_path):
     T.apply_overrides_to_checkpoint(overrides)
     patched = torch.load(overrides["resume"], weights_only=False, map_location="cpu")
     assert patched["epoch"] == 11
+
+
+def test_device_list_is_canonicalised(monkeypatch, tmp_path):
+    """`_setup_ddp` does `args.device.split(",")[LOCAL_RANK]`, so a list kills every rank.
+
+    `BaseTrainer.__init__` calls `parse_device` for exactly this reason. The resume path then
+    re-applied the raw config dict on top, putting the YAML list straight back.
+    """
+    from flat_bug.trainers import parse_device
+
+    assert parse_device([0, 1, 2, 3, 4, 5, 6, 7]) == "0,1,2,3,4,5,6,7"
+    src = inspect.getsource(T.FlatBugSegmentationTrainer.__init__)
+    assert "self.args.device = parse_device(self.args.device)" in src
+    # The derived attributes are read by the training loop, not args, so they need resyncing too.
+    for attr in ("self.epochs =", "self.batch_size =", "self.save_period ="):
+        assert attr in src, f"{attr} not re-derived after the raw args update"
+
+    import flat_bug.cli.fb_train as ft
+
+    assert 'overrides["device"] = parse_device(overrides["device"])' in inspect.getsource(ft)
