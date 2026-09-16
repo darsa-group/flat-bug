@@ -7,7 +7,7 @@ The ``flatbug`` training script uses a lightly modified YOLO training interface
 See `scripts/experiments/best_train/default.yaml` for an example training config.
 
 Usage:
-    ``fb_train [-d DATA_DIR] [-c CONFIG_FILE] [-r]``
+    ``fb_train [-d DATA_DIR] [-c CONFIG_FILE] [-r [CKPT]]``
 
 
 Options:
@@ -16,7 +16,8 @@ Options:
                         The directory containing the prepared data (i.e., the output of  `fb_prepare.py`
     -c CONFIG_FILE, --config-file CONFIG_FILE
                         A YAML-formatted config file that overrides the default training meta-parameters
-    -r, --resume          resume training
+    -r [CKPT], --resume [CKPT]
+                        resume training, optionally from the given checkpoint
 """
 
 import argparse
@@ -29,6 +30,41 @@ import yaml
 
 from flat_bug import logger
 from flat_bug.trainers import FlatBugSegmentationTrainer
+
+
+def _make_parser() -> argparse.ArgumentParser:
+    """The CLI parser, lifted out of `main` so the flags can be tested without training."""
+    args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
+    args_parse.add_argument(
+        "-d",
+        "--data-dir",
+        dest="data_dir",
+        help="The directory containing the prepared data (i.e., the output of  `fb_prepare.py`",
+        type=str,
+    )
+
+    args_parse.add_argument(
+        "-c",
+        "--config-file",
+        dest="config_file",
+        help="A YAML-formatted config file that overrides the default training meta-parameters",
+        default=None,
+    )
+
+    # nargs="?" so both spellings work: `-r` alone resumes from the config's `model:`, and
+    # `-r path/to/last.pt` names the checkpoint directly. It used to be a bare store_true, which
+    # meant `-r last.pt` left the path in `extra`, where the pairwise loop below dropped it
+    # silently and training restarted from the pretrained weights while claiming to resume.
+    args_parse.add_argument(
+        "-r",
+        "--resume",
+        dest="resume",
+        nargs="?",
+        const=True,
+        default=False,
+        help="resume training, optionally from the given checkpoint (default: the `model` override)",
+    )
+    return args_parse
 
 
 # fixme, resume should continue on the same "run folder"
@@ -61,26 +97,14 @@ def main():  # noqa: D103
         "fb_exclude_datasets": [],
         "cache": False,
     }
-    args_parse = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-    args_parse.add_argument(
-        "-d",
-        "--data-dir",
-        dest="data_dir",
-        help="The directory containing the prepared data (i.e., the output of  `fb_prepare.py`",
-        type=str,
-    )
-
-    args_parse.add_argument(
-        "-c",
-        "--config-file",
-        dest="config_file",
-        help="A YAML-formatted config file that overrides the default training meta-parameters",
-        default=None,
-    )
-
-    args_parse.add_argument("-r", "--resume", dest="resume", help="resume training", action="store_true")
+    args_parse = _make_parser()
 
     args, extra = args_parse.parse_known_args()
+    if len(extra) % 2:
+        raise ValueError(
+            f"Unpaired trailing argument: {extra[-1]}\nOverrides must be given as `--key value` pairs.\n"
+            + args_parse.format_help()
+        )
     cli_overrides = {}
     for key, value in zip(extra[::2], extra[1::2]):
         if not key.startswith("--"):
@@ -136,10 +160,14 @@ def main():  # noqa: D103
     ultralytics_utils.DATASETS_DIR = Path(option_dict["data_dir"])
 
     if option_dict["resume"]:
-        assert os.path.isfile(overrides["model"]), (
-            f"Trying to resume from a model that does not seem to be a valid file: {overrides['model']}"
+        resume_from = (
+            option_dict["resume"] if isinstance(option_dict["resume"], str) else overrides.get("model")
         )
-        overrides["resume"] = overrides["model"]
+        assert resume_from and os.path.isfile(resume_from), (
+            f"Trying to resume from a model that does not seem to be a valid file: {resume_from}"
+        )
+        overrides["model"] = resume_from
+        overrides["resume"] = resume_from
         if (old_optim := overrides.pop("optimizer", None)) is not None:
             logger.warning(
                 f"Ignored optimizer '{old_optim}' - YOLO does not support changing the optimizer while training."

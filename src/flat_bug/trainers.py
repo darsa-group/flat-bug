@@ -226,13 +226,20 @@ def replaceattr(
 def apply_overrides_to_checkpoint(overrides):  # noqa: D103
     if not overrides.get("resume", False):
         return
+    # Under DDP the parent process has already rewritten the checkpoint and pointed `resume` and
+    # `model` at the patched copy, which the ranks inherit through the generated DDP file. Doing
+    # it again here would fork one temporary checkpoint per rank, each with its own
+    # `increment_path` save_dir, so the ranks would write to different run directories.
+    if "LOCAL_RANK" in os.environ:
+        return
     resume_model = overrides["resume"]
-    _, ckpt_ext = os.path.splitext(resume_model)
-    if not isinstance(resume_model, str):
+    if not isinstance(resume_model, (str, os.PathLike)):
         raise NotImplementedError(
-            "`flat-bug` currently onyl supports resuming training from a file. "
+            "`flat-bug` currently only supports resuming training from a file. "
             f"Please specify resume=<checkpoint>.pt instead of resume={resume_model}"
         )
+    resume_model = os.fspath(resume_model)
+    _, ckpt_ext = os.path.splitext(resume_model)
     if not os.path.exists(resume_model):
         raise FileNotFoundError(f"Resume checkpoint {resume_model} not found.")
     # Load original checkpoint
@@ -272,7 +279,17 @@ def apply_overrides_to_checkpoint(overrides):  # noqa: D103
     prior_epochs = resume_ckpt["train_results"]["epoch"]
     if len(prior_epochs) == 0 or max(prior_epochs) < 1:
         raise ValueError("Checkpoint doesn't contain enough information to restart training.")
-    resume_ckpt["epoch"] = max(prior_epochs)
+    # results.csv counts epochs from 1, `ckpt["epoch"]` from 0, and ultralytics resumes at
+    # `ckpt["epoch"] + 1` - so taking the csv number wholesale skipped one epoch per restart.
+    # The checkpoint's own counter is authoritative whenever it survived: `strip_optimizer`
+    # stamps -1 on the checkpoints of a finished run, and only then do we fall back to the csv.
+    ckpt_epoch = resume_ckpt.get("epoch", -1)
+    if not isinstance(ckpt_epoch, int) or ckpt_epoch < 0:
+        ckpt_epoch = max(prior_epochs) - 1
+    resume_ckpt["epoch"] = ckpt_epoch
+    # Loud, because the failure mode that matters is the quiet one: a resume that restarts from
+    # scratch still trains happily, and only the epoch counter in this line gives it away.
+    logger.info(f"Resuming {resume_model} after epoch {resume_ckpt['epoch']} of {resume_ckpt['train_args']['epochs']}")
     # Save the new checkpoint to a temporary file
     tmp_resume_weight_dir = os.path.join(overrides["project"], "resume_weights")
     os.makedirs(tmp_resume_weight_dir, exist_ok=True)
@@ -392,7 +409,11 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
         # But we need to add them back, otherwise they will be missing in DDP mode
         self.args.__dict__.update(custom_fb_args)
         if updated_overrides.get("resume", False):
-            self.args.resume = True
+            # Keep the checkpoint PATH here, never a bare True. `generate_ddp_file` serialises
+            # `vars(self.args)` into the file each rank runs, so a True would reach the ranks,
+            # where ultralytics' `check_resume` falls back to `get_latest_run()` - the newest
+            # last.pt anywhere under runs/, quite possibly another experiment.
+            self.args.resume = os.fspath(updated_overrides["resume"])
         self.add_callback("on_train_epoch_start", FlatBugSegmentationTrainer.log_lr)
         # self.use_ewa_sampler()
 

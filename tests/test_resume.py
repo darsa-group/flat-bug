@@ -74,3 +74,102 @@ def test_real_checkpoint_round_trips(tmp_path):
     if stock_ok:
         import pytest
         pytest.skip("this torch still defaults weights_only=False; the fix is future-proofing")
+
+
+# ---------------------------------------------------------------------------
+# Faults four and five, both found by the first DDP resume on GenomeDK.
+#
+#   * `-r` was `action="store_true"`, so `-r last.pt` left the path in `extra`, where the
+#     pairwise `--key value` loop dropped it without a word. The run then "resumed" from the
+#     config's `model: yolo26m-seg.pt` - a real checkpoint with real train_results - so it
+#     started over from the COCO pretrain while every log line said resume.
+#   * `__init__` overwrote `self.args.resume` with the bare `True`. `generate_ddp_file`
+#     serialises `vars(self.args)` into the file each rank executes, so the ranks got a bool:
+#     `os.path.splitext(True)` raised TypeError, and had it not, ultralytics' `check_resume`
+#     would have fallen back to `get_latest_run()` and resumed somebody else's run.
+# ---------------------------------------------------------------------------
+
+import os
+
+import pytest
+
+from flat_bug.cli.fb_train import _make_parser
+
+
+def _ckpt(tmp_path, name="last.pt", epochs=500, done=12):
+    """A checkpoint shaped like the ones the trainer writes."""
+    ckpt = {
+        "epoch": done,
+        "model": torch.nn.Linear(2, 2),
+        "train_args": {"epochs": epochs, "model": str(tmp_path / "src.pt")},
+        "train_results": {"epoch": list(range(1, done + 1))},
+    }
+    p = tmp_path / name
+    torch.save(ckpt, p)
+    return p
+
+
+def test_resume_flag_keeps_its_path():
+    args, extra = _make_parser().parse_known_args(["-r", "/runs/x/weights/last.pt"])
+    assert args.resume == "/runs/x/weights/last.pt", "the checkpoint path must not be swallowed"
+    assert extra == [], "a swallowed path lands here, where main() silently discards it"
+
+
+def test_bare_resume_still_means_true():
+    args, _ = _make_parser().parse_known_args(["-r"])
+    assert args.resume is True
+    assert _make_parser().parse_known_args([])[0].resume is False
+
+
+def test_resume_rejects_a_bool_checkpoint(tmp_path):
+    """What a DDP rank used to receive. A clear error beats TypeError from posixpath."""
+    with pytest.raises(NotImplementedError, match="resume=<checkpoint>.pt"):
+        T.apply_overrides_to_checkpoint({"resume": True, "project": str(tmp_path), "name": "r"})
+
+
+def test_resume_rewrites_the_checkpoint(tmp_path):
+    src = _ckpt(tmp_path)
+    overrides = {"resume": str(src), "project": str(tmp_path / "proj"), "name": "run", "epochs": 500}
+    T.apply_overrides_to_checkpoint(overrides)
+    assert overrides["resume"] != str(src), "must point at the patched copy, not the original"
+    patched = torch.load(overrides["resume"], weights_only=False, map_location="cpu")
+    assert patched["epoch"] == 12, "the epoch to continue from"
+    assert patched["train_args"]["epochs"] == 500
+
+
+def test_ddp_ranks_do_not_rewrite_the_checkpoint(tmp_path, monkeypatch):
+    """Rank-local rewrites would fork one save_dir per rank via increment_path."""
+    src = _ckpt(tmp_path)
+    monkeypatch.setenv("LOCAL_RANK", "3")
+    overrides = {"resume": str(src), "project": str(tmp_path / "proj"), "name": "run"}
+    T.apply_overrides_to_checkpoint(overrides)
+    assert overrides["resume"] == str(src), "a rank must use the parent's patched checkpoint as-is"
+    assert not os.path.exists(tmp_path / "proj" / "resume_weights")
+
+
+def test_args_resume_stays_a_path_for_ddp():
+    """`vars(self.args)` is what the DDP ranks are handed; a bool there is unrecoverable."""
+    src = inspect.getsource(T.FlatBugSegmentationTrainer.__init__)
+    assert "self.args.resume = True" not in src, "a bare True reaches every rank through generate_ddp_file"
+    assert 'self.args.resume = os.fspath(updated_overrides["resume"])' in src
+
+
+def test_resume_does_not_skip_an_epoch(tmp_path):
+    """results.csv counts from 1 and ckpt["epoch"] from 0; conflating them lost an epoch."""
+    src = _ckpt(tmp_path, done=12)  # 12 epochs finished -> ckpt["epoch"] == 11
+    torch.save({**torch.load(src, weights_only=False, map_location="cpu"), "epoch": 11}, src)
+    overrides = {"resume": str(src), "project": str(tmp_path / "p"), "name": "run"}
+    T.apply_overrides_to_checkpoint(overrides)
+    patched = torch.load(overrides["resume"], weights_only=False, map_location="cpu")
+    # ultralytics does start_epoch = ckpt["epoch"] + 1, so 11 resumes at the 13th epoch.
+    assert patched["epoch"] == 11, "one epoch silently skipped per resume, 15 over a chained run"
+
+
+def test_stripped_checkpoint_falls_back_to_the_csv(tmp_path):
+    """`strip_optimizer` stamps epoch = -1 on a finished run's weights."""
+    src = _ckpt(tmp_path, done=12)
+    torch.save({**torch.load(src, weights_only=False, map_location="cpu"), "epoch": -1}, src)
+    overrides = {"resume": str(src), "project": str(tmp_path / "p"), "name": "run"}
+    T.apply_overrides_to_checkpoint(overrides)
+    patched = torch.load(overrides["resume"], weights_only=False, map_location="cpu")
+    assert patched["epoch"] == 11
