@@ -15,8 +15,11 @@
 # ~10 min/epoch measured on this node for the 300-epoch run, so ~83 h; -t 120 leaves headroom.
 # -n 1 -c 24 with srun follows the GHPC GPU template: ONE task, which ultralytics forks into
 # two ranks itself. Asking for -n 2 would start two independent trainings on the same GPUs.
+# flatbug-dir4, not dir3: the 300-epoch L run trained on dir4, and dir1-3 are retired. The two
+# are in fact the same corpus - identical GT counts across all 41 datasets and per-dataset F1
+# within 0.002 for identical weights - but there is no reason to keep two names alive.
 set -eu
-ROOT=/usr/home/qgg/qgeiss/flatbug-dir3
+ROOT=/usr/home/qgg/qgeiss/flatbug-dir4
 REPO=/usr/home/qgg/qgeiss/flat-bug-zoom
 CFG=$REPO/scripts/training/fb_config_500_M_power.yaml
 NAME=fb500Mpow_$(date +%Y-%m-%d_%H-%M-%S)
