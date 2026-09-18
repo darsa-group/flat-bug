@@ -1,0 +1,38 @@
+# 500-epoch M run with the anneal landing five times lower than the linear schedule allows.
+#
+# Identical to fb_config_300_v2.yaml - the recipe that produced F1 0.9066 - except for the
+# epoch count and fb_lr_power. In particular batch stays 16 on 2 GPUs: ultralytics accumulates
+# gradients to nbs=64, so batch 16 x accumulate 4 is an effective batch of 64 at lr0 0.01. The
+# GenomeDK 8-GPU run set batch 64 and scaled lr0 to 0.04 on the assumption that the effective
+# batch had grown; it had not, and the 4x learning rate cost that run ~0.04 F1.
+#
+# fb_lr_power 1.262227 solves (1/500)**p * (1 - lrf) + lrf = lf_linear(499)/5, so the last
+# trained epoch runs at 4.02e-6 instead of 2.01e-5, starting from the same lr0 and sitting at
+# or below the linear curve at every epoch in between. See tests/test_lr_power.py.
+batch: 16
+model: "yolo26m-seg.pt"
+epochs: 500
+device: [0, 1]
+patience: 9999
+save_period: 25
+lr0: 0.01
+lrf: 0.00001
+fb_lr_power: 1.262227
+optimizer: 'SGD'
+workers: 12
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_prob: 0.0
+fb_sample_weight: area
+fb_exclude_datasets: []
+fb_bbox_only_datasets:
+  - artaxor-bbox
+  - AMI-traps-2024-bbox
+  - UrbanInsects-bbox
+  - bugbox-bulk-bbox
+  - MAMBOcrops-bbox
+fb_zoom_prob: 0.2
+fb_zoom_min_px: 100
+fb_zoom_occupancy: [0.40, 0.50]
+fb_zoom_min_scale: 0.15
+fb_zoom_jitter: 0.08
