@@ -85,6 +85,7 @@ def main():  # noqa: D103
         "fb_zoom_occupancy": [0.22, 0.45],
         "fb_zoom_min_scale": 1.0,
         "fb_zoom_jitter": 0.25,
+        "fb_lr_power": 1.0,
         # "optimizer": 'SGD',
         # "lr0": 0.01,
         # "lrf": 0.005,

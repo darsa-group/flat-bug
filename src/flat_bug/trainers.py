@@ -13,6 +13,7 @@ from typing import Any, overload
 
 import numpy as np
 import torch
+from torch import optim
 from ultralytics.data import build_dataloader
 from ultralytics.data.build import InfiniteDataLoader
 from ultralytics.models import yolo
@@ -381,6 +382,14 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
         self._zoom_min_scale = float(custom_fb_args.get("fb_zoom_min_scale", 1.0) or 1.0)
         self._zoom_jitter = float(custom_fb_args.get("fb_zoom_jitter", 0.25) or 0.25)
         self._sample_weight = str(custom_fb_args.get("fb_sample_weight") or "current")
+        # Exponent on the linear LR decay. ultralytics' schedule ends at roughly lr0/epochs no
+        # matter what lrf is, because lrf's floor sits three orders of magnitude below where
+        # training actually stops - so lrf cannot be used to land the anneal lower. A power > 1
+        # bends the same curve down: it starts at lr0 exactly, stays at or below the linear
+        # schedule throughout, and ends at lr0 * (1/epochs)**power. 1.0 reproduces ultralytics.
+        self._lr_power = float(custom_fb_args.get("fb_lr_power", 1.0) or 1.0)
+        if self._lr_power <= 0:
+            raise ValueError(f"fb_lr_power must be > 0, got {self._lr_power}")
         self._samples_per_epoch = custom_fb_args.get("fb_samples_per_epoch") or None
         if self._zoom_prob:
             LOGGER.info(
@@ -459,6 +468,24 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
             with _ddp_allows_unused_parameters():
                 return super()._setup_train(*args, **kwargs)
         return super()._setup_train(*args, **kwargs)
+
+    def _setup_scheduler(self):
+        """Linear decay raised to `fb_lr_power`, so the anneal can end lower than lr0/epochs.
+
+        Called by `_setup_train` and again when the mosaic dataloader is closed, so overriding
+        the method rather than patching `self.lf` keeps both paths consistent. `cos_lr` still
+        wins if it is set, since the two shapes cannot both apply.
+        """
+        super()._setup_scheduler()
+        if self.args.cos_lr or self._lr_power == 1.0:
+            return
+        power, lrf = self._lr_power, self.args.lrf
+        self.lf = lambda x: max(1 - x / self.epochs, 0) ** power * (1.0 - lrf) + lrf
+        self.scheduler = optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=self.lf)
+        LOGGER.info(
+            f"LR decay ^{power} over {self.epochs} epochs: "
+            f"lr0 {self.args.lr0:.4g} -> {self.args.lr0 * self.lf(self.epochs - 1):.3e} at the last epoch"
+        )
 
     def log_lr(self):  # noqa: D102
         LOGGER.info(f"LR: {self.scheduler.get_last_lr() if self.scheduler is not None else 'NaN'}")
