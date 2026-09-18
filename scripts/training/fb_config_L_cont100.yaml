@@ -1,0 +1,42 @@
+# Continue the finished 300-epoch L run for 100 more epochs, LR still falling linearly.
+#
+# The L run ended at lr 3.3433e-5, its schedule's last trained point. Its slope was
+# lr0/epochs = 3.33e-5 per epoch, so extrapolating that line literally reaches zero within one
+# epoch - a continuation has to choose a new, gentler ramp. This one starts at exactly the LR
+# the run stopped at and decays linearly to ~3.3e-7 over 100 epochs, so the rate never rises.
+#
+# That is why this is a fresh run initialised from best.pt rather than a --resume: resuming
+# with epochs=400 makes ultralytics evaluate lf(300) on a 400-epoch schedule, i.e. lr 2.5e-3,
+# which is 75x HIGHER than where the run left off. The cost of not resuming is that optimiser
+# momentum and EMA state start fresh; at 3e-5 that is a small price.
+#
+# warmup_epochs 0: the stock warmup ramps LR up from warmup_bias_lr over the first epoch, which
+# would put a spike at precisely the join we are trying to make smooth.
+batch: 16
+model: "/usr/home/qgg/qgeiss/flat-bug-zoom/scripts/training/runs/segment/fb300L_2026-09-14_19-05-43/weights/best.pt"
+epochs: 100
+device: [0, 1]
+patience: 9999
+save_period: 10
+lr0: 0.000033433
+lrf: 0.00001
+warmup_epochs: 0
+warmup_bias_lr: 0.0
+optimizer: 'SGD'
+workers: 12
+fb_max_instances: 9999
+fb_max_images: -1
+fb_synth_prob: 0.0
+fb_sample_weight: area
+fb_exclude_datasets: []
+fb_bbox_only_datasets:
+  - artaxor-bbox
+  - AMI-traps-2024-bbox
+  - UrbanInsects-bbox
+  - bugbox-bulk-bbox
+  - MAMBOcrops-bbox
+fb_zoom_prob: 0.2
+fb_zoom_min_px: 100
+fb_zoom_occupancy: [0.40, 0.50]
+fb_zoom_min_scale: 0.15
+fb_zoom_jitter: 0.08
