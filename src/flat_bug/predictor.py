@@ -1150,6 +1150,10 @@ class TensorPredictions:
         confs = self.confs.float().cpu().tolist()
         classes = self.classes.cpu().long().tolist()
         scales = self.scales
+        # `refined` is per-instance so a consumer can tell a second-pass polygon from a
+        # pyramid one without re-running with -v; refinement is the last step before
+        # serialisation, so no later reordering can desynchronise it from the contours.
+        refined = list(getattr(self, "refined", [False] * len(boxes)))
         areas = self.areas
         mdata = self.masks.data
         return {
@@ -1158,6 +1162,7 @@ class TensorPredictions:
             "confs": confs,
             "classes": classes,
             "scales": scales,
+            "refined": refined,
             "areas": areas,
             "image_path": self.image_path,
             "image_width": self.image.shape[2],
@@ -1272,7 +1277,7 @@ class TensorPredictions:
             if k in ["identifier", "image_height", "image_width"]:
                 continue
             # Catch attributes that don't need special treatment
-            elif k in ["scales", "contours"]:
+            elif k in ["scales", "contours", "refined"]:
                 pass
             # Bounding boxes are easy (as usual)
             elif k == "boxes":
@@ -1528,15 +1533,16 @@ class Predictor:
     """
     REFINE_MIN_PX: int = None  # type: ignore
     """
-    The smallest instance, in pixels of the original image, that refinement is \\
-    attempted on. Below this, magnification only interpolates detail that was \\
-    never resolved.
+    The smallest instance, measured as it was seen at its detection scale \\
+    (`size * scale`), that refinement is attempted on. Below this, magnification \\
+    only interpolates detail that was never resolved.
     """
     REFINE_OCCUPANCY: float = None  # type: ignore
     """
     The fraction of the tile the instance should span in its refinement crop. \\
-    This also sets the upper size bound: an instance larger than \\
-    `TILE_SIZE * REFINE_OCCUPANCY` is left alone rather than shrunk.
+    This also sets the upper size bound: an instance that was already seen larger \\
+    than `TILE_SIZE * REFINE_OCCUPANCY` at its detection scale is left alone \\
+    rather than shrunk.
     """
     REFINE_MIN_AGREEMENT: float = None  # type: ignore
     """
@@ -1899,10 +1905,14 @@ class Predictor:
             except the shapely matching stays on device.
 
         Which instances are refined
-            Those between `REFINE_MIN_PX` and `TILE_SIZE * REFINE_OCCUPANCY` across. Below the
+            Those between `REFINE_MIN_PX` and `TILE_SIZE * REFINE_OCCUPANCY` across AS SEEN at
+            the pyramid scale they were detected at - i.e. `size * scale`, not size in original
+            pixels. What matters is how well the animal was resolved when its mask was produced:
+            one 1300px across that the pyramid only ever segmented at 270px carries exactly as
+            coarse a mask as a 270px one, and gains just as much from a second look. Below the
             floor, magnification interpolates detail that was never resolved in the first place.
-            Above the ceiling the instance would have to be SHRUNK to hit the target occupancy,
-            which is the opposite of the point, so it is left exactly as it was.
+            Above the ceiling the instance was already segmented at full tile resolution and
+            would have to be SHRUNK to hit the target occupancy, so it is left exactly as it was.
 
         If the refined instance differs a lot from the original
             It is rejected and the original kept. The refiner sees one window, not the whole
@@ -1948,6 +1958,10 @@ class Predictor:
 
         """
         n = len(preds)
+        # Set before any early return: `refined` must always be readable, and "we declined to
+        # refine" is exactly as meaningful to a consumer as "we tried and it was rejected".
+        if len(getattr(preds, "refined", []) or []) != n:
+            preds.refined = [False] * n
         if not self.REFINE or n == 0:
             return preds
         if not preds.PREFER_POLYGONS:
@@ -1961,7 +1975,13 @@ class Predictor:
 
         boxes = preds.boxes.float()
         sizes = torch.maximum(boxes[:, 2] - boxes[:, 0], boxes[:, 3] - boxes[:, 1])
-        todo = torch.nonzero((sizes >= self.REFINE_MIN_PX) & (sizes <= tile * occ)).flatten().tolist()
+        # The bound is about how well an instance was RESOLVED, not how many original pixels it
+        # spans. The pyramid segments each detection at its own scale, so an animal 1300px across
+        # that was only ever seen at 270px carries a mask exactly as coarse as a 270px one and
+        # gains just as much from a second look. Select on the size the model actually saw;
+        # `sizes` stays absolute below because the crop window lives in image coordinates.
+        eff = sizes * torch.as_tensor(preds.scales, dtype=sizes.dtype, device=sizes.device)
+        todo = torch.nonzero((eff >= self.REFINE_MIN_PX) & (eff <= tile * occ)).flatten().tolist()
         if not todo:
             logger.debug(f"Refinement: none of the {n} instances are in the refinable size range")
             return preds
@@ -1982,6 +2002,7 @@ class Predictor:
             if c - a >= 2 and d - b >= 2:
                 windows.append((i, a, b, c, d))
 
+        refined_flags = list(preds.refined)
         accepted = rejected = missed = oversized = 0
         # `no_grad` outside, `inference_mode` only around the forward - the same split
         # `_detect_instances`/`_process_batch` use. Tensors created under `inference_mode` are
@@ -2042,6 +2063,7 @@ class Predictor:
                     box[0::2] = box[0::2].clamp(0, img_w - 1)
                     box[1::2] = box[1::2].clamp(0, img_h - 1)
                     preds.boxes[i, :4] = box.to(device=preds.boxes.device, dtype=preds.boxes.dtype)
+                    refined_flags[i] = True
                     accepted += 1
 
         logger.info(
@@ -2049,8 +2071,9 @@ class Predictor:
             f"original, {oversized} candidates dropped for growing past "
             f"{self.REFINE_MAX_GROWTH}x, {missed} not found in their crop, "
             f"{n - len(windows)} outside the refinable size range "
-            f"({self.REFINE_MIN_PX}-{int(tile * occ)} px)"
+            f"({self.REFINE_MIN_PX}-{int(tile * occ)} px as seen)"
         )
+        preds.refined = refined_flags
         return preds
 
     def _best_refinement(

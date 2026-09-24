@@ -150,9 +150,10 @@ def fb_to_coco(d: dict, coco: dict) -> dict:
     coco["images"].append(image)
 
     # Boxes, contours, confs, classes, scales
+    scales = d.get("scales") or [None] * len(boxes)
+    refined = d.get("refined") or [False] * len(boxes)
     for i in range(len(boxes)):
         box, contour, conf = boxes[i], contours[i], confs[i]
-        # class_, scale = classes[i], scales[i]
         x1, y1, x2, y2 = box
         x, y, w, h = x1, y1, x2 - x1, y2 - y1
         box = [x, y, w, h]
@@ -171,7 +172,13 @@ def fb_to_coco(d: dict, coco: dict) -> dict:
             "area": 0.0,
             "bbox": box,
             "iscrowd": 0,
+            # Non-standard keys, alongside the `conf` that was already here. COCO readers
+            # ignore unknown annotation fields, so this stays loadable by pycocotools while
+            # recording how the polygon was produced: the pyramid level it was detected at,
+            # and whether the refiner re-segmented it.
             "conf": conf,
+            "scale": scales[i],
+            "refined": bool(refined[i]),
         }
         coco["annotations"].append(annotation)
 

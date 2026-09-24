@@ -226,3 +226,93 @@ class TestPolygonsRequired:  # noqa: D101
         preds.PREFER_POLYGONS = False
         before = preds.polygons[0].clone()
         assert torch.equal(predictor.refine_instances(preds).polygons[0], before)
+
+
+class TestSizeIsMeasuredAsSeen:
+    """The size bound is about resolution, not extent.
+
+    The pyramid segments each detection at its own scale, so an animal that spans 1300px of
+    the original image but was only ever seen at 270px carries a mask exactly as coarse as a
+    270px one. Testing the absolute size skipped precisely those instances - on 500MP scans
+    that was 68% of them, the ones whose masks most needed a second pass.
+    """
+
+    @pytest.mark.parametrize(
+        "side, scale, refined",
+        [
+            (200, 1.0, True),     # small and seen small
+            (900, 1.0, False),    # genuinely too large: already segmented at full tile res
+            (900, 0.3, True),     # 900px wide but only ever seen at 270px -> refine
+            (1400, 0.2, True),    # 1400px seen at 280px
+            (200, 0.3, False),    # seen at 60px, below the floor: nothing to recover
+        ],
+    )
+    def test_effective_size_decides(self, predictor, monkeypatch, side, scale, refined):
+        """Selection uses `size * scale`, not size in original pixels."""
+        monkeypatch.setattr(predictor_module, "postprocess", stub_postprocess(crop_mask(OCC)))
+        x0 = y0 = 500.0
+        poly = torch.tensor([[x0, y0], [x0 + side, y0], [x0 + side, y0 + side], [x0, y0 + side]])
+        preds = make_preds(poly)
+        preds.scales = [scale]
+        before = preds.polygons[0].clone()
+        out = predictor.refine_instances(preds)
+        assert (not torch.equal(out.polygons[0], before)) == refined
+
+    def test_crop_window_stays_in_image_coordinates(self, predictor, monkeypatch):
+        """Selection scales, but the crop must not: the window is cut from the original image.
+
+        If `sizes` were rescaled too, a large instance would get a tiny window and the
+        refinement would segment a fragment of the animal.
+        """
+        monkeypatch.setattr(predictor_module, "postprocess", stub_postprocess(crop_mask(OCC)))
+        side = 900.0
+        poly = torch.tensor([[400.0, 400.0], [400.0 + side, 400.0],
+                             [400.0 + side, 400.0 + side], [400.0, 400.0 + side]])
+        preds = make_preds(poly)
+        preds.scales = [0.3]
+        out = predictor.refine_instances(preds)
+        p = out.polygons[0]
+        # the refined polygon must still cover roughly the original extent, not a fragment
+        assert float(p[:, 0].max() - p[:, 0].min()) > side * 0.5
+        assert float(p[:, 1].max() - p[:, 1].min()) > side * 0.5
+
+
+class TestRefinedFlag:
+    """`refined` lets a consumer tell a second-pass polygon from a pyramid one."""
+
+    def test_flag_is_set_for_refined_instances(self, predictor, monkeypatch):  # noqa: D102
+        monkeypatch.setattr(predictor_module, "postprocess", stub_postprocess(crop_mask(OCC)))
+        preds = make_preds()
+        out = predictor.refine_instances(preds)
+        assert out.refined == [True]
+
+    def test_flag_is_false_when_out_of_range(self, predictor, monkeypatch):  # noqa: D102
+        monkeypatch.setattr(predictor_module, "postprocess", stub_postprocess(crop_mask(OCC)))
+        poly = torch.tensor([[500.0, 500.0], [540.0, 500.0], [540.0, 540.0], [500.0, 540.0]])
+        preds = make_preds(poly)
+        out = predictor.refine_instances(preds)
+        assert out.refined == [False]
+
+    def test_flag_is_false_when_refinement_is_rejected(self, predictor, monkeypatch):
+        """A rejected refinement keeps the original polygon, so it is not 'refined'."""
+        monkeypatch.setattr(predictor_module, "postprocess", stub_postprocess(crop_mask(0.05)))
+        preds = make_preds()
+        out = predictor.refine_instances(preds)
+        assert out.refined == [False]
+
+    def test_flag_tracks_each_instance_separately(self, predictor, monkeypatch):
+        """With a mix, only the in-range ones are flagged."""
+        monkeypatch.setattr(predictor_module, "postprocess", stub_postprocess(crop_mask(OCC)))
+        small = torch.tensor([[100.0, 100.0], [140.0, 100.0], [140.0, 140.0], [100.0, 140.0]])
+        polys = [SQUARE.clone(), small]
+        preds = make_preds()
+        preds.polygons = polys
+        preds.boxes = torch.stack([
+            torch.tensor([p[:, 0].min(), p[:, 1].min(), p[:, 0].max(), p[:, 1].max()]).long()
+            for p in polys
+        ])
+        preds.confs = torch.full((2,), 0.9)
+        preds.classes = torch.zeros(2)
+        preds.scales = [1.0, 1.0]
+        out = predictor.refine_instances(preds)
+        assert out.refined == [True, False]
