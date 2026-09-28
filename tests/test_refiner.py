@@ -316,3 +316,21 @@ class TestRefinedFlag:
         preds.scales = [1.0, 1.0]
         out = predictor.refine_instances(preds)
         assert out.refined == [True, False]
+
+
+class TestDeviceConsistency:
+    """A refined polygon must live where the polygon it replaces lived.
+
+    `TensorPredictions.device` follows the image, which the predictor keeps on the CPU, while
+    boxes and pyramid polygons stay on the GPU. Writing refined polygons to `preds.device` left
+    them on a different device from their own boxes, and `crop_masks` - which subtracts one from
+    the other - crashed on the first refined instance whenever crops were saved.
+    """
+
+    def test_refined_polygon_keeps_the_original_device(self, predictor, monkeypatch):  # noqa: D102
+        monkeypatch.setattr(predictor_module, "postprocess", stub_postprocess(crop_mask(OCC)))
+        preds = make_preds()
+        before = preds.polygons[0].device
+        out = predictor.refine_instances(preds)
+        assert out.refined == [True]
+        assert out.polygons[0].device == before

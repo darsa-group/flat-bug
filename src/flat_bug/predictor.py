@@ -2053,7 +2053,11 @@ class Predictor:
                     if agreement < self.REFINE_MIN_AGREEMENT:
                         rejected += 1
                         continue
-                    preds.polygons[i] = polygon.to(device=preds.device, dtype=preds.dtype)
+                    # Follow the polygon being replaced, not `preds.device`: that tracks the
+                    # image (often CPU) while boxes and unrefined polygons stay on the GPU, so
+                    # a refined polygon would end up on a different device from its own box and
+                    # break every consumer that combines the two (`crop_masks`, for one).
+                    preds.polygons[i] = polygon.to(device=preds.polygons[i].device, dtype=preds.dtype)
                     # Rebuild the box from the new polygon the same way the pyramid does:
                     # outward-rounded, padded by BOX_PAD, clamped, integral.
                     box = torch.cat([
