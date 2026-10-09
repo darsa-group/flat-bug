@@ -41,6 +41,7 @@ def main():
     ap.add_argument("--model-bundle", help="the model bundle, to publish its manifest too")
     ap.add_argument("--name", help="model name on the site (default: the name in the run)")
     ap.add_argument("--force", action="store_true", help="publish a run that is not valid")
+    ap.add_argument("--leak-note", help="how leakage was checked by other means, when the bundle has no inventory")
     a = ap.parse_args()
 
     r = json.loads((Path(a.run) / "results.json").read_text())
@@ -60,7 +61,7 @@ def main():
         "model": {k: r["model"][k] for k in ("name", "bundle_sha256", "weights_sha256", "training_commit", "inference_config")},
         "code": {k: v for k, v in r["code"].items() if k in ("commit", "subject", "author_date", "environment")},
         "run": {k: r["run"][k] for k in ("started", "finished", "device")},
-        "leakage_text": leak_text(r.get("leakage", {})),
+        "leakage_text": a.leak_note or leak_text(r.get("leakage", {})),
         "overall": r["overall"],
         "datasets": r["datasets"],
     }

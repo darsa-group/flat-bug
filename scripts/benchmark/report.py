@@ -23,6 +23,9 @@ from PIL import Image, ImageDraw
 
 import scoring
 
+# Benchmark images are trusted local files, some of them scans of 100+ megapixels.
+Image.MAX_IMAGE_PIXELS = None
+
 GREEN, RED, AMBER = (40, 200, 90), (230, 50, 50), (255, 176, 0)
 MAX_SIDE = 1400
 

@@ -4,11 +4,15 @@
   "zoo_url": "https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/",
   "benchmark": {
     "name": "flatbug-bench-v1",
-    "status": "in preparation",
+    "status": "built",
     "description": "The validation split of the dataset published with the flat-bug paper: 23 datasets, scored end to end on whole images.",
     "source_doi": "10.5281/zenodo.14761446",
     "scorer": "IoU >= 0.5, instances >= 32 px, one-to-one matching; precision, recall and F1 pooled over instances",
-    "doi": null
+    "doi": null,
+    "images": 990,
+    "datasets": 23,
+    "instances": 21410,
+    "sha256": "8da0cd8fa2c05977e7468af6ce42321a9b856f23e873b95b4ce33ff312097925"
   },
   "models": [
     {
