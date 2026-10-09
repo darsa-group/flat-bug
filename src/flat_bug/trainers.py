@@ -46,7 +46,7 @@ except ImportError:
 from ultralytics.utils.files import increment_path
 from ultralytics.utils.torch_utils import smart_inference_mode, torch_distributed_zero_first
 
-from flat_bug import logger
+from flat_bug import logger, manifest
 from flat_bug.datasets import FlatBugYOLODataset, FlatBugYOLOValidationDataset
 
 
@@ -523,6 +523,17 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
                 )
 
         self.add_callback("on_train_start", log_data)
+
+        def manifest_start(self):
+            path = manifest.write_start(
+                self,
+                config_file=getattr(self, "fb_config_file", None),
+                allow_dirty=bool(getattr(self.args, "fb_allow_dirty", False)),
+            )
+            logger.info(f"Training manifest: {path}")
+
+        self.add_callback("on_train_start", manifest_start)
+        self.add_callback("on_train_end", manifest.write_end)
 
     def get_validator(self) -> yolo.segment.SegmentationValidator:
         """Return an instance of SegmentationValidator for validation of YOLO model."""
