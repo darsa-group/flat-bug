@@ -1,0 +1,292 @@
+{
+ "schema": "flatbug-site-result/1",
+ "name": "flat_bug_N",
+ "valid": true,
+ "benchmark": {
+  "name": "flatbug-bench-v1",
+  "version": "v1",
+  "sha256": "8da0cd8fa2c05977e7468af6ce42321a9b856f23e873b95b4ce33ff312097925"
+ },
+ "scorer": {
+  "version": "1",
+  "iou_threshold": 0.5,
+  "min_size_px": 32.0
+ },
+ "model": {
+  "name": "flat_bug_N",
+  "bundle_sha256": "7b64407fff0f4d1e3503c21dcb1c136e876fa8b367958be9bc695ecea0845418",
+  "weights_sha256": "e54eb199fb8397f70dc36aca4727b92836fb7f56b11f8544be60f54c13d273c0",
+  "training_commit": "unknown",
+  "inference_config": null
+ },
+ "code": {
+  "commit": "6a95fd23de4640a8dbacce9fd5594899f2a9cdec",
+  "subject": "Keep a refined polygon on the device of the polygon it replaces",
+  "author_date": "2026-09-28T08:44:15+02:00",
+  "environment": {
+   "python": "3.14.6",
+   "torch": "2.11.0+cu130",
+   "cuda": "13.0",
+   "cuda_available": true,
+   "device_name": "NVIDIA GeForce RTX 4060 Ti",
+   "ultralytics": "8.4.90"
+  }
+ },
+ "run": {
+  "started": "2026-10-09T13:50:45+00:00",
+  "finished": "2026-10-09T14:00:10+00:00",
+  "device": "cuda:0"
+ },
+ "leakage_text": "not checked directly; expected none: this model was trained on the paper dataset with fb_prepare_data's md5 split, and the benchmark is that split's validation images (assuming the same image bytes)",
+ "overall": {
+  "gt": 19113,
+  "pred": 20613,
+  "tp": 17134,
+  "precision": 0.8312230146024353,
+  "recall": 0.8964579082300005,
+  "f1": 0.8626088707647385,
+  "mean_iou": 0.7962672983326745
+ },
+ "datasets": {
+  "ALUS": {
+   "gt": 966,
+   "pred": 995,
+   "tp": 954,
+   "precision": 0.9587939698492463,
+   "recall": 0.9875776397515528,
+   "f1": 0.972972972972973,
+   "mean_iou": 0.8891045349842308,
+   "seconds_per_image": 0.286
+  },
+  "AMI-traps": {
+   "gt": 782,
+   "pred": 761,
+   "tp": 545,
+   "precision": 0.7161629434954008,
+   "recall": 0.69693094629156,
+   "f1": 0.7064160725858716,
+   "mean_iou": 0.7208760297472371,
+   "seconds_per_image": 0.591
+  },
+  "AMT": {
+   "gt": 202,
+   "pred": 224,
+   "tp": 199,
+   "precision": 0.8883928571428571,
+   "recall": 0.9851485148514851,
+   "f1": 0.9342723004694835,
+   "mean_iou": 0.801615391664063,
+   "seconds_per_image": 0.55
+  },
+  "ArTaxOr": {
+   "gt": 181,
+   "pred": 363,
+   "tp": 149,
+   "precision": 0.41046831955922863,
+   "recall": 0.8232044198895028,
+   "f1": 0.5477941176470588,
+   "mean_iou": 0.8074802865943816,
+   "seconds_per_image": 0.149
+  },
+  "BIOSCAN": {
+   "gt": 84,
+   "pred": 150,
+   "tp": 77,
+   "precision": 0.5133333333333333,
+   "recall": 0.9166666666666666,
+   "f1": 0.6581196581196581,
+   "mean_iou": 0.8718895440880187,
+   "seconds_per_image": 0.217
+  },
+  "CollembolAI": {
+   "gt": 711,
+   "pred": 765,
+   "tp": 687,
+   "precision": 0.8980392156862745,
+   "recall": 0.9662447257383966,
+   "f1": 0.9308943089430894,
+   "mean_iou": 0.8195695246632121,
+   "seconds_per_image": 4.2
+  },
+  "DIRT": {
+   "gt": 448,
+   "pred": 490,
+   "tp": 412,
+   "precision": 0.8408163265306122,
+   "recall": 0.9196428571428571,
+   "f1": 0.8784648187633263,
+   "mean_iou": 0.795322079885854,
+   "seconds_per_image": 0.231
+  },
+  "Diopsis": {
+   "gt": 122,
+   "pred": 146,
+   "tp": 105,
+   "precision": 0.7191780821917808,
+   "recall": 0.860655737704918,
+   "f1": 0.7835820895522388,
+   "mean_iou": 0.7386271606288206,
+   "seconds_per_image": 0.9
+  },
+  "DiversityScanner": {
+   "gt": 81,
+   "pred": 82,
+   "tp": 81,
+   "precision": 0.9878048780487805,
+   "recall": 1.0,
+   "f1": 0.9938650306748467,
+   "mean_iou": 0.9269225136427892,
+   "seconds_per_image": 0.086
+  },
+  "Mothitor": {
+   "gt": 18,
+   "pred": 18,
+   "tp": 16,
+   "precision": 0.8888888888888888,
+   "recall": 0.8888888888888888,
+   "f1": 0.8888888888888888,
+   "mean_iou": 0.7424488786841579,
+   "seconds_per_image": 6.0
+  },
+  "NHM-beetles-crops": {
+   "gt": 106,
+   "pred": 108,
+   "tp": 106,
+   "precision": 0.9814814814814815,
+   "recall": 1.0,
+   "f1": 0.9906542056074767,
+   "mean_iou": 0.9226042548632917,
+   "seconds_per_image": 0.067
+  },
+  "PeMaToEuroPep": {
+   "gt": 1221,
+   "pred": 1659,
+   "tp": 1158,
+   "precision": 0.6980108499095841,
+   "recall": 0.9484029484029484,
+   "f1": 0.8041666666666667,
+   "mean_iou": 0.8218131289895814,
+   "seconds_per_image": 0.614
+  },
+  "abram2023": {
+   "gt": 1696,
+   "pred": 1697,
+   "tp": 1463,
+   "precision": 0.8621096051856216,
+   "recall": 0.8626179245283019,
+   "f1": 0.8623636899498969,
+   "mean_iou": 0.7641283712971414,
+   "seconds_per_image": 6.0
+  },
+  "amarathunga2022": {
+   "gt": 79,
+   "pred": 110,
+   "tp": 79,
+   "precision": 0.7181818181818181,
+   "recall": 1.0,
+   "f1": 0.8359788359788359,
+   "mean_iou": 0.9146862760564713,
+   "seconds_per_image": 0.152
+  },
+  "anTraX": {
+   "gt": 668,
+   "pred": 643,
+   "tp": 577,
+   "precision": 0.8973561430793157,
+   "recall": 0.8637724550898204,
+   "f1": 0.8802440884820747,
+   "mean_iou": 0.829757592485645,
+   "seconds_per_image": 0.353
+  },
+  "biodiscover-arm": {
+   "gt": 1003,
+   "pred": 877,
+   "tp": 801,
+   "precision": 0.9133409350057012,
+   "recall": 0.7986041874376869,
+   "f1": 0.8521276595744681,
+   "mean_iou": 0.796061766735785,
+   "seconds_per_image": 0.857
+  },
+  "cao2022": {
+   "gt": 130,
+   "pred": 132,
+   "tp": 130,
+   "precision": 0.9848484848484849,
+   "recall": 1.0,
+   "f1": 0.9923664122137404,
+   "mean_iou": 0.8188920318153907,
+   "seconds_per_image": 0.462
+  },
+  "gernat2018": {
+   "gt": 201,
+   "pred": 191,
+   "tp": 185,
+   "precision": 0.9685863874345549,
+   "recall": 0.9203980099502488,
+   "f1": 0.9438775510204082,
+   "mean_iou": 0.8744983774862337,
+   "seconds_per_image": 1.143
+  },
+  "pinoy2023": {
+   "gt": 2970,
+   "pred": 3198,
+   "tp": 2754,
+   "precision": 0.8611632270168855,
+   "recall": 0.9272727272727272,
+   "f1": 0.8929961089494163,
+   "mean_iou": 0.7745372185201614,
+   "seconds_per_image": 5.278
+  },
+  "sittinger2023": {
+   "gt": 98,
+   "pred": 119,
+   "tp": 93,
+   "precision": 0.7815126050420168,
+   "recall": 0.9489795918367347,
+   "f1": 0.8571428571428572,
+   "mean_iou": 0.8014096496216385,
+   "seconds_per_image": 0.302
+  },
+  "sticky-pi": {
+   "gt": 6145,
+   "pred": 6217,
+   "tp": 5430,
+   "precision": 0.8734116133183207,
+   "recall": 0.8836452400325467,
+   "f1": 0.8784986248179906,
+   "mean_iou": 0.7848124795465786,
+   "seconds_per_image": 0.694
+  },
+  "ubc-pitfall-traps": {
+   "gt": 604,
+   "pred": 660,
+   "tp": 554,
+   "precision": 0.8393939393939394,
+   "recall": 0.9172185430463576,
+   "f1": 0.8765822784810126,
+   "mean_iou": 0.8151356472296457,
+   "seconds_per_image": 0.611
+  },
+  "ubc-scanned-sticky-cards": {
+   "gt": 597,
+   "pred": 1008,
+   "tp": 579,
+   "precision": 0.5744047619047619,
+   "recall": 0.9698492462311558,
+   "f1": 0.7214953271028036,
+   "mean_iou": 0.7857401234975467,
+   "seconds_per_image": 3.0
+  }
+ },
+ "timing": {
+  "device": "NVIDIA GeForce RTX 4060 Ti",
+  "complete": true,
+  "seconds": 482.0,
+  "images": 990,
+  "megapixels": 9479.9,
+  "seconds_per_image": 0.487,
+  "seconds_per_megapixel": 0.0508,
+  "measure": "fb_predict's elapsed time per dataset: image decoding and inference, without model loading"
+ }
+}
