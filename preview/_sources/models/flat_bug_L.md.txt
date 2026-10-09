@@ -1,0 +1,14 @@
+# flat_bug_L
+
+```{raw} html
+<p class="fb-back"><a href="../models.html">← All models</a></p>
+<p>Published with the paper.</p>
+<dl class="fb-dl"><dt>Status</dt><dd><span class="fb-chip fb-chip--released" title="Published in the model zoo.">Released</span></dd><dt>Released</dt><dd>2024-10-23</dd><dt>Size</dt><dd>L</dd><dt>Weights</dt><dd><a href="https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_L.pt">84 MB</a></dd></dl>
+<p class="fb-note">Not yet benchmarked.</p>
+<h2 id="training">How it was trained</h2>
+<p class="fb-muted">No training record: this model predates training manifests.</p>
+<h2 id="settings">Predictor settings</h2>
+<p class="fb-muted">Default predictor settings.</p>
+
+<script src="../_static/models/compare.js" defer></script>
+```

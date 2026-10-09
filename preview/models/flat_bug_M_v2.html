@@ -1,0 +1,511 @@
+<!doctype html>
+<html class="no-js" lang="en" data-content_root="../">
+  <head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Index" href="../genindex.html"><link rel="search" title="Search" href="../search.html"><link rel="next" title="flat_bug_L" href="flat_bug_L.html"><link rel="prev" title="flatbug-M-2026.09" href="flatbug-M-2026.09.html">
+
+    <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
+        <title>flat_bug_M_v2 - flat-bug</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d111a655" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    <link rel="stylesheet" type="text/css" href="../_static/flatbug.css?v=0de5a0b6" />
+    
+    
+
+
+<style>
+  body {
+    --color-code-background: #f2f2f2;
+  --color-code-foreground: #1e1e1e;
+  --color-brand-primary: #017b33;
+  --color-brand-content: #017b33;
+  --color-brand-visited: #015220;
+  
+  }
+  @media not print {
+    body[data-theme="dark"] {
+      --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #3fcf8e;
+  --color-brand-content: #3fcf8e;
+  --color-brand-visited: #2fae74;
+  
+    }
+    @media (prefers-color-scheme: dark) {
+      body:not([data-theme="light"]) {
+        --color-code-background: #202020;
+  --color-code-foreground: #d0d0d0;
+  --color-brand-primary: #3fcf8e;
+  --color-brand-content: #3fcf8e;
+  --color-brand-visited: #2fae74;
+  
+      }
+    }
+  }
+</style></head>
+  <body>
+    
+    <script>
+      document.body.dataset.theme = localStorage.getItem("theme") || "auto";
+    </script>
+    
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+  <symbol id="svg-toc" viewBox="0 0 24 24">
+    <title>Contents</title>
+    <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 1024 1024">
+      <path d="M408 442h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8zm-8 204c0 4.4 3.6 8 8 8h480c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H408c-4.4 0-8 3.6-8 8v56zm504-486H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zm0 632H120c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8zM115.4 518.9L271.7 642c5.8 4.6 14.4.5 14.4-6.9V388.9c0-7.4-8.5-11.5-14.4-6.9L115.4 505.1a8.74 8.74 0 0 0 0 13.8z"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-menu" viewBox="0 0 24 24">
+    <title>Menu</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-menu">
+      <line x1="3" y1="12" x2="21" y2="12"></line>
+      <line x1="3" y1="6" x2="21" y2="6"></line>
+      <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-arrow-right" viewBox="0 0 24 24">
+    <title>Expand</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather-chevron-right">
+      <polyline points="9 18 15 12 9 6"></polyline>
+    </svg>
+  </symbol>
+  <symbol id="svg-sun" viewBox="0 0 24 24">
+    <title>Light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="feather-sun">
+      <circle cx="12" cy="12" r="5"></circle>
+      <line x1="12" y1="1" x2="12" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="23"></line>
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+      <line x1="1" y1="12" x2="3" y2="12"></line>
+      <line x1="21" y1="12" x2="23" y2="12"></line>
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon" viewBox="0 0 24 24">
+    <title>Dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-moon">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" />
+    </svg>
+  </symbol>
+  <symbol id="svg-sun-with-moon" viewBox="0 0 24 24">
+    <title>Auto light/dark, in light mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path style="opacity: 50%" d="M 5.411 14.504 C 5.471 14.504 5.532 14.504 5.591 14.504 C 3.639 16.319 4.383 19.569 6.931 20.352 C 7.693 20.586 8.512 20.551 9.25 20.252 C 8.023 23.207 4.056 23.725 2.11 21.184 C 0.166 18.642 1.702 14.949 4.874 14.536 C 5.051 14.512 5.231 14.5 5.411 14.5 L 5.411 14.504 Z"/>
+      <line x1="14.5" y1="3.25" x2="14.5" y2="1.25"/>
+      <line x1="14.5" y1="15.85" x2="14.5" y2="17.85"/>
+      <line x1="10.044" y1="5.094" x2="8.63" y2="3.68"/>
+      <line x1="19" y1="14.05" x2="20.414" y2="15.464"/>
+      <line x1="8.2" y1="9.55" x2="6.2" y2="9.55"/>
+      <line x1="20.8" y1="9.55" x2="22.8" y2="9.55"/>
+      <line x1="10.044" y1="14.006" x2="8.63" y2="15.42"/>
+      <line x1="19" y1="5.05" x2="20.414" y2="3.636"/>
+      <circle cx="14.5" cy="9.55" r="3.6"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-moon-with-sun" viewBox="0 0 24 24">
+    <title>Auto light/dark, in dark mode</title>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+      class="icon-custom-derived-from-feather-sun-and-tabler-moon">
+      <path d="M 8.282 7.007 C 8.385 7.007 8.494 7.007 8.595 7.007 C 5.18 10.184 6.481 15.869 10.942 17.24 C 12.275 17.648 13.706 17.589 15 17.066 C 12.851 22.236 5.91 23.143 2.505 18.696 C -0.897 14.249 1.791 7.786 7.342 7.063 C 7.652 7.021 7.965 7 8.282 7 L 8.282 7.007 Z"/>
+      <line style="opacity: 50%" x1="18" y1="3.705" x2="18" y2="2.5"/>
+      <line style="opacity: 50%" x1="18" y1="11.295" x2="18" y2="12.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="4.816" x2="14.464" y2="3.964"/>
+      <line style="opacity: 50%" x1="20.711" y1="10.212" x2="21.563" y2="11.063"/>
+      <line style="opacity: 50%" x1="14.205" y1="7.5" x2="13.001" y2="7.5"/>
+      <line style="opacity: 50%" x1="21.795" y1="7.5" x2="23" y2="7.5"/>
+      <line style="opacity: 50%" x1="15.316" y1="10.184" x2="14.464" y2="11.036"/>
+      <line style="opacity: 50%" x1="20.711" y1="4.789" x2="21.563" y2="3.937"/>
+      <circle style="opacity: 50%" cx="18" cy="7.5" r="2.169"/>
+    </svg>
+  </symbol>
+  <symbol id="svg-pencil" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-pencil-code">
+      <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4" />
+      <path d="M13.5 6.5l4 4" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+  <symbol id="svg-eye" viewBox="0 0 24 24">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="icon-tabler-eye-code">
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" />
+      <path
+        d="M11.11 17.958c-3.209 -.307 -5.91 -2.293 -8.11 -5.958c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6c-.21 .352 -.427 .688 -.647 1.008" />
+      <path d="M20 21l2 -2l-2 -2" />
+      <path d="M17 17l-2 2l2 2" />
+    </svg>
+  </symbol>
+</svg>
+
+<input type="checkbox" class="sidebar-toggle" name="__navigation" id="__navigation" aria-label="Toggle site navigation sidebar">
+<input type="checkbox" class="sidebar-toggle" name="__toc" id="__toc" aria-label="Toggle table of contents sidebar">
+<label class="overlay sidebar-overlay" for="__navigation"></label>
+<label class="overlay toc-overlay" for="__toc"></label>
+
+<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+
+
+
+<div class="page">
+  <header class="mobile-header">
+    <div class="header-left">
+      <label class="nav-overlay-icon" for="__navigation">
+        <span class="icon"><svg><use href="#svg-menu"></use></svg></span>
+      </label>
+    </div>
+    <div class="header-center">
+      <a href="../index.html"><div class="brand">flat-bug</div></a>
+    </div>
+    <div class="header-right">
+      <div class="theme-toggle-container theme-toggle-header">
+        <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+          <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+          <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+          <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+          <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+        </button>
+      </div>
+      <label class="toc-overlay-icon toc-header-icon no-toc" for="__toc">
+        <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+      </label>
+    </div>
+  </header>
+  <aside class="sidebar-drawer">
+    <div class="sidebar-container">
+      
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../index.html">
+  
+  <span class="sidebar-brand-text">flat-bug</span>
+  
+</a><form class="sidebar-search-container" method="get" action="../search.html" role="search">
+  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+  <input type="hidden" name="check_keywords" value="yes">
+  <input type="hidden" name="area" value="default">
+</form>
+<div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
+  <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../user_guide.html">User guide</a></li>
+<li class="toctree-l1 current has-children"><a class="reference internal" href="../models.html">Models</a><input aria-label="Toggle navigation of Models" checked="" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="flatbug-M-2026.09.html">flatbug-M-2026.09</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">flat_bug_M_v2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="flat_bug_L.html">flat_bug_L</a></li>
+<li class="toctree-l2"><a class="reference internal" href="flat_bug_M.html">flat_bug_M</a></li>
+<li class="toctree-l2"><a class="reference internal" href="flat_bug_S.html">flat_bug_S</a></li>
+<li class="toctree-l2"><a class="reference internal" href="flat_bug_N.html">flat_bug_N</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="../api.html">API reference</a><input aria-label="Toggle navigation of API reference" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="../cli.html">Command-line tools</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../predictor.html">Predictor</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../config.html">Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../trainers.html">Trainers</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../datasets.html">Datasets</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../augmentations.html">Augmentations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../coco_utils.html">Coco utilities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../eval_utils.html">Evaluation utilities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../geometric.html">Geometry utilities</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../nms.html">Non-maximum suppression</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../yolo_helpers.html">YOLO helpers</a></li>
+</ul>
+</li>
+</ul>
+
+</div>
+</div>
+
+      </div>
+      
+    </div>
+  </aside>
+  <div class="main">
+    <div class="content">
+      <div class="article-container">
+        <a href="#" class="back-to-top muted-link">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
+          </svg>
+          <span>Back to top</span>
+        </a>
+        <div class="content-icon-container">
+          <div class="view-this-page">
+  <a class="muted-link" href="https://github.com/darsa-group/flat-bug/blob/main/docs/source/models/flat_bug_M_v2.md?plain=true" title="View this page">
+    <svg><use href="#svg-eye"></use></svg>
+    <span class="visually-hidden">View this page</span>
+  </a>
+</div><div class="edit-this-page">
+  <a class="muted-link" href="https://github.com/darsa-group/flat-bug/edit/main/docs/source/models/flat_bug_M_v2.md" rel="edit" title="Edit this page">
+    <svg><use href="#svg-pencil"></use></svg>
+    <span class="visually-hidden">Edit this page</span>
+  </a>
+</div><div class="theme-toggle-container theme-toggle-content">
+            <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
+              <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+              <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+              <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+              <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+            </button>
+          </div>
+          <label class="toc-overlay-icon toc-content-icon no-toc" for="__toc">
+            <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
+          </label>
+        </div>
+        <article role="main" id="furo-main-content">
+          <section id="flat-bug-m-v2">
+<h1>flat_bug_M_v2<a class="headerlink" href="#flat-bug-m-v2" title="Link to this heading">¶</a></h1>
+<p class="fb-back"><a href="../models.html">← All models</a></p>
+<p>The current default of fb_predict and Predictor: 300 epochs on the 2026 corpus.</p>
+<dl class="fb-dl"><dt>Status</dt><dd><span class="fb-chip fb-chip--default" title="The model fb_predict and Predictor use unless told otherwise.">Default</span></dd><dt>Released</dt><dd>2026-07-07</dd><dt>Size</dt><dd>M</dd><dt>Architecture</dt><dd>YOLO26-M segmentation</dd><dt>Weights</dt><dd><a href="https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_M_v2.pt">55 MB</a> · sha256 <code>d3239bf0c367938f…</code></dd></dl>
+<div class="fb-kpis">
+<div><span>F1</span><b>0.8870</b></div><div><span>Precision</span><b>0.8640</b></div>
+<div><span>Recall</span><b>0.9113</b></div><div><span>Mask IoU</span><b>0.802</b></div>
+<div><span>Animals</span><b>19,113</b></div></div>
+<p class="fb-muted">On <b>flatbug-bench-v1</b>, run with flat-bug
+<a href="https://github.com/darsa-group/flat-bug/commit/6a95fd23de4640a8dbacce9fd5594899f2a9cdec"><code>6a95fd23de46</code></a>
+· scorer v1 · 2026-10-09</p>
+<h2 id="per-dataset">Per dataset</h2>
+<div class="fb-table-wrap"><svg viewBox="0 0 720 606" class="fb-chart" role="img" aria-label="Precision, recall and F1 per benchmark dataset"><text x="200" y="14" class="fb-legend"><tspan class="fb-c-p">◆</tspan> precision  <tspan class="fb-c-r">▲</tspan> recall  <tspan class="fb-c-f">●</tspan> F1</text><text x="658" y="14" class="fb-legend">animals</text><line x1="200.0" x2="200.0" y1="22" y2="582" class="fb-grid"/><text x="200.0" y="598" class="fb-axis" text-anchor="middle">0.5</text><line x1="290.0" x2="290.0" y1="22" y2="582" class="fb-grid"/><text x="290.0" y="598" class="fb-axis" text-anchor="middle">0.6</text><line x1="380.0" x2="380.0" y1="22" y2="582" class="fb-grid"/><text x="380.0" y="598" class="fb-axis" text-anchor="middle">0.7</text><line x1="470.00000000000006" x2="470.00000000000006" y1="22" y2="582" class="fb-grid"/><text x="470.00000000000006" y="598" class="fb-axis" text-anchor="middle">0.8</text><line x1="560.0" x2="560.0" y1="22" y2="582" class="fb-grid"/><text x="560.0" y="598" class="fb-axis" text-anchor="middle">0.9</text><line x1="650.0" x2="650.0" y1="22" y2="582" class="fb-grid"/><text x="650.0" y="598" class="fb-axis" text-anchor="middle">1</text><g><title>abram2023: F1 0.892, precision 0.876, recall 0.910, mask IoU 0.778 (1696 animals, 1762 detections)</title><rect x="0" y="26.0" width="720" height="24" class="fb-band"/><text x="190" y="42.0" class="fb-label" text-anchor="end">abram2023</text><line x1="538.138479001135" x2="568.808962264151" y1="38.0" y2="38.0" class="fb-span"/><path d="M538.138479001135,33.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M568.808962264151,33.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="553.1810294968188" cy="38.0" r="5" class="fb-c-f"/><text x="658" y="42.0" class="fb-axis">1,696</text></g><g><title>ALUS: F1 0.979, precision 0.970, recall 0.989, mask IoU 0.893 (966 animals, 985 detections)</title><rect x="0" y="50.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="66.0" class="fb-label" text-anchor="end">ALUS</text><line x1="622.5888324873097" x2="639.7515527950311" y1="62.0" y2="62.0" class="fb-span"/><path d="M622.5888324873097,57.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M639.7515527950311,57.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="631.0866222450024" cy="62.0" r="5" class="fb-c-f"/><text x="658" y="66.0" class="fb-axis">966</text></g><g><title>amarathunga2022: F1 0.934, precision 0.886, recall 0.987, mask IoU 0.932 (79 animals, 88 detections)</title><rect x="0" y="74.0" width="720" height="24" class="fb-band"/><text x="190" y="90.0" class="fb-label" text-anchor="end">amarathunga2022</text><line x1="547.7272727272727" x2="638.6075949367089" y1="86.0" y2="86.0" class="fb-span"/><path d="M547.7272727272727,81.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M638.6075949367089,81.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="590.7185628742516" cy="86.0" r="5" class="fb-c-f"/><text x="658" y="90.0" class="fb-axis">79</text></g><g><title>AMI-traps: F1 0.754, precision 0.825, recall 0.694, mask IoU 0.739 (782 animals, 658 detections)</title><rect x="0" y="98.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="114.0" class="fb-label" text-anchor="end">AMI-traps</text><line x1="374.9360613810742" x2="492.7051671732522" y1="110.0" y2="110.0" class="fb-span"/><path d="M492.7051671732522,105.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M374.9360613810742,105.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="428.7500000000001" cy="110.0" r="5" class="fb-c-f"/><text x="658" y="114.0" class="fb-axis">782</text></g><g><title>AMT: F1 0.949, precision 0.925, recall 0.975, mask IoU 0.805 (202 animals, 213 detections)</title><rect x="0" y="122.0" width="720" height="24" class="fb-band"/><text x="190" y="138.0" class="fb-label" text-anchor="end">AMT</text><line x1="582.3943661971831" x2="627.7227722772277" y1="134.0" y2="134.0" class="fb-span"/><path d="M582.3943661971831,129.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M627.7227722772277,129.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="604.4578313253012" cy="134.0" r="5" class="fb-c-f"/><text x="658" y="138.0" class="fb-axis">202</text></g><g><title>anTraX: F1 0.913, precision 0.912, recall 0.915, mask IoU 0.841 (668 animals, 670 detections)</title><rect x="0" y="146.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="162.0" class="fb-label" text-anchor="end">anTraX</text><line x1="570.7462686567164" x2="573.2035928143713" y1="158.0" y2="158.0" class="fb-span"/><path d="M570.7462686567164,153.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M573.2035928143713,153.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="571.9730941704036" cy="158.0" r="5" class="fb-c-f"/><text x="658" y="162.0" class="fb-axis">668</text></g><g><title>ArTaxOr: F1 0.706, precision 0.604, recall 0.851, mask IoU 0.859 (181 animals, 255 detections)</title><rect x="0" y="170.0" width="720" height="24" class="fb-band"/><text x="190" y="186.0" class="fb-label" text-anchor="end">ArTaxOr</text><line x1="293.52941176470586" x2="515.7458563535912" y1="182.0" y2="182.0" class="fb-span"/><path d="M293.52941176470586,177.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M515.7458563535912,177.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="385.77981651376155" cy="182.0" r="5" class="fb-c-f"/><text x="658" y="186.0" class="fb-axis">181</text></g><g><title>biodiscover-arm: F1 0.919, precision 0.917, recall 0.920, mask IoU 0.809 (1003 animals, 1006 detections)</title><rect x="0" y="194.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="210.0" class="fb-label" text-anchor="end">biodiscover-arm</text><line x1="575.7455268389663" x2="578.2153539381854" y1="206.0" y2="206.0" class="fb-span"/><path d="M575.7455268389663,201.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M578.2153539381854,201.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="576.9785963165754" cy="206.0" r="5" class="fb-c-f"/><text x="658" y="210.0" class="fb-axis">1,003</text></g><g><title>BIOSCAN: F1 0.910, precision 0.862, recall 0.964, mask IoU 0.897 (84 animals, 94 detections)</title><rect x="0" y="218.0" width="720" height="24" class="fb-band"/><text x="190" y="234.0" class="fb-label" text-anchor="end">BIOSCAN</text><line x1="525.531914893617" x2="617.8571428571429" y1="230.0" y2="230.0" class="fb-span"/><path d="M525.531914893617,225.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M617.8571428571429,225.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="569.1011235955057" cy="230.0" r="5" class="fb-c-f"/><text x="658" y="234.0" class="fb-axis">84</text></g><g><title>cao2022: F1 1.000, precision 1.000, recall 1.000, mask IoU 0.830 (130 animals, 130 detections)</title><rect x="0" y="242.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="258.0" class="fb-label" text-anchor="end">cao2022</text><line x1="650.0" x2="650.0" y1="254.0" y2="254.0" class="fb-span"/><path d="M650.0,249.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M650.0,249.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="650.0" cy="254.0" r="5" class="fb-c-f"/><text x="658" y="258.0" class="fb-axis">130</text></g><g><title>CollembolAI: F1 0.948, precision 0.918, recall 0.980, mask IoU 0.824 (711 animals, 759 detections)</title><rect x="0" y="266.0" width="720" height="24" class="fb-band"/><text x="190" y="282.0" class="fb-label" text-anchor="end">CollembolAI</text><line x1="576.4822134387352" x2="632.2784810126582" y1="278.0" y2="278.0" class="fb-span"/><path d="M576.4822134387352,273.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M632.2784810126582,273.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="603.469387755102" cy="278.0" r="5" class="fb-c-f"/><text x="658" y="282.0" class="fb-axis">711</text></g><g><title>Diopsis: F1 0.801, precision 0.716, recall 0.910, mask IoU 0.737 (122 animals, 155 detections)</title><rect x="0" y="290.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="306.0" class="fb-label" text-anchor="end">Diopsis</text><line x1="394.5161290322581" x2="568.8524590163934" y1="302.0" y2="302.0" class="fb-span"/><path d="M394.5161290322581,297.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M568.8524590163934,297.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="471.2996389891698" cy="302.0" r="5" class="fb-c-f"/><text x="658" y="306.0" class="fb-axis">122</text></g><g><title>DIRT: F1 0.890, precision 0.847, recall 0.938, mask IoU 0.799 (448 animals, 496 detections)</title><rect x="0" y="314.0" width="720" height="24" class="fb-band"/><text x="190" y="330.0" class="fb-label" text-anchor="end">DIRT</text><line x1="512.0967741935484" x2="593.75" y1="326.0" y2="326.0" class="fb-span"/><path d="M512.0967741935484,321.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M593.75,321.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="550.8474576271186" cy="326.0" r="5" class="fb-c-f"/><text x="658" y="330.0" class="fb-axis">448</text></g><g><title>DiversityScanner: F1 1.000, precision 1.000, recall 1.000, mask IoU 0.939 (81 animals, 81 detections)</title><rect x="0" y="338.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="354.0" class="fb-label" text-anchor="end">DiversityScanner</text><line x1="650.0" x2="650.0" y1="350.0" y2="350.0" class="fb-span"/><path d="M650.0,345.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M650.0,345.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="650.0" cy="350.0" r="5" class="fb-c-f"/><text x="658" y="354.0" class="fb-axis">81</text></g><g><title>gernat2018: F1 0.955, precision 0.960, recall 0.950, mask IoU 0.894 (201 animals, 199 detections)</title><rect x="0" y="362.0" width="720" height="24" class="fb-band"/><text x="190" y="378.0" class="fb-label" text-anchor="end">gernat2018</text><line x1="605.223880597015" x2="613.819095477387" y1="374.0" y2="374.0" class="fb-span"/><path d="M613.819095477387,369.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M605.223880597015,369.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="609.5" cy="374.0" r="5" class="fb-c-f"/><text x="658" y="378.0" class="fb-axis">201</text></g><g><title>Mothitor: F1 0.889, precision 0.889, recall 0.889, mask IoU 0.703 (18 animals, 18 detections)</title><rect x="0" y="386.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="402.0" class="fb-label" text-anchor="end">Mothitor</text><line x1="550.0" x2="550.0" y1="398.0" y2="398.0" class="fb-span"/><path d="M550.0,393.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M550.0,393.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="550.0" cy="398.0" r="5" class="fb-c-f"/><text x="658" y="402.0" class="fb-axis">18</text></g><g><title>NHM-beetles-crops: F1 1.000, precision 1.000, recall 1.000, mask IoU 0.933 (106 animals, 106 detections)</title><rect x="0" y="410.0" width="720" height="24" class="fb-band"/><text x="190" y="426.0" class="fb-label" text-anchor="end">NHM-beetles-crops</text><line x1="650.0" x2="650.0" y1="422.0" y2="422.0" class="fb-span"/><path d="M650.0,417.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M650.0,417.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="650.0" cy="422.0" r="5" class="fb-c-f"/><text x="658" y="426.0" class="fb-axis">106</text></g><g><title>PeMaToEuroPep: F1 0.812, precision 0.700, recall 0.967, mask IoU 0.846 (1221 animals, 1687 detections)</title><rect x="0" y="434.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="450.0" class="fb-label" text-anchor="end">PeMaToEuroPep</text><line x1="380.05334914048603" x2="620.5159705159705" y1="446.0" y2="446.0" class="fb-span"/><path d="M380.05334914048603,441.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M620.5159705159705,441.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="481.01788170563947" cy="446.0" r="5" class="fb-c-f"/><text x="658" y="450.0" class="fb-axis">1,221</text></g><g><title>pinoy2023: F1 0.921, precision 0.909, recall 0.934, mask IoU 0.779 (2970 animals, 3054 detections)</title><rect x="0" y="458.0" width="720" height="24" class="fb-band"/><text x="190" y="474.0" class="fb-label" text-anchor="end">pinoy2023</text><line x1="567.7799607072691" x2="590.909090909091" y1="470.0" y2="470.0" class="fb-span"/><path d="M567.7799607072691,465.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M590.909090909091,465.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="579.183266932271" cy="470.0" r="5" class="fb-c-f"/><text x="658" y="474.0" class="fb-axis">2,970</text></g><g><title>sittinger2023: F1 0.903, precision 0.861, recall 0.949, mask IoU 0.817 (98 animals, 108 detections)</title><rect x="0" y="482.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="498.0" class="fb-label" text-anchor="end">sittinger2023</text><line x1="525.0" x2="604.0816326530612" y1="494.0" y2="494.0" class="fb-span"/><path d="M525.0,489.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M604.0816326530612,489.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="562.6213592233009" cy="494.0" r="5" class="fb-c-f"/><text x="658" y="498.0" class="fb-axis">98</text></g><g><title>sticky-pi: F1 0.883, precision 0.887, recall 0.879, mask IoU 0.781 (6145 animals, 6088 detections)</title><rect x="0" y="506.0" width="720" height="24" class="fb-band"/><text x="190" y="522.0" class="fb-label" text-anchor="end">sticky-pi</text><line x1="540.740439381611" x2="548.1438896189225" y1="518.0" y2="518.0" class="fb-span"/><path d="M548.1438896189225,513.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M540.740439381611,513.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="544.424916210251" cy="518.0" r="5" class="fb-c-f"/><text x="658" y="522.0" class="fb-axis">6,145</text></g><g><title>ubc-pitfall-traps: F1 0.887, precision 0.863, recall 0.914, mask IoU 0.814 (604 animals, 640 detections)</title><rect x="0" y="530.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="546.0" class="fb-label" text-anchor="end">ubc-pitfall-traps</text><line x1="526.25" x2="572.5165562913908" y1="542.0" y2="542.0" class="fb-span"/><path d="M526.25,537.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M572.5165562913908,537.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="548.7138263665596" cy="542.0" r="5" class="fb-c-f"/><text x="658" y="546.0" class="fb-axis">604</text></g><g><title>ubc-scanned-sticky-cards: F1 0.772, precision 0.640, recall 0.973, mask IoU 0.796 (597 animals, 908 detections)</title><rect x="0" y="554.0" width="720" height="24" class="fb-band"/><text x="190" y="570.0" class="fb-label" text-anchor="end">ubc-scanned-sticky-cards</text><line x1="325.8810572687225" x2="625.8793969849246" y1="566.0" y2="566.0" class="fb-span"/><path d="M325.8810572687225,561.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M625.8793969849246,561.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="444.8837209302326" cy="566.0" r="5" class="fb-c-f"/><text x="658" y="570.0" class="fb-axis">597</text></g></svg></div>
+<details class="fb-details"><summary>Per-dataset numbers</summary><div class="fb-table-wrap"><table class="fb-table"><thead><tr><th>Dataset</th><th>Animals</th><th>Detections</th><th>Precision</th><th>Recall</th><th>F1</th><th>Mask IoU</th></tr></thead><tbody><tr><th scope="row">abram2023</th><td class="fb-num">1,696</td><td class="fb-num">1,762</td><td class="fb-num">0.876</td><td class="fb-num">0.910</td><td class="fb-num"><b>0.892</b></td><td class="fb-num">0.778</td></tr><tr><th scope="row">ALUS</th><td class="fb-num">966</td><td class="fb-num">985</td><td class="fb-num">0.970</td><td class="fb-num">0.989</td><td class="fb-num"><b>0.979</b></td><td class="fb-num">0.893</td></tr><tr><th scope="row">amarathunga2022</th><td class="fb-num">79</td><td class="fb-num">88</td><td class="fb-num">0.886</td><td class="fb-num">0.987</td><td class="fb-num"><b>0.934</b></td><td class="fb-num">0.932</td></tr><tr><th scope="row">AMI-traps</th><td class="fb-num">782</td><td class="fb-num">658</td><td class="fb-num">0.825</td><td class="fb-num">0.694</td><td class="fb-num"><b>0.754</b></td><td class="fb-num">0.739</td></tr><tr><th scope="row">AMT</th><td class="fb-num">202</td><td class="fb-num">213</td><td class="fb-num">0.925</td><td class="fb-num">0.975</td><td class="fb-num"><b>0.949</b></td><td class="fb-num">0.805</td></tr><tr><th scope="row">anTraX</th><td class="fb-num">668</td><td class="fb-num">670</td><td class="fb-num">0.912</td><td class="fb-num">0.915</td><td class="fb-num"><b>0.913</b></td><td class="fb-num">0.841</td></tr><tr><th scope="row">ArTaxOr</th><td class="fb-num">181</td><td class="fb-num">255</td><td class="fb-num">0.604</td><td class="fb-num">0.851</td><td class="fb-num"><b>0.706</b></td><td class="fb-num">0.859</td></tr><tr><th scope="row">biodiscover-arm</th><td class="fb-num">1,003</td><td class="fb-num">1,006</td><td class="fb-num">0.917</td><td class="fb-num">0.920</td><td class="fb-num"><b>0.919</b></td><td class="fb-num">0.809</td></tr><tr><th scope="row">BIOSCAN</th><td class="fb-num">84</td><td class="fb-num">94</td><td class="fb-num">0.862</td><td class="fb-num">0.964</td><td class="fb-num"><b>0.910</b></td><td class="fb-num">0.897</td></tr><tr><th scope="row">cao2022</th><td class="fb-num">130</td><td class="fb-num">130</td><td class="fb-num">1.000</td><td class="fb-num">1.000</td><td class="fb-num"><b>1.000</b></td><td class="fb-num">0.830</td></tr><tr><th scope="row">CollembolAI</th><td class="fb-num">711</td><td class="fb-num">759</td><td class="fb-num">0.918</td><td class="fb-num">0.980</td><td class="fb-num"><b>0.948</b></td><td class="fb-num">0.824</td></tr><tr><th scope="row">Diopsis</th><td class="fb-num">122</td><td class="fb-num">155</td><td class="fb-num">0.716</td><td class="fb-num">0.910</td><td class="fb-num"><b>0.801</b></td><td class="fb-num">0.737</td></tr><tr><th scope="row">DIRT</th><td class="fb-num">448</td><td class="fb-num">496</td><td class="fb-num">0.847</td><td class="fb-num">0.938</td><td class="fb-num"><b>0.890</b></td><td class="fb-num">0.799</td></tr><tr><th scope="row">DiversityScanner</th><td class="fb-num">81</td><td class="fb-num">81</td><td class="fb-num">1.000</td><td class="fb-num">1.000</td><td class="fb-num"><b>1.000</b></td><td class="fb-num">0.939</td></tr><tr><th scope="row">gernat2018</th><td class="fb-num">201</td><td class="fb-num">199</td><td class="fb-num">0.960</td><td class="fb-num">0.950</td><td class="fb-num"><b>0.955</b></td><td class="fb-num">0.894</td></tr><tr><th scope="row">Mothitor</th><td class="fb-num">18</td><td class="fb-num">18</td><td class="fb-num">0.889</td><td class="fb-num">0.889</td><td class="fb-num"><b>0.889</b></td><td class="fb-num">0.703</td></tr><tr><th scope="row">NHM-beetles-crops</th><td class="fb-num">106</td><td class="fb-num">106</td><td class="fb-num">1.000</td><td class="fb-num">1.000</td><td class="fb-num"><b>1.000</b></td><td class="fb-num">0.933</td></tr><tr><th scope="row">PeMaToEuroPep</th><td class="fb-num">1,221</td><td class="fb-num">1,687</td><td class="fb-num">0.700</td><td class="fb-num">0.967</td><td class="fb-num"><b>0.812</b></td><td class="fb-num">0.846</td></tr><tr><th scope="row">pinoy2023</th><td class="fb-num">2,970</td><td class="fb-num">3,054</td><td class="fb-num">0.909</td><td class="fb-num">0.934</td><td class="fb-num"><b>0.921</b></td><td class="fb-num">0.779</td></tr><tr><th scope="row">sittinger2023</th><td class="fb-num">98</td><td class="fb-num">108</td><td class="fb-num">0.861</td><td class="fb-num">0.949</td><td class="fb-num"><b>0.903</b></td><td class="fb-num">0.817</td></tr><tr><th scope="row">sticky-pi</th><td class="fb-num">6,145</td><td class="fb-num">6,088</td><td class="fb-num">0.887</td><td class="fb-num">0.879</td><td class="fb-num"><b>0.883</b></td><td class="fb-num">0.781</td></tr><tr><th scope="row">ubc-pitfall-traps</th><td class="fb-num">604</td><td class="fb-num">640</td><td class="fb-num">0.863</td><td class="fb-num">0.914</td><td class="fb-num"><b>0.887</b></td><td class="fb-num">0.814</td></tr><tr><th scope="row">ubc-scanned-sticky-cards</th><td class="fb-num">597</td><td class="fb-num">908</td><td class="fb-num">0.640</td><td class="fb-num">0.973</td><td class="fb-num"><b>0.772</b></td><td class="fb-num">0.796</td></tr></tbody></table></div></details>
+<h2 id="compare">Compare</h2>
+<p><label>Contrast <code>flat_bug_M_v2</code> with
+<select class="fb-compare" data-self="flat_bug_M_v2"><option value="">choose a model…</option><option value="flatbug-M-2026.09">flatbug-M-2026.09</option></select></label></p>
+<div class="fb-compare-out" aria-live="polite"></div>
+<h2 id="run">Benchmark run</h2>
+<dl class="fb-dl"><dt>Benchmark</dt><dd>flatbug-bench-v1 · sha256 <code>8da0cd8fa2c05977…</code></dd><dt>Code</dt><dd><code>6a95fd23de4640a8dbacce9fd5594899f2a9cdec</code> Keep a refined polygon on the device of the polygon it replaces</dd><dt>Environment</dt><dd>python 3.14.6, torch 2.11.0+cu130, device_name NVIDIA GeForce RTX 4060 Ti, ultralytics 8.4.90</dd><dt>Leak check</dt><dd>not checked: the model bundle has no training data inventory</dd><dt>Weights</dt><dd>sha256 <code>d3239bf0c367938f…</code></dd></dl>
+<h2 id="training">How it was trained</h2>
+<dl class="fb-dl"><dt>Starting point</dt><dd><code>yolo26m-seg.pt</code></dd><dt>Epochs</dt><dd>300</dd><dt>Hardware</dt><dd>trained 2026-06-29 to 2026-07-02 (run fb_M_2026-06-29_17-16-54)</dd><dt>Framework</dt><dd>ultralytics 8.4.51</dd></dl>
+<h2 id="settings">Predictor settings</h2>
+<p class="fb-muted">Default predictor settings.</p>
+<details class="fb-details"><summary>Full manifest</summary><pre class="fb-pre fb-pre--long">schema: flatbug-model/1
+name: flat_bug_M_v2
+bundled: &#x27;2026-10-09T10:22:02+00:00&#x27;
+weights:
+  file: weights.pt
+  sha256: d3239bf0c367938f90dd21e92c4fb8bb47e28288678c5130c33f708714c8e50d
+  bytes: 54585258
+model:
+  framework: ultralytics
+  ultralytics_version: 8.4.51
+  task: segment
+  base_model: yolo26m-seg.pt
+  image_size: 1024
+  classes:
+  - insect
+training:
+  commit: unknown
+  checkpoint_date: &#x27;2026-07-02T17:40:28.591043&#x27;
+  epochs: 300
+  epochs_completed: 300
+  run_name: fb_M_2026-06-29_17-16-54
+  data: /usr/home/qgg/qgeiss/flatbug-dir/flat-bug-data/yolo/data.yaml
+  config: null
+  train_args:
+    task: segment
+    mode: train
+    model: yolo26m-seg.pt
+    data: /usr/home/qgg/qgeiss/flatbug-dir/flat-bug-data/yolo/data.yaml
+    epochs: 300
+    time: null
+    patience: 9999
+    batch: 12
+    imgsz: 1024
+    save: true
+    save_period: 5
+    cache: false
+    device: &#x27;0&#x27;
+    workers: 8
+    project: null
+    name: fb_M_2026-06-29_17-16-54
+    exist_ok: false
+    pretrained: true
+    optimizer: SGD
+    verbose: true
+    seed: 0
+    deterministic: true
+    single_cls: false
+    rect: false
+    cos_lr: true
+    close_mosaic: 10
+    resume: false
+    amp: true
+    fraction: 1.0
+    profile: false
+    freeze: null
+    multi_scale: 0.0
+    compile: false
+    overlap_mask: true
+    mask_ratio: 4
+    dropout: 0.0
+    val: true
+    split: val
+    save_json: false
+    conf: null
+    iou: 0.7
+    max_det: 300
+    half: false
+    dnn: false
+    plots: true
+    end2end: null
+    source: null
+    vid_stride: 1
+    stream_buffer: false
+    visualize: false
+    augment: false
+    agnostic_nms: false
+    classes: null
+    retina_masks: false
+    embed: null
+    show: false
+    save_frames: false
+    save_txt: false
+    save_conf: false
+    save_crop: false
+    show_labels: true
+    show_conf: true
+    show_boxes: true
+    line_width: null
+    format: torchscript
+    keras: false
+    optimize: false
+    int8: false
+    dynamic: false
+    simplify: true
+    opset: null
+    workspace: null
+    nms: false
+    lr0: 0.01
+    lrf: 0.01
+    momentum: 0.937
+    weight_decay: 0.0005
+    warmup_epochs: 3.0
+    warmup_momentum: 0.8
+    warmup_bias_lr: 0.1
+    box: 7.5
+    cls: 0.5
+    cls_pw: 0.0
+    dfl: 1.5
+    pose: 12.0
+    kobj: 1.0
+    rle: 1.0
+    angle: 1.0
+    nbs: 64
+    hsv_h: 0.015
+    hsv_s: 0.7
+    hsv_v: 0.4
+    degrees: 0.0
+    translate: 0.1
+    scale: 0.5
+    shear: 0.0
+    perspective: 0.0
+    flipud: 0.0
+    fliplr: 0.5
+    bgr: 0.0
+    mosaic: 1.0
+    mixup: 0.0
+    cutmix: 0.0
+    copy_paste: 0.0
+    copy_paste_mode: flip
+    auto_augment: randaugment
+    erasing: 0.4
+    cfg: null
+    tracker: botsort.yaml
+  git_recorded_in_checkpoint:
+    root: None
+    branch: null
+    commit: null
+    message: null
+    origin: null
+  commit_note: unknown - this model predates training manifests
+final_val_metrics:
+  metrics/precision(B): 0.99053
+  metrics/recall(B): 0.9798
+  metrics/mAP50(B): 0.99391
+  metrics/mAP50-95(B): 0.87731
+  metrics/precision(M): 0.98902
+  metrics/recall(M): 0.97823
+  metrics/mAP50(M): 0.99222
+  metrics/mAP50-95(M): 0.7689
+  val/box_loss: 0.0
+  val/seg_loss: 0.0
+  val/cls_loss: 0.0
+  val/dfl_loss: 0.0
+  fitness: 1.6462
+inference:
+  config_file: null
+license: AGPL-3.0 (https://ultralytics.com/license)
+notes: Published in the flat-bug model zoo on 2026-07-07; no training record exists
+  for it.
+</pre></details>
+<script src="../_static/models/compare.js" defer></script></section>
+
+        </article>
+      </div>
+      <footer>
+        
+        <div class="related-pages">
+          <a class="next-page" href="flat_bug_L.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Next</span>
+                </div>
+                <div class="title">flat_bug_L</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="flatbug-M-2026.09.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Previous</span>
+                </div>
+                
+                <div class="title">flatbug-M-2026.09</div>
+                
+              </div>
+            </a>
+        </div>
+        <div class="bottom-of-page">
+          <div class="left-details">
+            <div class="copyright">
+                Copyright &#169; 2024-2026, the flat-bug authors
+            </div>
+            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            
+            <a href="https://github.com/pradyunsg/furo">Furo</a>
+            
+          </div>
+          <div class="right-details">
+            
+          </div>
+        </div>
+        
+      </footer>
+    </div>
+    <aside class="toc-drawer no-toc">
+      
+      
+      
+    </aside>
+  </div>
+</div><script src="../_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/scripts/furo.js?v=46bd48cc"></script>
+    </body>
+</html>

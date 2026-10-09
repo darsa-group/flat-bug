@@ -3,14 +3,14 @@
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
-<link rel="index" title="Index" href="genindex.html"><link rel="search" title="Search" href="search.html"><link rel="next" title="API reference" href="api.html"><link rel="prev" title="User guide" href="user_guide.html">
+<link rel="index" title="Index" href="genindex.html"><link rel="search" title="Search" href="search.html"><link rel="next" title="flatbug-M-2026.09" href="models/flatbug-M-2026.09.html"><link rel="prev" title="User guide" href="user_guide.html">
 
     <!-- Generated with Sphinx 9.1.0 and Furo 2025.12.19 -->
         <title>Models - flat-bug</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d111a655" />
     <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=7bdb33bb" />
     <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=8dab3a3b" />
-    <link rel="stylesheet" type="text/css" href="_static/flatbug.css?v=2d6f4dfc" />
+    <link rel="stylesheet" type="text/css" href="_static/flatbug.css?v=0de5a0b6" />
     
     
 
@@ -202,8 +202,16 @@
 <div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
   <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="user_guide.html">User guide</a></li>
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Models</a></li>
-<li class="toctree-l1 has-children"><a class="reference internal" href="api.html">API reference</a><input aria-label="Toggle navigation of API reference" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l1 current has-children current-page"><a class="current reference internal" href="#">Models</a><input aria-label="Toggle navigation of Models" checked="" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
+<li class="toctree-l2"><a class="reference internal" href="models/flatbug-M-2026.09.html">flatbug-M-2026.09</a></li>
+<li class="toctree-l2"><a class="reference internal" href="models/flat_bug_M_v2.html">flat_bug_M_v2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="models/flat_bug_L.html">flat_bug_L</a></li>
+<li class="toctree-l2"><a class="reference internal" href="models/flat_bug_M.html">flat_bug_M</a></li>
+<li class="toctree-l2"><a class="reference internal" href="models/flat_bug_S.html">flat_bug_S</a></li>
+<li class="toctree-l2"><a class="reference internal" href="models/flat_bug_N.html">flat_bug_N</a></li>
+</ul>
+</li>
+<li class="toctree-l1 has-children"><a class="reference internal" href="api.html">API reference</a><input aria-label="Toggle navigation of API reference" class="toctree-checkbox" id="toctree-checkbox-2" name="toctree-checkbox-2" role="switch" type="checkbox"/><label for="toctree-checkbox-2"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul>
 <li class="toctree-l2"><a class="reference internal" href="cli.html">Command-line tools</a></li>
 <li class="toctree-l2"><a class="reference internal" href="predictor.html">Predictor</a></li>
 <li class="toctree-l2"><a class="reference internal" href="config.html">Configuration</a></li>
@@ -272,10 +280,17 @@ with.</p>
 <div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="n">Predictor</span><span class="p">(</span><span class="n">model</span><span class="o">=</span><span class="s2">&quot;flat_bug_M_v2.pt&quot;</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">&quot;cuda:0&quot;</span><span class="p">)</span>
 </pre></div>
 </div>
-<div id="fb-models" class="fb-models" aria-live="polite">
-  <p class="fb-muted">Loading the model list…</p>
-</div>
-<script src="_static/models/models.js" defer></script><section id="benchmark">
+<p>Click a model for its scores on each benchmark dataset, how it was trained, and a comparison
+with any other benchmarked model.</p>
+<div class="fb-table-wrap"><table class="fb-table fb-table--models">
+<thead><tr><th>Model</th><th>Status</th><th>Date</th><th>Size</th>
+<th title="harmonic mean of precision and recall">F1</th><th title="share of detections that are animals">Precision</th>
+<th title="share of animals that are found">Recall</th><th title="how closely the outlines follow the hand-drawn ones">Mask IoU</th>
+<th>Weights</th></tr></thead>
+<tbody><tr class="fb-row" data-href="models/flatbug-M-2026.09.html"><th scope="row"><a href="models/flatbug-M-2026.09.html"><code>flatbug-M-2026.09</code></a></th><td><span class="fb-chip fb-chip--candidate" title="Trained and documented, not yet released.">Candidate</span></td><td class="fb-num">2026-09-22</td><td>M</td><td class="fb-num"><b>0.902</b></td><td class="fb-num">0.873</td><td class="fb-num">0.933</td><td class="fb-num">0.810</td><td class="fb-num"><span class="fb-muted">55 MB</span></td></tr><tr class="fb-row" data-href="models/flat_bug_M_v2.html"><th scope="row"><a href="models/flat_bug_M_v2.html"><code>flat_bug_M_v2</code></a></th><td><span class="fb-chip fb-chip--default" title="The model fb_predict and Predictor use unless told otherwise.">Default</span></td><td class="fb-num">2026-07-07</td><td>M</td><td class="fb-num"><b>0.887</b></td><td class="fb-num">0.864</td><td class="fb-num">0.911</td><td class="fb-num">0.802</td><td class="fb-num"><a href="https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_M_v2.pt">55 MB</a></td></tr><tr class="fb-row" data-href="models/flat_bug_L.html"><th scope="row"><a href="models/flat_bug_L.html"><code>flat_bug_L</code></a></th><td><span class="fb-chip fb-chip--released" title="Published in the model zoo.">Released</span></td><td class="fb-num">2024-10-23</td><td>L</td><td class="fb-muted" colspan="4">not yet benchmarked</td><td class="fb-num"><a href="https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_L.pt">84 MB</a></td></tr><tr class="fb-row" data-href="models/flat_bug_M.html"><th scope="row"><a href="models/flat_bug_M.html"><code>flat_bug_M</code></a></th><td><span class="fb-chip fb-chip--released" title="Published in the model zoo.">Released</span></td><td class="fb-num">2024-10-23</td><td>M</td><td class="fb-muted" colspan="4">not yet benchmarked</td><td class="fb-num"><a href="https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_M.pt">50 MB</a></td></tr><tr class="fb-row" data-href="models/flat_bug_S.html"><th scope="row"><a href="models/flat_bug_S.html"><code>flat_bug_S</code></a></th><td><span class="fb-chip fb-chip--released" title="Published in the model zoo.">Released</span></td><td class="fb-num">2024-10-23</td><td>S</td><td class="fb-muted" colspan="4">not yet benchmarked</td><td class="fb-num"><a href="https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_S.pt">21 MB</a></td></tr><tr class="fb-row" data-href="models/flat_bug_N.html"><th scope="row"><a href="models/flat_bug_N.html"><code>flat_bug_N</code></a></th><td><span class="fb-chip fb-chip--released" title="Published in the model zoo.">Released</span></td><td class="fb-num">2024-10-23</td><td>N</td><td class="fb-muted" colspan="4">not yet benchmarked</td><td class="fb-num"><a href="https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_N.pt">6 MB</a></td></tr></tbody></table></div>
+
+<script>document.querySelectorAll('tr.fb-row').forEach(r => r.addEventListener('click', e => {
+  if (!e.target.closest('a')) location.href = r.dataset.href; }));</script><section id="benchmark">
 <span id="id1"></span><h2>Benchmark<a class="headerlink" href="#benchmark" title="Link to this heading">¶</a></h2>
 <p>Scores on this page come from one fixed benchmark, so that any two models, or two versions of
 the code, can be compared directly. It is the validation split of the
@@ -289,6 +304,8 @@ share of animals that are found, and <strong>F1</strong> combines the two. <stro
 outlines of the animals that were found follow the hand-drawn ones.</p>
 <p>The benchmark, the code that scores it, and the result of every run are versioned and
 checksummed: see <a class="reference internal" href="user_guide.html#benchmark-a-model"><span class="std std-ref">Benchmark a model</span></a>.</p>
+<div class="toctree-wrapper compound">
+</div>
 </section>
 </section>
 
@@ -297,12 +314,12 @@ checksummed: see <a class="reference internal" href="user_guide.html#benchmark-a
       <footer>
         
         <div class="related-pages">
-          <a class="next-page" href="api.html">
+          <a class="next-page" href="models/flatbug-M-2026.09.html">
               <div class="page-info">
                 <div class="context">
                   <span>Next</span>
                 </div>
-                <div class="title">API reference</div>
+                <div class="title">flatbug-M-2026.09</div>
               </div>
               <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
             </a>

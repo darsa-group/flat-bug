@@ -15,11 +15,11 @@ fb_predict -i my_images/ -o results/ -w flat_bug_M_v2.pt
 Predictor(model="flat_bug_M_v2.pt", device="cuda:0")
 ```
 
+Click a model for its scores on each benchmark dataset, how it was trained, and a comparison
+with any other benchmarked model.
+
 ```{raw} html
-<div id="fb-models" class="fb-models" aria-live="polite">
-  <p class="fb-muted">Loading the model list…</p>
-</div>
-<script src="_static/models/models.js" defer></script>
+:file: _generated/models_table.html
 ```
 
 (benchmark)=
@@ -39,3 +39,6 @@ outlines of the animals that were found follow the hand-drawn ones.
 
 The benchmark, the code that scores it, and the result of every run are versioned and
 checksummed: see [Benchmark a model](user_guide.md#benchmark-a-model).
+
+```{include} _generated/models_toc.md
+```

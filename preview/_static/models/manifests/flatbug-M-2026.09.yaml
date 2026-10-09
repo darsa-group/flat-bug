@@ -1,0 +1,346 @@
+schema: flatbug-model/1
+name: flatbug-M-2026.09
+bundled: '2026-10-09T09:33:06+00:00'
+weights:
+  file: weights.pt
+  sha256: 2c8e7426455a0a8391da7f3dab0b80eb736ea3bdf5550b6954051572ce28a50e
+  bytes: 54616682
+model:
+  framework: ultralytics
+  ultralytics_version: 8.4.51
+  task: segment
+  base_model: yolo26m-seg.pt
+  image_size: 1024
+  classes:
+  - insect
+training:
+  commit: 0a75d694183f022b91a5ff22877d1a43c1f965f0
+  checkpoint_date: '2026-09-22T12:16:18.077255'
+  epochs: 500
+  epochs_completed: 500
+  run_name: fb500Mpow_2026-09-18_09-31-03
+  data:
+    corpus: flatbug-dir4 (GHPC), equal to flatbug-dir3 (identical GT counts and per-dataset
+      F1 within 0.002)
+    source: CVAT project 321224 flatbug-cloud (org DARSA), images from S3 bucket flatbug-cloud
+    built_with: fb_clone_data + fb_prepare_data (completed tasks/jobs only, CVAT-deleted
+      frames excluded)
+    validation_split: md5 rule, proportion 0.15
+    images_with_annotations: 21970
+    bbox_only_datasets:
+    - artaxor-bbox
+    - AMI-traps-2024-bbox
+    - UrbanInsects-bbox
+    - bugbox-bulk-bbox-downscaled
+    - MAMBOcrops-bbox
+    datasets:
+      2023-danish-spiders:
+        images: 33
+        annotations: 2069
+      2025-agrivolt:
+        images: 61
+        annotations: 777
+      2025-drosophila-biomass:
+        images: 100
+        annotations: 1940
+      ALUS:
+        images: 352
+        annotations: 6936
+      AMI-traps:
+        images: 153
+        annotations: 5435
+      AMI-traps-2024-bbox:
+        images: 2756
+        annotations: 69650
+      AMT:
+        images: 106
+        annotations: 959
+      BIOSCAN:
+        images: 497
+        annotations: 501
+      BugNet:
+        images: 419
+        annotations: 2515
+      CollembolAI:
+        images: 36
+        annotations: 5901
+      DIRT:
+        images: 271
+        annotations: 3780
+      Diopsis:
+        images: 46
+        annotations: 469
+      DiversityScanner:
+        images: 528
+        annotations: 531
+      EntoScan-well:
+        images: 491
+        annotations: 492
+      InsectMorphoAI:
+        images: 214
+        annotations: 214
+      MAMBOcrops-bbox:
+        images: 587
+        annotations: 598
+      Massid45:
+        images: 40
+        annotations: 16149
+      Mothitor:
+        images: 12
+        annotations: 193
+      NHM-beetles-crops:
+        images: 729
+        annotations: 740
+      PeMaToEuroPep:
+        images: 284
+        annotations: 9754
+      UrbanInsects-bbox:
+        images: 69
+        annotations: 25906
+      abram2023:
+        images: 40
+        annotations: 11867
+      amarathunga2022:
+        images: 550
+        annotations: 556
+      anTraX:
+        images: 212
+        annotations: 4772
+      artaxor-bbox:
+        images: 4841
+        annotations: 8334
+      artaxor-seg:
+        images: 1258
+        annotations: 1621
+      biodiscover:
+        images: 2868
+        annotations: 2868
+      biodiscover-arm:
+        images: 52
+        annotations: 5242
+      blair2020:
+        images: 254
+        annotations: 7613
+      bugbox:
+        images: 997
+        annotations: 1003
+      bugbox-bulk-bbox-downscaled:
+        images: 223
+        annotations: 10062
+      cao2022:
+        images: 60
+        annotations: 601
+      gernat2018:
+        images: 38
+        annotations: 1851
+      miniMon:
+        images: 706
+        annotations: 865
+      pinoy2023:
+        images: 76
+        annotations: 13119
+      sittinger2023:
+        images: 387
+        annotations: 721
+      sticky-pi:
+        images: 476
+        annotations: 33029
+      ubc-pitfall-traps:
+        images: 150
+        annotations: 6166
+      ubc-scanned-sticky-cards:
+        images: 50
+        annotations: 3210
+      wehrli2025:
+        images: 948
+        annotations: 19491
+    counts_note: annotation counts are whole-dataset (train + val); from the 2026-09-10
+      corpus audit
+  config:
+    batch: 16
+    model: yolo26m-seg.pt
+    epochs: 500
+    device:
+    - 0
+    - 1
+    patience: 9999
+    save_period: 25
+    lr0: 0.01
+    lrf: 1.0e-05
+    fb_lr_power: 1.262227
+    optimizer: SGD
+    workers: 12
+    fb_max_instances: 9999
+    fb_max_images: -1
+    fb_synth_prob: 0.0
+    fb_sample_weight: area
+    fb_exclude_datasets: []
+    fb_bbox_only_datasets:
+    - artaxor-bbox
+    - AMI-traps-2024-bbox
+    - UrbanInsects-bbox
+    - bugbox-bulk-bbox
+    - MAMBOcrops-bbox
+    fb_zoom_prob: 0.2
+    fb_zoom_min_px: 100
+    fb_zoom_occupancy:
+    - 0.4
+    - 0.5
+    fb_zoom_min_scale: 0.15
+    fb_zoom_jitter: 0.08
+  train_args:
+    task: segment
+    mode: train
+    model: yolo26m-seg.pt
+    data: /usr/home/qgg/qgeiss/flatbug-dir4/flat-bug-data/yolo/data.yaml
+    epochs: 500
+    time: null
+    patience: 9999
+    batch: 16
+    imgsz: 1024
+    save: true
+    save_period: 25
+    cache: false
+    device: 0,1
+    workers: 12
+    project: null
+    name: fb500Mpow_2026-09-18_09-31-03
+    exist_ok: false
+    pretrained: true
+    optimizer: SGD
+    verbose: true
+    seed: 0
+    deterministic: true
+    single_cls: false
+    rect: false
+    cos_lr: false
+    close_mosaic: 10
+    resume: false
+    amp: true
+    fraction: 1.0
+    profile: false
+    freeze: null
+    multi_scale: 0.0
+    compile: false
+    overlap_mask: true
+    mask_ratio: 4
+    dropout: 0.0
+    val: true
+    split: val
+    save_json: false
+    conf: null
+    iou: 0.7
+    max_det: 300
+    half: false
+    dnn: false
+    plots: true
+    end2end: null
+    source: null
+    vid_stride: 1
+    stream_buffer: false
+    visualize: false
+    augment: false
+    agnostic_nms: false
+    classes: null
+    retina_masks: false
+    embed: null
+    show: false
+    save_frames: false
+    save_txt: false
+    save_conf: false
+    save_crop: false
+    show_labels: true
+    show_conf: true
+    show_boxes: true
+    line_width: null
+    format: torchscript
+    keras: false
+    optimize: false
+    int8: false
+    dynamic: false
+    simplify: true
+    opset: null
+    workspace: null
+    nms: false
+    lr0: 0.01
+    lrf: 1.0e-05
+    momentum: 0.937
+    weight_decay: 0.0005
+    warmup_epochs: 3.0
+    warmup_momentum: 0.8
+    warmup_bias_lr: 0.1
+    box: 7.5
+    cls: 0.5
+    cls_pw: 0.0
+    dfl: 1.5
+    pose: 12.0
+    kobj: 1.0
+    rle: 1.0
+    angle: 1.0
+    nbs: 64
+    hsv_h: 0.015
+    hsv_s: 0.7
+    hsv_v: 0.4
+    degrees: 0.0
+    translate: 0.1
+    scale: 0.5
+    shear: 0.0
+    perspective: 0.0
+    flipud: 0.0
+    fliplr: 0.5
+    bgr: 0.0
+    mosaic: 1.0
+    mixup: 0.0
+    cutmix: 0.0
+    copy_paste: 0.0
+    copy_paste_mode: flip
+    auto_augment: randaugment
+    erasing: 0.4
+    cfg: null
+    tracker: botsort.yaml
+  git_recorded_in_checkpoint:
+    root: None
+    branch: null
+    commit: null
+    message: null
+    origin: null
+  commit_note: 'Not recorded in the checkpoint. Inferred from timing: the commit was
+    made at 2026-09-18 09:30:36 and the run name is stamped 09:31:03. To be confirmed
+    on GHPC.'
+  branch: feat/zoom-crops
+  config_file: scripts/training/fb_config_500_M_power.yaml
+  launch_script: scripts/training/train_500_M_power_GHPC.sh
+  started: '2026-09-18T09:31:03+02:00'
+  hardware: GHPC gpu02, 2 x NVIDIA L40S, one job, no resume
+  checkpoint_kept: best.pt
+final_val_metrics:
+  metrics/precision(B): 0.9701
+  metrics/recall(B): 0.95981
+  metrics/mAP50(B): 0.98757
+  metrics/mAP50-95(B): 0.79576
+  metrics/precision(M): 0.96632
+  metrics/recall(M): 0.95609
+  metrics/mAP50(M): 0.97892
+  metrics/mAP50-95(M): 0.66459
+  val/box_loss: 0.0
+  val/seg_loss: 0.0
+  val/cls_loss: 0.0
+  val/dfl_loss: 0.0
+  fitness: 1.46036
+inference:
+  config_file: inference.yaml
+license: AGPL-3.0 (https://ultralytics.com/license)
+internal_evaluation:
+  description: End-to-end on the corpus validation split (pyramid prediction on whole
+    images), IoU 0.5, instances >= 32 px, bbox-only datasets excluded. Not the frozen
+    benchmark.
+  f1: 0.9104
+  precision: 0.8853
+  recall: 0.937
+  gt_instances: 25566
+  reference_previous_model:
+    name: 300-epoch M
+    f1: 0.9066
+notes: YOLO26-M segmentation trained 500 epochs with zoom-crop augmentation (fb_zoom_prob
+  0.2) and a power LR anneal ending 5x below linear. Used for the MiniMon 2025 run
+  (417,458 images).

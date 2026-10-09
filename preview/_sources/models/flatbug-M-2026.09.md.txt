@@ -1,0 +1,379 @@
+# flatbug-M-2026.09
+
+```{raw} html
+<p class="fb-back"><a href="../models.html">← All models</a></p>
+<p>500 epochs on the 2026 corpus (40 datasets, 21,970 images), with magnified-crop augmentation, meant to run with the refiner (a magnified second pass on each detection).</p>
+<dl class="fb-dl"><dt>Status</dt><dd><span class="fb-chip fb-chip--candidate" title="Trained and documented, not yet released.">Candidate</span></dd><dt>Trained</dt><dd>2026-09-22</dd><dt>Size</dt><dd>M</dd><dt>Architecture</dt><dd>YOLO26-M segmentation</dd><dt>Weights</dt><dd>55 MB · sha256 <code>2c8e7426455a0a83…</code></dd></dl>
+<div class="fb-kpis">
+<div><span>F1</span><b>0.9016</b></div><div><span>Precision</span><b>0.8726</b></div>
+<div><span>Recall</span><b>0.9327</b></div><div><span>Mask IoU</span><b>0.810</b></div>
+<div><span>Animals</span><b>19,113</b></div></div>
+<p class="fb-muted">On <b>flatbug-bench-v1</b>, run with flat-bug
+<a href="https://github.com/darsa-group/flat-bug/commit/6a95fd23de4640a8dbacce9fd5594899f2a9cdec"><code>6a95fd23de46</code></a>
+· scorer v1 · 2026-10-09</p>
+<h2 id="per-dataset">Per dataset</h2>
+<div class="fb-table-wrap"><svg viewBox="0 0 720 606" class="fb-chart" role="img" aria-label="Precision, recall and F1 per benchmark dataset"><text x="200" y="14" class="fb-legend"><tspan class="fb-c-p">◆</tspan> precision  <tspan class="fb-c-r">▲</tspan> recall  <tspan class="fb-c-f">●</tspan> F1</text><text x="658" y="14" class="fb-legend">animals</text><line x1="200.0" x2="200.0" y1="22" y2="582" class="fb-grid"/><text x="200.0" y="598" class="fb-axis" text-anchor="middle">0.5</text><line x1="290.0" x2="290.0" y1="22" y2="582" class="fb-grid"/><text x="290.0" y="598" class="fb-axis" text-anchor="middle">0.6</text><line x1="380.0" x2="380.0" y1="22" y2="582" class="fb-grid"/><text x="380.0" y="598" class="fb-axis" text-anchor="middle">0.7</text><line x1="470.00000000000006" x2="470.00000000000006" y1="22" y2="582" class="fb-grid"/><text x="470.00000000000006" y="598" class="fb-axis" text-anchor="middle">0.8</text><line x1="560.0" x2="560.0" y1="22" y2="582" class="fb-grid"/><text x="560.0" y="598" class="fb-axis" text-anchor="middle">0.9</text><line x1="650.0" x2="650.0" y1="22" y2="582" class="fb-grid"/><text x="650.0" y="598" class="fb-axis" text-anchor="middle">1</text><g><title>abram2023: F1 0.901, precision 0.888, recall 0.915, mask IoU 0.792 (1696 animals, 1748 detections)</title><rect x="0" y="26.0" width="720" height="24" class="fb-band"/><text x="190" y="42.0" class="fb-label" text-anchor="end">abram2023</text><line x1="549.0846681922196" x2="573.5849056603774" y1="38.0" y2="38.0" class="fb-span"/><path d="M549.0846681922196,33.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M573.5849056603774,33.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="561.1498257839721" cy="38.0" r="5" class="fb-c-f"/><text x="658" y="42.0" class="fb-axis">1,696</text></g><g><title>ALUS: F1 0.982, precision 0.974, recall 0.990, mask IoU 0.892 (966 animals, 982 detections)</title><rect x="0" y="50.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="66.0" class="fb-label" text-anchor="end">ALUS</text><line x1="626.1710794297353" x2="640.6832298136646" y1="62.0" y2="62.0" class="fb-span"/><path d="M626.1710794297353,57.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M640.6832298136646,57.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="633.3675564681723" cy="62.0" r="5" class="fb-c-f"/><text x="658" y="66.0" class="fb-axis">966</text></g><g><title>amarathunga2022: F1 0.981, precision 0.963, recall 1.000, mask IoU 0.933 (79 animals, 82 detections)</title><rect x="0" y="74.0" width="720" height="24" class="fb-band"/><text x="190" y="90.0" class="fb-label" text-anchor="end">amarathunga2022</text><line x1="617.0731707317073" x2="650.0" y1="86.0" y2="86.0" class="fb-span"/><path d="M617.0731707317073,81.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M650.0,81.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="633.2298136645962" cy="86.0" r="5" class="fb-c-f"/><text x="658" y="90.0" class="fb-axis">79</text></g><g><title>AMI-traps: F1 0.724, precision 0.849, recall 0.632, mask IoU 0.754 (782 animals, 582 detections)</title><rect x="0" y="98.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="114.0" class="fb-label" text-anchor="end">AMI-traps</text><line x1="318.54219948849106" x2="513.9175257731958" y1="110.0" y2="110.0" class="fb-span"/><path d="M513.9175257731958,105.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M318.54219948849106,105.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="401.9061583577713" cy="110.0" r="5" class="fb-c-f"/><text x="658" y="114.0" class="fb-axis">782</text></g><g><title>AMT: F1 0.929, precision 0.891, recall 0.970, mask IoU 0.809 (202 animals, 220 detections)</title><rect x="0" y="122.0" width="720" height="24" class="fb-band"/><text x="190" y="138.0" class="fb-label" text-anchor="end">AMT</text><line x1="551.8181818181818" x2="623.2673267326733" y1="134.0" y2="134.0" class="fb-span"/><path d="M551.8181818181818,129.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M623.2673267326733,129.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="586.0189573459716" cy="134.0" r="5" class="fb-c-f"/><text x="658" y="138.0" class="fb-axis">202</text></g><g><title>anTraX: F1 0.941, precision 0.925, recall 0.958, mask IoU 0.840 (668 animals, 692 detections)</title><rect x="0" y="146.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="162.0" class="fb-label" text-anchor="end">anTraX</text><line x1="582.3699421965318" x2="612.2754491017964" y1="158.0" y2="158.0" class="fb-span"/><path d="M582.3699421965318,153.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M612.2754491017964,153.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="597.0588235294117" cy="158.0" r="5" class="fb-c-f"/><text x="658" y="162.0" class="fb-axis">668</text></g><g><title>ArTaxOr: F1 0.770, precision 0.660, recall 0.923, mask IoU 0.889 (181 animals, 253 detections)</title><rect x="0" y="170.0" width="720" height="24" class="fb-band"/><text x="190" y="186.0" class="fb-label" text-anchor="end">ArTaxOr</text><line x1="344.07114624505925" x2="580.3867403314916" y1="182.0" y2="182.0" class="fb-span"/><path d="M344.07114624505925,177.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M580.3867403314916,177.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="442.62672811059906" cy="182.0" r="5" class="fb-c-f"/><text x="658" y="186.0" class="fb-axis">181</text></g><g><title>biodiscover-arm: F1 0.902, precision 0.857, recall 0.952, mask IoU 0.813 (1003 animals, 1114 detections)</title><rect x="0" y="194.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="210.0" class="fb-label" text-anchor="end">biodiscover-arm</text><line x1="521.543985637343" x2="606.9292123629112" y1="206.0" y2="206.0" class="fb-span"/><path d="M521.543985637343,201.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M606.9292123629112,201.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="561.9981105337743" cy="206.0" r="5" class="fb-c-f"/><text x="658" y="210.0" class="fb-axis">1,003</text></g><g><title>BIOSCAN: F1 0.927, precision 0.882, recall 0.976, mask IoU 0.922 (84 animals, 93 detections)</title><rect x="0" y="218.0" width="720" height="24" class="fb-band"/><text x="190" y="234.0" class="fb-label" text-anchor="end">BIOSCAN</text><line x1="543.5483870967741" x2="628.5714285714286" y1="230.0" y2="230.0" class="fb-span"/><path d="M543.5483870967741,225.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M628.5714285714286,225.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="583.8983050847457" cy="230.0" r="5" class="fb-c-f"/><text x="658" y="234.0" class="fb-axis">84</text></g><g><title>cao2022: F1 0.988, precision 0.992, recall 0.985, mask IoU 0.833 (130 animals, 129 detections)</title><rect x="0" y="242.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="258.0" class="fb-label" text-anchor="end">cao2022</text><line x1="636.1538461538462" x2="643.0232558139535" y1="254.0" y2="254.0" class="fb-span"/><path d="M643.0232558139535,249.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M636.1538461538462,249.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="639.5752895752896" cy="254.0" r="5" class="fb-c-f"/><text x="658" y="258.0" class="fb-axis">130</text></g><g><title>CollembolAI: F1 0.937, precision 0.923, recall 0.951, mask IoU 0.858 (711 animals, 732 detections)</title><rect x="0" y="266.0" width="720" height="24" class="fb-band"/><text x="190" y="282.0" class="fb-label" text-anchor="end">CollembolAI</text><line x1="581.1475409836066" x2="605.6962025316456" y1="278.0" y2="278.0" class="fb-span"/><path d="M581.1475409836066,273.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M605.6962025316456,273.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="593.2432432432432" cy="278.0" r="5" class="fb-c-f"/><text x="658" y="282.0" class="fb-axis">711</text></g><g><title>Diopsis: F1 0.851, precision 0.835, recall 0.869, mask IoU 0.762 (122 animals, 127 detections)</title><rect x="0" y="290.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="306.0" class="fb-label" text-anchor="end">Diopsis</text><line x1="501.1811023622047" x2="531.967213114754" y1="302.0" y2="302.0" class="fb-span"/><path d="M501.1811023622047,297.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M531.967213114754,297.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="516.265060240964" cy="302.0" r="5" class="fb-c-f"/><text x="658" y="306.0" class="fb-axis">122</text></g><g><title>DIRT: F1 0.905, precision 0.892, recall 0.920, mask IoU 0.791 (448 animals, 462 detections)</title><rect x="0" y="314.0" width="720" height="24" class="fb-band"/><text x="190" y="330.0" class="fb-label" text-anchor="end">DIRT</text><line x1="552.5974025974026" x2="577.6785714285713" y1="326.0" y2="326.0" class="fb-span"/><path d="M552.5974025974026,321.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M577.6785714285713,321.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="564.945054945055" cy="326.0" r="5" class="fb-c-f"/><text x="658" y="330.0" class="fb-axis">448</text></g><g><title>DiversityScanner: F1 1.000, precision 1.000, recall 1.000, mask IoU 0.949 (81 animals, 81 detections)</title><rect x="0" y="338.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="354.0" class="fb-label" text-anchor="end">DiversityScanner</text><line x1="650.0" x2="650.0" y1="350.0" y2="350.0" class="fb-span"/><path d="M650.0,345.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M650.0,345.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="650.0" cy="350.0" r="5" class="fb-c-f"/><text x="658" y="354.0" class="fb-axis">81</text></g><g><title>gernat2018: F1 0.956, precision 0.946, recall 0.965, mask IoU 0.878 (201 animals, 205 detections)</title><rect x="0" y="362.0" width="720" height="24" class="fb-band"/><text x="190" y="378.0" class="fb-label" text-anchor="end">gernat2018</text><line x1="601.7073170731708" x2="618.6567164179105" y1="374.0" y2="374.0" class="fb-span"/><path d="M601.7073170731708,369.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M618.6567164179105,369.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="610.0985221674877" cy="374.0" r="5" class="fb-c-f"/><text x="658" y="378.0" class="fb-axis">201</text></g><g><title>Mothitor: F1 0.914, precision 0.941, recall 0.889, mask IoU 0.746 (18 animals, 17 detections)</title><rect x="0" y="386.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="402.0" class="fb-label" text-anchor="end">Mothitor</text><line x1="550.0" x2="597.0588235294117" y1="398.0" y2="398.0" class="fb-span"/><path d="M597.0588235294117,393.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M550.0,393.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="572.8571428571429" cy="398.0" r="5" class="fb-c-f"/><text x="658" y="402.0" class="fb-axis">18</text></g><g><title>NHM-beetles-crops: F1 0.986, precision 1.000, recall 0.972, mask IoU 0.936 (106 animals, 103 detections)</title><rect x="0" y="410.0" width="720" height="24" class="fb-band"/><text x="190" y="426.0" class="fb-label" text-anchor="end">NHM-beetles-crops</text><line x1="624.5283018867924" x2="650.0" y1="422.0" y2="422.0" class="fb-span"/><path d="M650.0,417.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M624.5283018867924,417.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="637.0813397129186" cy="422.0" r="5" class="fb-c-f"/><text x="658" y="426.0" class="fb-axis">106</text></g><g><title>PeMaToEuroPep: F1 0.853, precision 0.769, recall 0.958, mask IoU 0.851 (1221 animals, 1521 detections)</title><rect x="0" y="434.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="450.0" class="fb-label" text-anchor="end">PeMaToEuroPep</text><line x1="442.3076923076924" x2="612.4078624078625" y1="446.0" y2="446.0" class="fb-span"/><path d="M442.3076923076924,441.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M612.4078624078625,441.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="518.0525164113785" cy="446.0" r="5" class="fb-c-f"/><text x="658" y="450.0" class="fb-axis">1,221</text></g><g><title>pinoy2023: F1 0.926, precision 0.899, recall 0.954, mask IoU 0.781 (2970 animals, 3150 detections)</title><rect x="0" y="458.0" width="720" height="24" class="fb-band"/><text x="190" y="474.0" class="fb-label" text-anchor="end">pinoy2023</text><line x1="559.4285714285714" x2="608.4848484848485" y1="470.0" y2="470.0" class="fb-span"/><path d="M559.4285714285714,465.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M608.4848484848485,465.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="583.2352941176471" cy="470.0" r="5" class="fb-c-f"/><text x="658" y="474.0" class="fb-axis">2,970</text></g><g><title>sittinger2023: F1 0.935, precision 0.913, recall 0.959, mask IoU 0.832 (98 animals, 103 detections)</title><rect x="0" y="482.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="498.0" class="fb-label" text-anchor="end">sittinger2023</text><line x1="571.3592233009708" x2="613.2653061224489" y1="494.0" y2="494.0" class="fb-span"/><path d="M571.3592233009708,489.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M613.2653061224489,489.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="591.7910447761194" cy="494.0" r="5" class="fb-c-f"/><text x="658" y="498.0" class="fb-axis">98</text></g><g><title>sticky-pi: F1 0.908, precision 0.879, recall 0.939, mask IoU 0.789 (6145 animals, 6562 detections)</title><rect x="0" y="506.0" width="720" height="24" class="fb-band"/><text x="190" y="522.0" class="fb-label" text-anchor="end">sticky-pi</text><line x1="541.3745809204511" x2="595.0772986167616" y1="518.0" y2="518.0" class="fb-span"/><path d="M541.3745809204511,513.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M595.0772986167616,513.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="567.3447705988824" cy="518.0" r="5" class="fb-c-f"/><text x="658" y="522.0" class="fb-axis">6,145</text></g><g><title>ubc-pitfall-traps: F1 0.893, precision 0.863, recall 0.925, mask IoU 0.838 (604 animals, 648 detections)</title><rect x="0" y="530.0" width="720" height="24" class="fb-band fb-band--alt"/><text x="190" y="546.0" class="fb-label" text-anchor="end">ubc-pitfall-traps</text><line x1="526.3888888888889" x2="582.9470198675497" y1="542.0" y2="542.0" class="fb-span"/><path d="M526.3888888888889,537.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M582.9470198675497,537.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="553.6741214057508" cy="542.0" r="5" class="fb-c-f"/><text x="658" y="546.0" class="fb-axis">604</text></g><g><title>ubc-scanned-sticky-cards: F1 0.793, precision 0.684, recall 0.943, mask IoU 0.817 (597 animals, 823 detections)</title><rect x="0" y="554.0" width="720" height="24" class="fb-band"/><text x="190" y="570.0" class="fb-label" text-anchor="end">ubc-scanned-sticky-cards</text><line x1="365.674362089915" x2="598.7437185929648" y1="566.0" y2="566.0" class="fb-span"/><path d="M365.674362089915,561.0 l5,5 l-5,5 l-5,-5 z" class="fb-c-p"/><path d="M598.7437185929648,561.0 l5,9 l-10,0 z" class="fb-c-r"/><circle cx="463.661971830986" cy="566.0" r="5" class="fb-c-f"/><text x="658" y="570.0" class="fb-axis">597</text></g></svg></div>
+<details class="fb-details"><summary>Per-dataset numbers</summary><div class="fb-table-wrap"><table class="fb-table"><thead><tr><th>Dataset</th><th>Animals</th><th>Detections</th><th>Precision</th><th>Recall</th><th>F1</th><th>Mask IoU</th></tr></thead><tbody><tr><th scope="row">abram2023</th><td class="fb-num">1,696</td><td class="fb-num">1,748</td><td class="fb-num">0.888</td><td class="fb-num">0.915</td><td class="fb-num"><b>0.901</b></td><td class="fb-num">0.792</td></tr><tr><th scope="row">ALUS</th><td class="fb-num">966</td><td class="fb-num">982</td><td class="fb-num">0.974</td><td class="fb-num">0.990</td><td class="fb-num"><b>0.982</b></td><td class="fb-num">0.892</td></tr><tr><th scope="row">amarathunga2022</th><td class="fb-num">79</td><td class="fb-num">82</td><td class="fb-num">0.963</td><td class="fb-num">1.000</td><td class="fb-num"><b>0.981</b></td><td class="fb-num">0.933</td></tr><tr><th scope="row">AMI-traps</th><td class="fb-num">782</td><td class="fb-num">582</td><td class="fb-num">0.849</td><td class="fb-num">0.632</td><td class="fb-num"><b>0.724</b></td><td class="fb-num">0.754</td></tr><tr><th scope="row">AMT</th><td class="fb-num">202</td><td class="fb-num">220</td><td class="fb-num">0.891</td><td class="fb-num">0.970</td><td class="fb-num"><b>0.929</b></td><td class="fb-num">0.809</td></tr><tr><th scope="row">anTraX</th><td class="fb-num">668</td><td class="fb-num">692</td><td class="fb-num">0.925</td><td class="fb-num">0.958</td><td class="fb-num"><b>0.941</b></td><td class="fb-num">0.840</td></tr><tr><th scope="row">ArTaxOr</th><td class="fb-num">181</td><td class="fb-num">253</td><td class="fb-num">0.660</td><td class="fb-num">0.923</td><td class="fb-num"><b>0.770</b></td><td class="fb-num">0.889</td></tr><tr><th scope="row">biodiscover-arm</th><td class="fb-num">1,003</td><td class="fb-num">1,114</td><td class="fb-num">0.857</td><td class="fb-num">0.952</td><td class="fb-num"><b>0.902</b></td><td class="fb-num">0.813</td></tr><tr><th scope="row">BIOSCAN</th><td class="fb-num">84</td><td class="fb-num">93</td><td class="fb-num">0.882</td><td class="fb-num">0.976</td><td class="fb-num"><b>0.927</b></td><td class="fb-num">0.922</td></tr><tr><th scope="row">cao2022</th><td class="fb-num">130</td><td class="fb-num">129</td><td class="fb-num">0.992</td><td class="fb-num">0.985</td><td class="fb-num"><b>0.988</b></td><td class="fb-num">0.833</td></tr><tr><th scope="row">CollembolAI</th><td class="fb-num">711</td><td class="fb-num">732</td><td class="fb-num">0.923</td><td class="fb-num">0.951</td><td class="fb-num"><b>0.937</b></td><td class="fb-num">0.858</td></tr><tr><th scope="row">Diopsis</th><td class="fb-num">122</td><td class="fb-num">127</td><td class="fb-num">0.835</td><td class="fb-num">0.869</td><td class="fb-num"><b>0.851</b></td><td class="fb-num">0.762</td></tr><tr><th scope="row">DIRT</th><td class="fb-num">448</td><td class="fb-num">462</td><td class="fb-num">0.892</td><td class="fb-num">0.920</td><td class="fb-num"><b>0.905</b></td><td class="fb-num">0.791</td></tr><tr><th scope="row">DiversityScanner</th><td class="fb-num">81</td><td class="fb-num">81</td><td class="fb-num">1.000</td><td class="fb-num">1.000</td><td class="fb-num"><b>1.000</b></td><td class="fb-num">0.949</td></tr><tr><th scope="row">gernat2018</th><td class="fb-num">201</td><td class="fb-num">205</td><td class="fb-num">0.946</td><td class="fb-num">0.965</td><td class="fb-num"><b>0.956</b></td><td class="fb-num">0.878</td></tr><tr><th scope="row">Mothitor</th><td class="fb-num">18</td><td class="fb-num">17</td><td class="fb-num">0.941</td><td class="fb-num">0.889</td><td class="fb-num"><b>0.914</b></td><td class="fb-num">0.746</td></tr><tr><th scope="row">NHM-beetles-crops</th><td class="fb-num">106</td><td class="fb-num">103</td><td class="fb-num">1.000</td><td class="fb-num">0.972</td><td class="fb-num"><b>0.986</b></td><td class="fb-num">0.936</td></tr><tr><th scope="row">PeMaToEuroPep</th><td class="fb-num">1,221</td><td class="fb-num">1,521</td><td class="fb-num">0.769</td><td class="fb-num">0.958</td><td class="fb-num"><b>0.853</b></td><td class="fb-num">0.851</td></tr><tr><th scope="row">pinoy2023</th><td class="fb-num">2,970</td><td class="fb-num">3,150</td><td class="fb-num">0.899</td><td class="fb-num">0.954</td><td class="fb-num"><b>0.926</b></td><td class="fb-num">0.781</td></tr><tr><th scope="row">sittinger2023</th><td class="fb-num">98</td><td class="fb-num">103</td><td class="fb-num">0.913</td><td class="fb-num">0.959</td><td class="fb-num"><b>0.935</b></td><td class="fb-num">0.832</td></tr><tr><th scope="row">sticky-pi</th><td class="fb-num">6,145</td><td class="fb-num">6,562</td><td class="fb-num">0.879</td><td class="fb-num">0.939</td><td class="fb-num"><b>0.908</b></td><td class="fb-num">0.789</td></tr><tr><th scope="row">ubc-pitfall-traps</th><td class="fb-num">604</td><td class="fb-num">648</td><td class="fb-num">0.863</td><td class="fb-num">0.925</td><td class="fb-num"><b>0.893</b></td><td class="fb-num">0.838</td></tr><tr><th scope="row">ubc-scanned-sticky-cards</th><td class="fb-num">597</td><td class="fb-num">823</td><td class="fb-num">0.684</td><td class="fb-num">0.943</td><td class="fb-num"><b>0.793</b></td><td class="fb-num">0.817</td></tr></tbody></table></div></details>
+<h2 id="compare">Compare</h2>
+<p><label>Contrast <code>flatbug-M-2026.09</code> with
+<select class="fb-compare" data-self="flatbug-M-2026.09"><option value="">choose a model…</option><option value="flat_bug_M_v2">flat_bug_M_v2</option></select></label></p>
+<div class="fb-compare-out" aria-live="polite"></div>
+<h2 id="run">Benchmark run</h2>
+<dl class="fb-dl"><dt>Benchmark</dt><dd>flatbug-bench-v1 · sha256 <code>8da0cd8fa2c05977…</code></dd><dt>Code</dt><dd><code>6a95fd23de4640a8dbacce9fd5594899f2a9cdec</code> Keep a refined polygon on the device of the polygon it replaces</dd><dt>Environment</dt><dd>python 3.14.6, torch 2.11.0+cu130, device_name NVIDIA GeForce RTX 4060 Ti, ultralytics 8.4.90</dd><dt>Leak check</dt><dd>checked by hand: all 990 benchmark images are byte-identical to files in the validation split of the corpus this model was trained on (S3 checksums, 2026-10-09); a renamed copy of the same scene cannot be excluded</dd><dt>Weights</dt><dd>sha256 <code>2c8e7426455a0a83…</code></dd></dl>
+<h2 id="training">How it was trained</h2>
+<dl class="fb-dl"><dt>Code</dt><dd><a href="https://github.com/darsa-group/flat-bug/commit/0a75d694183f022b91a5ff22877d1a43c1f965f0"><code>0a75d694183f</code></a> <span class="fb-muted">(inferred from timing; this model predates training manifests)</span></dd><dt>Starting point</dt><dd><code>yolo26m-seg.pt</code></dd><dt>Epochs</dt><dd>500</dd><dt>Data</dt><dd>21,970 images from 40 datasets</dd><dt>Hardware</dt><dd>2 × NVIDIA L40S, ~99 h</dd><dt>Framework</dt><dd>ultralytics 8.4.51</dd></dl>
+<h2 id="settings">Predictor settings</h2>
+<pre class="fb-pre">REFINE: true
+REFINE_MIN_PX: 96
+REFINE_OCCUPANCY: 0.67
+REFINE_MIN_AGREEMENT: 0.5
+REFINE_MAX_GROWTH: 1.15</pre>
+<details class="fb-details"><summary>Full manifest</summary><pre class="fb-pre fb-pre--long">schema: flatbug-model/1
+name: flatbug-M-2026.09
+bundled: &#x27;2026-10-09T09:33:06+00:00&#x27;
+weights:
+  file: weights.pt
+  sha256: 2c8e7426455a0a8391da7f3dab0b80eb736ea3bdf5550b6954051572ce28a50e
+  bytes: 54616682
+model:
+  framework: ultralytics
+  ultralytics_version: 8.4.51
+  task: segment
+  base_model: yolo26m-seg.pt
+  image_size: 1024
+  classes:
+  - insect
+training:
+  commit: 0a75d694183f022b91a5ff22877d1a43c1f965f0
+  checkpoint_date: &#x27;2026-09-22T12:16:18.077255&#x27;
+  epochs: 500
+  epochs_completed: 500
+  run_name: fb500Mpow_2026-09-18_09-31-03
+  data:
+    corpus: flatbug-dir4 (GHPC), equal to flatbug-dir3 (identical GT counts and per-dataset
+      F1 within 0.002)
+    source: CVAT project 321224 flatbug-cloud (org DARSA), images from S3 bucket flatbug-cloud
+    built_with: fb_clone_data + fb_prepare_data (completed tasks/jobs only, CVAT-deleted
+      frames excluded)
+    validation_split: md5 rule, proportion 0.15
+    images_with_annotations: 21970
+    bbox_only_datasets:
+    - artaxor-bbox
+    - AMI-traps-2024-bbox
+    - UrbanInsects-bbox
+    - bugbox-bulk-bbox-downscaled
+    - MAMBOcrops-bbox
+    datasets:
+      2023-danish-spiders:
+        images: 33
+        annotations: 2069
+      2025-agrivolt:
+        images: 61
+        annotations: 777
+      2025-drosophila-biomass:
+        images: 100
+        annotations: 1940
+      ALUS:
+        images: 352
+        annotations: 6936
+      AMI-traps:
+        images: 153
+        annotations: 5435
+      AMI-traps-2024-bbox:
+        images: 2756
+        annotations: 69650
+      AMT:
+        images: 106
+        annotations: 959
+      BIOSCAN:
+        images: 497
+        annotations: 501
+      BugNet:
+        images: 419
+        annotations: 2515
+      CollembolAI:
+        images: 36
+        annotations: 5901
+      DIRT:
+        images: 271
+        annotations: 3780
+      Diopsis:
+        images: 46
+        annotations: 469
+      DiversityScanner:
+        images: 528
+        annotations: 531
+      EntoScan-well:
+        images: 491
+        annotations: 492
+      InsectMorphoAI:
+        images: 214
+        annotations: 214
+      MAMBOcrops-bbox:
+        images: 587
+        annotations: 598
+      Massid45:
+        images: 40
+        annotations: 16149
+      Mothitor:
+        images: 12
+        annotations: 193
+      NHM-beetles-crops:
+        images: 729
+        annotations: 740
+      PeMaToEuroPep:
+        images: 284
+        annotations: 9754
+      UrbanInsects-bbox:
+        images: 69
+        annotations: 25906
+      abram2023:
+        images: 40
+        annotations: 11867
+      amarathunga2022:
+        images: 550
+        annotations: 556
+      anTraX:
+        images: 212
+        annotations: 4772
+      artaxor-bbox:
+        images: 4841
+        annotations: 8334
+      artaxor-seg:
+        images: 1258
+        annotations: 1621
+      biodiscover:
+        images: 2868
+        annotations: 2868
+      biodiscover-arm:
+        images: 52
+        annotations: 5242
+      blair2020:
+        images: 254
+        annotations: 7613
+      bugbox:
+        images: 997
+        annotations: 1003
+      bugbox-bulk-bbox-downscaled:
+        images: 223
+        annotations: 10062
+      cao2022:
+        images: 60
+        annotations: 601
+      gernat2018:
+        images: 38
+        annotations: 1851
+      miniMon:
+        images: 706
+        annotations: 865
+      pinoy2023:
+        images: 76
+        annotations: 13119
+      sittinger2023:
+        images: 387
+        annotations: 721
+      sticky-pi:
+        images: 476
+        annotations: 33029
+      ubc-pitfall-traps:
+        images: 150
+        annotations: 6166
+      ubc-scanned-sticky-cards:
+        images: 50
+        annotations: 3210
+      wehrli2025:
+        images: 948
+        annotations: 19491
+    counts_note: annotation counts are whole-dataset (train + val); from the 2026-09-10
+      corpus audit
+  config:
+    batch: 16
+    model: yolo26m-seg.pt
+    epochs: 500
+    device:
+    - 0
+    - 1
+    patience: 9999
+    save_period: 25
+    lr0: 0.01
+    lrf: 1.0e-05
+    fb_lr_power: 1.262227
+    optimizer: SGD
+    workers: 12
+    fb_max_instances: 9999
+    fb_max_images: -1
+    fb_synth_prob: 0.0
+    fb_sample_weight: area
+    fb_exclude_datasets: []
+    fb_bbox_only_datasets:
+    - artaxor-bbox
+    - AMI-traps-2024-bbox
+    - UrbanInsects-bbox
+    - bugbox-bulk-bbox
+    - MAMBOcrops-bbox
+    fb_zoom_prob: 0.2
+    fb_zoom_min_px: 100
+    fb_zoom_occupancy:
+    - 0.4
+    - 0.5
+    fb_zoom_min_scale: 0.15
+    fb_zoom_jitter: 0.08
+  train_args:
+    task: segment
+    mode: train
+    model: yolo26m-seg.pt
+    data: /usr/home/qgg/qgeiss/flatbug-dir4/flat-bug-data/yolo/data.yaml
+    epochs: 500
+    time: null
+    patience: 9999
+    batch: 16
+    imgsz: 1024
+    save: true
+    save_period: 25
+    cache: false
+    device: 0,1
+    workers: 12
+    project: null
+    name: fb500Mpow_2026-09-18_09-31-03
+    exist_ok: false
+    pretrained: true
+    optimizer: SGD
+    verbose: true
+    seed: 0
+    deterministic: true
+    single_cls: false
+    rect: false
+    cos_lr: false
+    close_mosaic: 10
+    resume: false
+    amp: true
+    fraction: 1.0
+    profile: false
+    freeze: null
+    multi_scale: 0.0
+    compile: false
+    overlap_mask: true
+    mask_ratio: 4
+    dropout: 0.0
+    val: true
+    split: val
+    save_json: false
+    conf: null
+    iou: 0.7
+    max_det: 300
+    half: false
+    dnn: false
+    plots: true
+    end2end: null
+    source: null
+    vid_stride: 1
+    stream_buffer: false
+    visualize: false
+    augment: false
+    agnostic_nms: false
+    classes: null
+    retina_masks: false
+    embed: null
+    show: false
+    save_frames: false
+    save_txt: false
+    save_conf: false
+    save_crop: false
+    show_labels: true
+    show_conf: true
+    show_boxes: true
+    line_width: null
+    format: torchscript
+    keras: false
+    optimize: false
+    int8: false
+    dynamic: false
+    simplify: true
+    opset: null
+    workspace: null
+    nms: false
+    lr0: 0.01
+    lrf: 1.0e-05
+    momentum: 0.937
+    weight_decay: 0.0005
+    warmup_epochs: 3.0
+    warmup_momentum: 0.8
+    warmup_bias_lr: 0.1
+    box: 7.5
+    cls: 0.5
+    cls_pw: 0.0
+    dfl: 1.5
+    pose: 12.0
+    kobj: 1.0
+    rle: 1.0
+    angle: 1.0
+    nbs: 64
+    hsv_h: 0.015
+    hsv_s: 0.7
+    hsv_v: 0.4
+    degrees: 0.0
+    translate: 0.1
+    scale: 0.5
+    shear: 0.0
+    perspective: 0.0
+    flipud: 0.0
+    fliplr: 0.5
+    bgr: 0.0
+    mosaic: 1.0
+    mixup: 0.0
+    cutmix: 0.0
+    copy_paste: 0.0
+    copy_paste_mode: flip
+    auto_augment: randaugment
+    erasing: 0.4
+    cfg: null
+    tracker: botsort.yaml
+  git_recorded_in_checkpoint:
+    root: None
+    branch: null
+    commit: null
+    message: null
+    origin: null
+  commit_note: &#x27;Not recorded in the checkpoint. Inferred from timing: the commit was
+    made at 2026-09-18 09:30:36 and the run name is stamped 09:31:03. To be confirmed
+    on GHPC.&#x27;
+  branch: feat/zoom-crops
+  config_file: scripts/training/fb_config_500_M_power.yaml
+  launch_script: scripts/training/train_500_M_power_GHPC.sh
+  started: &#x27;2026-09-18T09:31:03+02:00&#x27;
+  hardware: GHPC gpu02, 2 x NVIDIA L40S, one job, no resume
+  checkpoint_kept: best.pt
+final_val_metrics:
+  metrics/precision(B): 0.9701
+  metrics/recall(B): 0.95981
+  metrics/mAP50(B): 0.98757
+  metrics/mAP50-95(B): 0.79576
+  metrics/precision(M): 0.96632
+  metrics/recall(M): 0.95609
+  metrics/mAP50(M): 0.97892
+  metrics/mAP50-95(M): 0.66459
+  val/box_loss: 0.0
+  val/seg_loss: 0.0
+  val/cls_loss: 0.0
+  val/dfl_loss: 0.0
+  fitness: 1.46036
+inference:
+  config_file: inference.yaml
+license: AGPL-3.0 (https://ultralytics.com/license)
+internal_evaluation:
+  description: End-to-end on the corpus validation split (pyramid prediction on whole
+    images), IoU 0.5, instances &gt;= 32 px, bbox-only datasets excluded. Not the frozen
+    benchmark.
+  f1: 0.9104
+  precision: 0.8853
+  recall: 0.937
+  gt_instances: 25566
+  reference_previous_model:
+    name: 300-epoch M
+    f1: 0.9066
+notes: YOLO26-M segmentation trained 500 epochs with zoom-crop augmentation (fb_zoom_prob
+  0.2) and a power LR anneal ending 5x below linear. Used for the MiniMon 2025 run
+  (417,458 images).
+</pre></details>
+<script src="../_static/models/compare.js" defer></script>
+```

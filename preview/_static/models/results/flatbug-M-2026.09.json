@@ -1,0 +1,265 @@
+{
+ "schema": "flatbug-site-result/1",
+ "name": "flatbug-M-2026.09",
+ "valid": true,
+ "benchmark": {
+  "name": "flatbug-bench-v1",
+  "version": "v1",
+  "sha256": "8da0cd8fa2c05977e7468af6ce42321a9b856f23e873b95b4ce33ff312097925"
+ },
+ "scorer": {
+  "version": "1",
+  "iou_threshold": 0.5,
+  "min_size_px": 32.0
+ },
+ "model": {
+  "name": "flatbug-M-2026.09",
+  "bundle_sha256": "8b40ed7173dad321b0662cb007ded64de8d98cd0b32d854e5c837ca385efec86",
+  "weights_sha256": "2c8e7426455a0a8391da7f3dab0b80eb736ea3bdf5550b6954051572ce28a50e",
+  "training_commit": "0a75d694183f022b91a5ff22877d1a43c1f965f0",
+  "inference_config": {
+   "REFINE": true,
+   "REFINE_MIN_PX": 96,
+   "REFINE_OCCUPANCY": 0.67,
+   "REFINE_MIN_AGREEMENT": 0.5,
+   "REFINE_MAX_GROWTH": 1.15
+  }
+ },
+ "code": {
+  "commit": "6a95fd23de4640a8dbacce9fd5594899f2a9cdec",
+  "subject": "Keep a refined polygon on the device of the polygon it replaces",
+  "author_date": "2026-09-28T08:44:15+02:00",
+  "environment": {
+   "python": "3.14.6",
+   "torch": "2.11.0+cu130",
+   "cuda": "13.0",
+   "cuda_available": true,
+   "device_name": "NVIDIA GeForce RTX 4060 Ti",
+   "ultralytics": "8.4.90"
+  }
+ },
+ "run": {
+  "started": "2026-10-09T11:20:35+00:00",
+  "finished": "2026-10-09T11:36:19+00:00",
+  "device": "cuda:0"
+ },
+ "leakage_text": "checked by hand: all 990 benchmark images are byte-identical to files in the validation split of the corpus this model was trained on (S3 checksums, 2026-10-09); a renamed copy of the same scene cannot be excluded",
+ "overall": {
+  "gt": 19113,
+  "pred": 20429,
+  "tp": 17826,
+  "precision": 0.8725830926623916,
+  "recall": 0.9326636320828755,
+  "f1": 0.9016235901067219,
+  "mean_iou": 0.8099982875469988
+ },
+ "datasets": {
+  "ALUS": {
+   "gt": 966,
+   "pred": 982,
+   "tp": 956,
+   "precision": 0.9735234215885947,
+   "recall": 0.989648033126294,
+   "f1": 0.9815195071868582,
+   "mean_iou": 0.8923023887337508
+  },
+  "AMI-traps": {
+   "gt": 782,
+   "pred": 582,
+   "tp": 494,
+   "precision": 0.8487972508591065,
+   "recall": 0.6317135549872123,
+   "f1": 0.7243401759530792,
+   "mean_iou": 0.754285145942049
+  },
+  "AMT": {
+   "gt": 202,
+   "pred": 220,
+   "tp": 196,
+   "precision": 0.8909090909090909,
+   "recall": 0.9702970297029703,
+   "f1": 0.9289099526066351,
+   "mean_iou": 0.8086748728738644
+  },
+  "ArTaxOr": {
+   "gt": 181,
+   "pred": 253,
+   "tp": 167,
+   "precision": 0.6600790513833992,
+   "recall": 0.9226519337016574,
+   "f1": 0.7695852534562212,
+   "mean_iou": 0.8888042321167308
+  },
+  "BIOSCAN": {
+   "gt": 84,
+   "pred": 93,
+   "tp": 82,
+   "precision": 0.8817204301075269,
+   "recall": 0.9761904761904762,
+   "f1": 0.9265536723163842,
+   "mean_iou": 0.9217613652353011
+  },
+  "CollembolAI": {
+   "gt": 711,
+   "pred": 732,
+   "tp": 676,
+   "precision": 0.9234972677595629,
+   "recall": 0.9507735583684951,
+   "f1": 0.9369369369369369,
+   "mean_iou": 0.8579771767824378
+  },
+  "DIRT": {
+   "gt": 448,
+   "pred": 462,
+   "tp": 412,
+   "precision": 0.8917748917748918,
+   "recall": 0.9196428571428571,
+   "f1": 0.9054945054945055,
+   "mean_iou": 0.7912866044233716
+  },
+  "Diopsis": {
+   "gt": 122,
+   "pred": 127,
+   "tp": 106,
+   "precision": 0.8346456692913385,
+   "recall": 0.8688524590163934,
+   "f1": 0.8514056224899599,
+   "mean_iou": 0.7617829295590481
+  },
+  "DiversityScanner": {
+   "gt": 81,
+   "pred": 81,
+   "tp": 81,
+   "precision": 1.0,
+   "recall": 1.0,
+   "f1": 1.0,
+   "mean_iou": 0.9486270084457167
+  },
+  "Mothitor": {
+   "gt": 18,
+   "pred": 17,
+   "tp": 16,
+   "precision": 0.9411764705882353,
+   "recall": 0.8888888888888888,
+   "f1": 0.9142857142857143,
+   "mean_iou": 0.7464056229340462
+  },
+  "NHM-beetles-crops": {
+   "gt": 106,
+   "pred": 103,
+   "tp": 103,
+   "precision": 1.0,
+   "recall": 0.9716981132075472,
+   "f1": 0.985645933014354,
+   "mean_iou": 0.9362168807863064
+  },
+  "PeMaToEuroPep": {
+   "gt": 1221,
+   "pred": 1521,
+   "tp": 1170,
+   "precision": 0.7692307692307693,
+   "recall": 0.9582309582309583,
+   "f1": 0.8533916849015317,
+   "mean_iou": 0.8508964382185309
+  },
+  "abram2023": {
+   "gt": 1696,
+   "pred": 1748,
+   "tp": 1552,
+   "precision": 0.8878718535469108,
+   "recall": 0.9150943396226415,
+   "f1": 0.9012775842044134,
+   "mean_iou": 0.7916094795087036
+  },
+  "amarathunga2022": {
+   "gt": 79,
+   "pred": 82,
+   "tp": 79,
+   "precision": 0.9634146341463414,
+   "recall": 1.0,
+   "f1": 0.9813664596273292,
+   "mean_iou": 0.9331072865472999
+  },
+  "anTraX": {
+   "gt": 668,
+   "pred": 692,
+   "tp": 640,
+   "precision": 0.9248554913294798,
+   "recall": 0.9580838323353293,
+   "f1": 0.9411764705882353,
+   "mean_iou": 0.8398812353160565
+  },
+  "biodiscover-arm": {
+   "gt": 1003,
+   "pred": 1114,
+   "tp": 955,
+   "precision": 0.8572710951526032,
+   "recall": 0.9521435692921236,
+   "f1": 0.9022201228153047,
+   "mean_iou": 0.8132436872992012
+  },
+  "cao2022": {
+   "gt": 130,
+   "pred": 129,
+   "tp": 128,
+   "precision": 0.9922480620155039,
+   "recall": 0.9846153846153847,
+   "f1": 0.9884169884169884,
+   "mean_iou": 0.8325062521251974
+  },
+  "gernat2018": {
+   "gt": 201,
+   "pred": 205,
+   "tp": 194,
+   "precision": 0.9463414634146341,
+   "recall": 0.9651741293532339,
+   "f1": 0.9556650246305418,
+   "mean_iou": 0.878155310914983
+  },
+  "pinoy2023": {
+   "gt": 2970,
+   "pred": 3150,
+   "tp": 2833,
+   "precision": 0.8993650793650794,
+   "recall": 0.9538720538720539,
+   "f1": 0.9258169934640522,
+   "mean_iou": 0.7807148426280625
+  },
+  "sittinger2023": {
+   "gt": 98,
+   "pred": 103,
+   "tp": 94,
+   "precision": 0.912621359223301,
+   "recall": 0.9591836734693877,
+   "f1": 0.9353233830845772,
+   "mean_iou": 0.8317805367081087
+  },
+  "sticky-pi": {
+   "gt": 6145,
+   "pred": 6562,
+   "tp": 5770,
+   "precision": 0.8793050899116123,
+   "recall": 0.9389747762408462,
+   "f1": 0.9081608562209804,
+   "mean_iou": 0.7888512739845722
+  },
+  "ubc-pitfall-traps": {
+   "gt": 604,
+   "pred": 648,
+   "tp": 559,
+   "precision": 0.8626543209876543,
+   "recall": 0.9254966887417219,
+   "f1": 0.8929712460063898,
+   "mean_iou": 0.8380877335618775
+  },
+  "ubc-scanned-sticky-cards": {
+   "gt": 597,
+   "pred": 823,
+   "tp": 563,
+   "precision": 0.68408262454435,
+   "recall": 0.9430485762144054,
+   "f1": 0.7929577464788733,
+   "mean_iou": 0.8167690553789299
+  }
+ }
+}
