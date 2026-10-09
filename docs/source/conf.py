@@ -3,12 +3,16 @@
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 #
-# The site has four parts: the home page (index.md), the user guide, the model versions page and
-# the API reference. The model versions page is drawn in the browser from _static/models/models.json,
-# so publishing a new model or benchmark result means updating that file, not the page.
+# The site has four parts: the home page (index.md), the user guide, the models page and the API
+# reference. The models table and the per-model pages are generated at build time by
+# _ext/fb_models.py from _static/models/, so publishing a model or a benchmark result means adding
+# files there, not editing pages.
 
 import os
 import shutil
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_ext"))
 
 # -- Project information -----------------------------------------------------
 
@@ -23,12 +27,13 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.intersphinx",
     "myst_parser",
+    "fb_models",  # _ext/fb_models.py: the models table and one page per model, from _static/models/
 ]
 myst_enable_extensions = ["colon_fence", "attrs_inline", "attrs_block"]
 myst_heading_anchors = 3
 
 templates_path = ["_templates"]
-exclude_patterns = []
+exclude_patterns = ["_generated"]
 
 # -- Options for HTML output -------------------------------------------------
 

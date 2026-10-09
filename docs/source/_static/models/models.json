@@ -31,10 +31,19 @@
         "base_model": "yolo26m-seg.pt",
         "ultralytics": "8.4.51"
       },
-      "inference": {"REFINE": true, "REFINE_MIN_PX": 96, "REFINE_OCCUPANCY": 0.67, "REFINE_MIN_AGREEMENT": 0.5, "REFINE_MAX_GROWTH": 1.15},
+      "inference": {
+        "REFINE": true,
+        "REFINE_MIN_PX": 96,
+        "REFINE_OCCUPANCY": 0.67,
+        "REFINE_MIN_AGREEMENT": 0.5,
+        "REFINE_MAX_GROWTH": 1.15
+      },
       "internal_eval": {
         "label": "corpus validation split (not the benchmark)",
-        "f1": 0.9104, "precision": 0.8853, "recall": 0.9370, "instances": 25566
+        "f1": 0.9104,
+        "precision": 0.8853,
+        "recall": 0.937,
+        "instances": 25566
       },
       "benchmark": null
     },
@@ -43,12 +52,19 @@
       "status": "default",
       "date": "2026-07-07",
       "size": "M",
-      "architecture": null,
+      "architecture": "YOLO26-M segmentation",
       "bytes": 54585258,
-      "sha256": null,
+      "sha256": "d3239bf0c367938f90dd21e92c4fb8bb47e28288678c5130c33f708714c8e50d",
       "url": "https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_M_v2.pt",
-      "summary": "The current default of fb_predict and Predictor.",
-      "training": null,
+      "summary": "The current default of fb_predict and Predictor: 300 epochs on the 2026 corpus.",
+      "training": {
+        "commit": null,
+        "commit_note": "not recorded; this model predates training manifests",
+        "epochs": 300,
+        "base_model": "yolo26m-seg.pt",
+        "ultralytics": "8.4.51",
+        "hardware": "trained 2026-06-29 to 2026-07-02 (run fb_M_2026-06-29_17-16-54)"
+      },
       "inference": null,
       "internal_eval": null,
       "benchmark": null
@@ -63,7 +79,10 @@
       "sha256": null,
       "url": "https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_L.pt",
       "summary": "Published with the paper.",
-      "training": null, "inference": null, "internal_eval": null, "benchmark": null
+      "training": null,
+      "inference": null,
+      "internal_eval": null,
+      "benchmark": null
     },
     {
       "name": "flat_bug_M",
@@ -75,7 +94,10 @@
       "sha256": null,
       "url": "https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_M.pt",
       "summary": "Published with the paper.",
-      "training": null, "inference": null, "internal_eval": null, "benchmark": null
+      "training": null,
+      "inference": null,
+      "internal_eval": null,
+      "benchmark": null
     },
     {
       "name": "flat_bug_S",
@@ -87,7 +109,10 @@
       "sha256": null,
       "url": "https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_S.pt",
       "summary": "Published with the paper.",
-      "training": null, "inference": null, "internal_eval": null, "benchmark": null
+      "training": null,
+      "inference": null,
+      "internal_eval": null,
+      "benchmark": null
     },
     {
       "name": "flat_bug_N",
@@ -99,7 +124,10 @@
       "sha256": null,
       "url": "https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_N.pt",
       "summary": "Published with the paper.",
-      "training": null, "inference": null, "internal_eval": null, "benchmark": null
+      "training": null,
+      "inference": null,
+      "internal_eval": null,
+      "benchmark": null
     }
   ]
 }
