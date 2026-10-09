@@ -37,6 +37,12 @@ both sides. **Precision** is the share of detections that are real animals, **re
 share of animals that are found, and **F1** combines the two. **Mask IoU** is how closely the
 outlines of the animals that were found follow the hand-drawn ones.
 
+**What it does not measure.** The benchmark covers the 23 datasets of the paper, and the paper
+models (`flat_bug_N`, `S`, `M`, `L`) were trained on exactly those datasets, with these images held
+out. Later models were trained on a wider corpus (40 datasets in 2026: new traps, scanners and
+field cameras, and box-only data) that this benchmark does not test. Compare models on it for
+what it covers; a gain on the newer kinds of images will not show here.
+
 The benchmark, the code that scores it, and the result of every run are versioned and
 checksummed: see [Benchmark a model](user_guide.md#benchmark-a-model).
 
