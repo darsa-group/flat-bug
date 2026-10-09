@@ -39,8 +39,8 @@
   }
  },
  "run": {
-  "started": "2026-10-09T11:20:35+00:00",
-  "finished": "2026-10-09T11:36:19+00:00",
+  "started": "2026-10-09T13:01:49+00:00",
+  "finished": "2026-10-09T13:02:10+00:00",
   "device": "cuda:0"
  },
  "leakage_text": "checked by hand: all 990 benchmark images are byte-identical to files in the validation split of the corpus this model was trained on (S3 checksums, 2026-10-09); a renamed copy of the same scene cannot be excluded",
@@ -61,7 +61,8 @@
    "precision": 0.9735234215885947,
    "recall": 0.989648033126294,
    "f1": 0.9815195071868582,
-   "mean_iou": 0.8923023887337508
+   "mean_iou": 0.8923023887337508,
+   "seconds_per_image": 3.816
   },
   "AMI-traps": {
    "gt": 782,
@@ -70,7 +71,8 @@
    "precision": 0.8487972508591065,
    "recall": 0.6317135549872123,
    "f1": 0.7243401759530792,
-   "mean_iou": 0.754285145942049
+   "mean_iou": 0.754285145942049,
+   "seconds_per_image": 6.318
   },
   "AMT": {
    "gt": 202,
@@ -79,7 +81,8 @@
    "precision": 0.8909090909090909,
    "recall": 0.9702970297029703,
    "f1": 0.9289099526066351,
-   "mean_iou": 0.8086748728738644
+   "mean_iou": 0.8086748728738644,
+   "seconds_per_image": 3.8
   },
   "ArTaxOr": {
    "gt": 181,
@@ -88,7 +91,8 @@
    "precision": 0.6600790513833992,
    "recall": 0.9226519337016574,
    "f1": 0.7695852534562212,
-   "mean_iou": 0.8888042321167308
+   "mean_iou": 0.8888042321167308,
+   "seconds_per_image": 1.369
   },
   "BIOSCAN": {
    "gt": 84,
@@ -97,7 +101,8 @@
    "precision": 0.8817204301075269,
    "recall": 0.9761904761904762,
    "f1": 0.9265536723163842,
-   "mean_iou": 0.9217613652353011
+   "mean_iou": 0.9217613652353011,
+   "seconds_per_image": 2.108
   },
   "CollembolAI": {
    "gt": 711,
@@ -106,7 +111,8 @@
    "precision": 0.9234972677595629,
    "recall": 0.9507735583684951,
    "f1": 0.9369369369369369,
-   "mean_iou": 0.8579771767824378
+   "mean_iou": 0.8579771767824378,
+   "seconds_per_image": 55.0
   },
   "DIRT": {
    "gt": 448,
@@ -115,7 +121,8 @@
    "precision": 0.8917748917748918,
    "recall": 0.9196428571428571,
    "f1": 0.9054945054945055,
-   "mean_iou": 0.7912866044233716
+   "mean_iou": 0.7912866044233716,
+   "seconds_per_image": 1.641
   },
   "Diopsis": {
    "gt": 122,
@@ -124,7 +131,8 @@
    "precision": 0.8346456692913385,
    "recall": 0.8688524590163934,
    "f1": 0.8514056224899599,
-   "mean_iou": 0.7617829295590481
+   "mean_iou": 0.7617829295590481,
+   "seconds_per_image": 4.5
   },
   "DiversityScanner": {
    "gt": 81,
@@ -133,7 +141,8 @@
    "precision": 1.0,
    "recall": 1.0,
    "f1": 1.0,
-   "mean_iou": 0.9486270084457167
+   "mean_iou": 0.9486270084457167,
+   "seconds_per_image": 0.531
   },
   "Mothitor": {
    "gt": 18,
@@ -142,7 +151,8 @@
    "precision": 0.9411764705882353,
    "recall": 0.8888888888888888,
    "f1": 0.9142857142857143,
-   "mean_iou": 0.7464056229340462
+   "mean_iou": 0.7464056229340462,
+   "seconds_per_image": 14.0
   },
   "NHM-beetles-crops": {
    "gt": 106,
@@ -151,7 +161,8 @@
    "precision": 1.0,
    "recall": 0.9716981132075472,
    "f1": 0.985645933014354,
-   "mean_iou": 0.9362168807863064
+   "mean_iou": 0.9362168807863064,
+   "seconds_per_image": 0.229
   },
   "PeMaToEuroPep": {
    "gt": 1221,
@@ -160,7 +171,8 @@
    "precision": 0.7692307692307693,
    "recall": 0.9582309582309583,
    "f1": 0.8533916849015317,
-   "mean_iou": 0.8508964382185309
+   "mean_iou": 0.8508964382185309,
+   "seconds_per_image": 7.386
   },
   "abram2023": {
    "gt": 1696,
@@ -169,7 +181,8 @@
    "precision": 0.8878718535469108,
    "recall": 0.9150943396226415,
    "f1": 0.9012775842044134,
-   "mean_iou": 0.7916094795087036
+   "mean_iou": 0.7916094795087036,
+   "seconds_per_image": 93.6
   },
   "amarathunga2022": {
    "gt": 79,
@@ -178,7 +191,8 @@
    "precision": 0.9634146341463414,
    "recall": 1.0,
    "f1": 0.9813664596273292,
-   "mean_iou": 0.9331072865472999
+   "mean_iou": 0.9331072865472999,
+   "seconds_per_image": 1.139
   },
   "anTraX": {
    "gt": 668,
@@ -187,7 +201,8 @@
    "precision": 0.9248554913294798,
    "recall": 0.9580838323353293,
    "f1": 0.9411764705882353,
-   "mean_iou": 0.8398812353160565
+   "mean_iou": 0.8398812353160565,
+   "seconds_per_image": 3.794
   },
   "biodiscover-arm": {
    "gt": 1003,
@@ -196,7 +211,8 @@
    "precision": 0.8572710951526032,
    "recall": 0.9521435692921236,
    "f1": 0.9022201228153047,
-   "mean_iou": 0.8132436872992012
+   "mean_iou": 0.8132436872992012,
+   "seconds_per_image": 5.286
   },
   "cao2022": {
    "gt": 130,
@@ -205,7 +221,8 @@
    "precision": 0.9922480620155039,
    "recall": 0.9846153846153847,
    "f1": 0.9884169884169884,
-   "mean_iou": 0.8325062521251974
+   "mean_iou": 0.8325062521251974,
+   "seconds_per_image": 1.923
   },
   "gernat2018": {
    "gt": 201,
@@ -214,7 +231,8 @@
    "precision": 0.9463414634146341,
    "recall": 0.9651741293532339,
    "f1": 0.9556650246305418,
-   "mean_iou": 0.878155310914983
+   "mean_iou": 0.878155310914983,
+   "seconds_per_image": 4.429
   },
   "pinoy2023": {
    "gt": 2970,
@@ -223,7 +241,8 @@
    "precision": 0.8993650793650794,
    "recall": 0.9538720538720539,
    "f1": 0.9258169934640522,
-   "mean_iou": 0.7807148426280625
+   "mean_iou": 0.7807148426280625,
+   "seconds_per_image": 24.278
   },
   "sittinger2023": {
    "gt": 98,
@@ -232,7 +251,8 @@
    "precision": 0.912621359223301,
    "recall": 0.9591836734693877,
    "f1": 0.9353233830845772,
-   "mean_iou": 0.8317805367081087
+   "mean_iou": 0.8317805367081087,
+   "seconds_per_image": 1.111
   },
   "sticky-pi": {
    "gt": 6145,
@@ -241,7 +261,8 @@
    "precision": 0.8793050899116123,
    "recall": 0.9389747762408462,
    "f1": 0.9081608562209804,
-   "mean_iou": 0.7888512739845722
+   "mean_iou": 0.7888512739845722,
+   "seconds_per_image": 2.031
   },
   "ubc-pitfall-traps": {
    "gt": 604,
@@ -250,7 +271,8 @@
    "precision": 0.8626543209876543,
    "recall": 0.9254966887417219,
    "f1": 0.8929712460063898,
-   "mean_iou": 0.8380877335618775
+   "mean_iou": 0.8380877335618775,
+   "seconds_per_image": 1.944
   },
   "ubc-scanned-sticky-cards": {
    "gt": 597,
@@ -259,7 +281,18 @@
    "precision": 0.68408262454435,
    "recall": 0.9430485762144054,
    "f1": 0.7929577464788733,
-   "mean_iou": 0.8167690553789299
+   "mean_iou": 0.8167690553789299,
+   "seconds_per_image": 11.5
   }
+ },
+ "timing": {
+  "device": "NVIDIA GeForce RTX 4060 Ti",
+  "complete": true,
+  "seconds": 3316.0,
+  "images": 990,
+  "megapixels": 9479.9,
+  "seconds_per_image": 3.349,
+  "seconds_per_megapixel": 0.3498,
+  "measure": "fb_predict's elapsed time per dataset: image decoding and inference, without model loading"
  }
 }

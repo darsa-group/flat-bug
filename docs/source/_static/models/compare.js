@@ -19,10 +19,19 @@
   let metric = "f1";
 
   function kpis(a, b) {
-    return `<div class="fb-kpis">${Object.entries(METRICS).map(([k, label]) => {
+    const scores = Object.entries(METRICS).map(([k, label]) => {
       const d = a.overall[k] - b.overall[k];
       return `<div><span>${label}</span><b>${f(a.overall[k], 4)}</b><em class="fb-${cls(d)}">${sd(d, 4)} vs ${f(b.overall[k], 4)}</em></div>`;
-    }).join("")}</div>`;
+    }).join("");
+    // Speed only compares when both ran on the same GPU.
+    const ta = a.timing || {}, tb = b.timing || {};
+    let speed = "";
+    if (ta.seconds_per_image && tb.seconds_per_image) {
+      const r = ta.seconds_per_image / tb.seconds_per_image;
+      const same = ta.device && ta.device === tb.device;
+      speed = `<div><span>Time / image</span><b>${ta.seconds_per_image.toFixed(2)} s</b><em class="fb-${same ? (r > 1.05 ? "down" : r < 0.95 ? "up" : "flat") : "flat"}">${r.toFixed(1)}× ${r >= 1 ? "slower" : "faster"} than ${tb.seconds_per_image.toFixed(2)} s${same ? "" : " (different GPUs)"}</em></div>`;
+    }
+    return `<div class="fb-kpis">${scores}${speed}</div>`;
   }
 
   function chart(a, b, names) {

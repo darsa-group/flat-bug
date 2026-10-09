@@ -40,6 +40,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import socket
 import subprocess
@@ -51,6 +52,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
+from PIL import Image
+
+Image.MAX_IMAGE_PIXELS = None  # benchmark scans are trusted files, some over 100 MP
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import report  # noqa: E402
@@ -228,31 +232,85 @@ def describe_env(env: Path, uv: str) -> dict:
 
 
 # ---------------------------------------------------------------- predict
+def tqdm_seconds(log_file: Path) -> float | None:
+    """fb_predict's own elapsed time for a dataset, read from its last progress line.
+
+    This is decoding plus inference over the images, without the model loading that happens once
+    per dataset - the time a user waits per image in a long run.
+    """
+    if not log_file.exists():
+        return None
+    last = None
+    for m in re.finditer(r"\| *\d+/\d+ \[(?:(\d+):)?(\d+):(\d+)<", log_file.read_text(errors="replace")):
+        last = m
+    if last is None:
+        return None
+    h, mi, se = (int(x) if x else 0 for x in last.groups())
+    return float(h * 3600 + mi * 60 + se)
+
+
+def image_stats(folder: Path) -> tuple[int, float]:
+    """Number of images and their total size in megapixels (headers only)."""
+    n, mp = 0, 0.0
+    for p in sorted(folder.iterdir()):
+        with Image.open(p) as im:
+            mp += im.width * im.height / 1e6
+        n += 1
+    return n, mp
+
+
 def predict(env: Path, weights: Path, inference: Path | None, bench: Path, datasets: list[str],
-            pred_root: Path, device: str, logs: Path) -> float:
+            pred_root: Path, device: str, logs: Path) -> dict:
+    """Predict every dataset not already cached; return the timing of every dataset.
+
+    Each dataset's timing is stored in its cache marker, so a run that was interrupted and
+    resumed still reports the time of every dataset, not only of those it predicted itself.
+    """
     fb = env / "bin" / "fb_predict"
     clean = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "VIRTUAL_ENV")}
     logs.mkdir(parents=True, exist_ok=True)
-    spent = 0.0
+    timing = {}
     for i, d in enumerate(datasets, 1):
         out = pred_root / d
-        if (out / ".complete").exists():
-            continue
-        shutil.rmtree(out, ignore_errors=True)
-        n = len(list((bench / d / "images").iterdir()))
-        log(f"predict {i}/{len(datasets)} {d} ({n} images)")
-        cmd = [str(fb), "-i", str(bench / d / "images"), "-o", str(out), "-w", str(weights),
-               "--no-crops", "--no-overviews", "-C", "-g", device]
-        if inference:
-            cmd += ["--config", str(inference)]
-        t0 = time.time()
-        with open(logs / f"{d}.log", "w") as lf:
-            r = subprocess.run(cmd, stdout=lf, stderr=subprocess.STDOUT, env=clean)
-        spent += time.time() - t0
-        if r.returncode != 0:
-            raise SystemExit(f"fb_predict failed on {d}; see {logs / f'{d}.log'}")
-        (out / ".complete").touch()
-    return spent
+        marker = out / ".complete"
+        if not marker.exists():
+            shutil.rmtree(out, ignore_errors=True)
+            n = len(list((bench / d / "images").iterdir()))
+            log(f"predict {i}/{len(datasets)} {d} ({n} images)")
+            cmd = [str(fb), "-i", str(bench / d / "images"), "-o", str(out), "-w", str(weights),
+                   "--no-crops", "--no-overviews", "-C", "-g", device]
+            if inference:
+                cmd += ["--config", str(inference)]
+            t0 = time.time()
+            with open(logs / f"{d}.log", "w") as lf:
+                r = subprocess.run(cmd, stdout=lf, stderr=subprocess.STDOUT, env=clean)
+            wall = time.time() - t0
+            if r.returncode != 0:
+                raise SystemExit(f"fb_predict failed on {d}; see {logs / f'{d}.log'}")
+            marker.write_text(json.dumps({"seconds": tqdm_seconds(logs / f"{d}.log"), "wall_seconds": round(wall, 1)}))
+        t = json.loads(marker.read_text() or "{}")
+        if t.get("seconds") is None:  # cached before timings were kept: recover it from the log
+            t["seconds"] = tqdm_seconds(logs / f"{d}.log")
+            t["from_log"] = True
+        n, mp = image_stats(bench / d / "images")
+        timing[d] = {**t, "images": n, "megapixels": round(mp, 1)}
+    return timing
+
+
+def summarise_timing(timing: dict, device_name: str | None) -> dict:
+    known = {d: t for d, t in timing.items() if t.get("seconds")}
+    sec = sum(t["seconds"] for t in known.values())
+    n = sum(t["images"] for t in known.values())
+    mp = sum(t["megapixels"] for t in known.values())
+    return {
+        "device": device_name,
+        "complete": len(known) == len(timing),
+        "seconds": round(sec, 1), "images": n, "megapixels": round(mp, 1),
+        "seconds_per_image": round(sec / n, 3) if n else None,
+        "seconds_per_megapixel": round(sec / mp, 4) if mp else None,
+        "measure": "fb_predict's elapsed time per dataset: image decoding and inference, without model loading",
+        "datasets": timing,
+    }
 
 
 def leak_check(bench: Path, model_root: Path) -> dict:
@@ -356,7 +414,8 @@ def main():
         cache / "runs" / spec["name"] / manifest["name"] / commit[:12])
     out.mkdir(parents=True, exist_ok=True)
     pred_root = cache / "predictions" / f"{bench_sha[:16]}-{model_sha[:16]}-{commit[:16]}-{a.device.replace(':', '')}"
-    seconds = predict(env, weights, inference, bench, datasets, pred_root, a.device, out / "logs")
+    timing = summarise_timing(predict(env, weights, inference, bench, datasets, pred_root, a.device, out / "logs"),
+                              envinfo["device_name"])
 
     log("scoring")
     per_ds, rows, pooled = {}, [], {"gt": 0, "pred": 0, "tp_gt": 0, "tp_pred": 0, "iou_sum": 0.0}
@@ -394,9 +453,10 @@ def main():
         "run": {"started": started.isoformat(timespec="seconds"),
                 "finished": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "host": socket.gethostname(), "platform": platform.platform(), "device": a.device,
-                "predict_seconds_this_run": round(seconds, 1), "predictions": str(pred_root),
+                "predictions": str(pred_root),
                 "runner": str(Path(__file__).resolve())},
         "missing_predictions": missing,
+        "timing": timing,
         "leakage": leaks,
         "overall": overall,
         "datasets": per_ds,
@@ -414,6 +474,9 @@ def main():
     o = overall
     log(f"{'PARTIAL ' if partial else ''}F1 {o['f1']:.4f}  P {o['precision']:.4f}  R {o['recall']:.4f}  "
         f"mIoU {o['mean_iou']:.3f}  (GT {o['gt']}, pred {o['pred']}, missing {missing})")
+    if timing["seconds_per_image"]:
+        log(f"speed: {timing['seconds_per_image']:.2f} s/image, {timing['seconds_per_megapixel']:.3f} s/megapixel "
+            f"on {timing['device'] or a.device}{'' if timing['complete'] else ' (some datasets untimed)'}")
     log(f"results: {out}")
 
 

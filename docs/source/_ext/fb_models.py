@@ -63,7 +63,72 @@ def load(static: Path):
         m["results"] = json.loads(r.read_text()) if r.exists() else None
         mf = static / "manifests" / f"{m['name']}.yaml"
         m["manifest_text"] = mf.read_text() if mf.exists() else None
+        m["tiles"] = None
+        if m["results"]:
+            bench = m["results"]["benchmark"]["name"]
+            spec, mine = static / "tiles" / bench / "tiles.json", static / "tiles" / bench / f"{m['name']}.json"
+            if spec.exists() and mine.exists():
+                m["tiles"] = (json.loads(spec.read_text()), json.loads(mine.read_text())["tiles"], bench)
     return reg
+
+
+# ------------------------------------------------------------------ example tiles
+IOU_BINS = [(0.85, "q4", "IoU ≥ 0.85"), (0.75, "q3", "0.75–0.85"), (0.65, "q2", "0.65–0.75"), (0.5, "q1", "0.5–0.65")]
+
+
+def iou_class(iou) -> str:
+    if iou is None:
+        return "fb-fp"
+    return next((f"fb-{c}" for t, c, _ in IOU_BINS if iou >= t), "fb-q1")
+
+
+def points(xy) -> str:
+    return " ".join(f"{xy[k]:g},{xy[k + 1]:g}" for k in range(0, len(xy) - 1, 2))
+
+
+def tile_figure(t: dict, mine: dict, bench: str) -> str:
+    w, h = t["size"]
+    gt_iou = mine["gt_iou"]
+    gts = "".join(
+        f'<polygon points="{points(g["xy"])}" class="fb-gt{" fb-miss" if iou is None else ""}">'
+        f'<title>{"missed animal" if iou is None else f"animal found, IoU {iou:.2f}"}</title></polygon>'
+        for g, iou in zip(t["gt"], gt_iou))
+    preds = "".join(
+        f'<polygon points="{points(p["xy"])}" class="fb-pr {iou_class(p["iou"])}">'
+        f'<title>{"false detection" if p["iou"] is None else f"IoU {p["iou"]:.2f}"}, confidence {p["conf"]:.2f}</title></polygon>'
+        for p in mine["pred"])
+    found = sum(1 for v in gt_iou if v is not None)
+    fp = sum(1 for p in mine["pred"] if p["iou"] is None)
+    src = f"../_static/models/tiles/{bench}/{t['id']}.jpg"
+    return (f'<figure class="fb-tile fb-tile--{t["kind"]}">'
+            f'<div class="fb-tile-box"><img src="{src}" width="{w}" height="{h}" loading="lazy" alt="{esc(t["dataset"])}, '
+            f'{esc(t["kind"])} example">'
+            f'<svg viewBox="0 0 {w} {h}" preserveAspectRatio="none">{gts}{preds}</svg></div>'
+            f'<figcaption><b>{esc(t["dataset"])}</b> <span class="fb-kind fb-kind--{t["kind"]}">{t["kind"]}</span>'
+            f'<span class="fb-muted">{found}/{len(gt_iou)} found · {fp} false</span></figcaption></figure>')
+
+
+def examples(m: dict) -> str:
+    if not m.get("tiles"):
+        return ""
+    meta, mine, bench = m["tiles"]
+    figs = "".join(tile_figure(t, mine[t["id"]], bench) for t in meta["tiles"] if t["id"] in mine)
+    ref = meta["chosen_with"]
+    legend = "".join(f'<span><i class="fb-sw fb-{c}"></i>{esc(lab)}</span>' for _, c, lab in IOU_BINS)
+    return f"""<h2 id="examples">Examples</h2>
+<p>An easy and a hard image from each dataset, the same for every model: chosen once, as
+<code>{esc(ref['model'])}</code> saw them. Each outline is coloured by how closely it follows the hand-drawn
+one; hover an outline for its numbers. As in the scores, animals under 32 pixels are left out on both sides.</p>
+<div class="fb-examples">
+<input type="checkbox" id="fb-l-gt" checked><input type="checkbox" id="fb-l-pr" checked>
+<input type="radio" name="fb-k" id="fb-k-all" checked><input type="radio" name="fb-k" id="fb-k-hard"><input type="radio" name="fb-k" id="fb-k-easy">
+<div class="fb-ex-bar">
+<span class="fb-ex-group"><label for="fb-l-pr" class="fb-toggle">Predictions</label><label for="fb-l-gt" class="fb-toggle">Hand-drawn</label></span>
+<span class="fb-ex-group"><label for="fb-k-all" class="fb-pick">All</label><label for="fb-k-hard" class="fb-pick">Hard</label><label for="fb-k-easy" class="fb-pick">Easy</label></span>
+</div>
+<p class="fb-key">{legend}<span><i class="fb-sw fb-fp"></i>false detection</span><span><i class="fb-sw fb-sw--miss"></i>missed animal</span></p>
+<div class="fb-tiles">{figs}</div>
+</div>"""
 
 
 # ------------------------------------------------------------------ table on the models page
@@ -71,9 +136,12 @@ def table(reg: dict) -> str:
     rows = []
     for m in reg["models"]:
         o = (m["results"] or {}).get("overall")
+        t = (m["results"] or {}).get("timing") or {}
+        speed = (f'<td class="fb-num" title="on {esc(t.get("device"))}">{t["seconds_per_image"]:.1f} s</td>'
+                 if t.get("seconds_per_image") else '<td class="fb-muted">–</td>')
         scores = (f'<td class="fb-num"><b>{num(o["f1"])}</b></td><td class="fb-num">{num(o["precision"])}</td>'
-                  f'<td class="fb-num">{num(o["recall"])}</td><td class="fb-num">{num(o["mean_iou"])}</td>'
-                  if o else '<td class="fb-muted" colspan="4">not yet benchmarked</td>')
+                  f'<td class="fb-num">{num(o["recall"])}</td><td class="fb-num">{num(o["mean_iou"])}</td>{speed}'
+                  if o else '<td class="fb-muted" colspan="5">not yet benchmarked</td>')
         weights = (f'<a href="{esc(m["url"])}">{mb(m.get("bytes"))}</a>' if m.get("url")
                    else f'<span class="fb-muted">{mb(m.get("bytes"))}</span>')
         page = f'models/{m["name"]}.html'
@@ -81,15 +149,16 @@ def table(reg: dict) -> str:
             f'<tr class="fb-row" data-href="{page}">'
             f'<th scope="row"><a href="{page}"><code>{esc(m["name"])}</code></a></th>'
             f'<td>{chip(m["status"])}</td><td class="fb-num">{esc(m.get("date") or "–")}</td>'
-            f'<td>{esc(m.get("size") or "–")}</td>{scores}<td class="fb-num">{weights}</td></tr>')
+            f'{scores}<td class="fb-num">{weights}</td></tr>')
     b = reg.get("benchmark", {})
     note = ("" if any(m["results"] for m in reg["models"]) else
             f'<p class="fb-note">Benchmark results are being computed for <b>{esc(b.get("name"))}</b>; '
             f'they will appear here as each model is run.</p>')
     return f"""<div class="fb-table-wrap"><table class="fb-table fb-table--models">
-<thead><tr><th>Model</th><th>Status</th><th>Date</th><th>Size</th>
+<thead><tr><th>Model</th><th>Status</th><th>Date</th>
 <th title="harmonic mean of precision and recall">F1</th><th title="share of detections that are animals">Precision</th>
 <th title="share of animals that are found">Recall</th><th title="how closely the outlines follow the hand-drawn ones">Mask IoU</th>
+<th title="seconds per benchmark image; hover a value for the GPU">s / image</th>
 <th>Weights</th></tr></thead>
 <tbody>{''.join(rows)}</tbody></table></div>
 {note}
@@ -148,11 +217,31 @@ def dataset_table(datasets: dict) -> str:
     rows = "".join(
         f'<tr><th scope="row">{esc(n)}</th><td class="fb-num">{s["gt"]:,}</td><td class="fb-num">{s["pred"]:,}</td>'
         f'<td class="fb-num">{num(s["precision"])}</td><td class="fb-num">{num(s["recall"])}</td>'
-        f'<td class="fb-num"><b>{num(s["f1"])}</b></td><td class="fb-num">{num(s["mean_iou"])}</td></tr>'
+        f'<td class="fb-num"><b>{num(s["f1"])}</b></td><td class="fb-num">{num(s["mean_iou"])}</td>'
+        f'<td class="fb-num">{num(s.get("seconds_per_image"), 2)}</td></tr>'
         for n, s in sorted(datasets.items(), key=lambda kv: kv[0].lower()))
     return (f'<div class="fb-table-wrap"><table class="fb-table"><thead><tr><th>Dataset</th><th>Animals</th>'
-            f'<th>Detections</th><th>Precision</th><th>Recall</th><th>F1</th><th>Mask IoU</th></tr></thead>'
+            f'<th>Detections</th><th>Precision</th><th>Recall</th><th>F1</th><th>Mask IoU</th><th>s / image</th></tr></thead>'
             f'<tbody>{rows}</tbody></table></div>')
+
+
+# ------------------------------------------------------------------ speed
+def speed_kpi(r: dict) -> str:
+    t = r.get("timing") or {}
+    if not t.get("seconds_per_image"):
+        return ""
+    return f'<div><span>Time / image</span><b>{t["seconds_per_image"]:.2f} s</b></div>'
+
+
+def speed_note(r: dict) -> str:
+    t = r.get("timing") or {}
+    if not t.get("seconds_per_image"):
+        return ""
+    return (f'<p class="fb-muted">Speed: {t["seconds_per_image"]:.2f} s per image, '
+            f'{t["seconds_per_megapixel"]:.3f} s per megapixel, on {esc(t["device"])} '
+            f'({t["images"]} images, {t["megapixels"]:,.0f} megapixels; decoding and inference, without loading '
+            f'the model). Times depend on the GPU; compare models run on the same one.'
+            + ("" if t.get("complete") else " Some datasets were not timed.") + "</p>")
 
 
 # ------------------------------------------------------------------ model page
@@ -192,14 +281,16 @@ def model_page(m: dict, reg: dict) -> str:
         scores = f"""<div class="fb-kpis">
 <div><span>F1</span><b>{num(o['f1'], 4)}</b></div><div><span>Precision</span><b>{num(o['precision'], 4)}</b></div>
 <div><span>Recall</span><b>{num(o['recall'], 4)}</b></div><div><span>Mask IoU</span><b>{num(o['mean_iou'])}</b></div>
-<div><span>Animals</span><b>{o['gt']:,}</b></div></div>
+<div><span>Animals</span><b>{o['gt']:,}</b></div>{speed_kpi(r)}</div>
 <p class="fb-muted">On <b>{esc(bench['name'])}</b>, run with flat-bug
 <a href="https://github.com/darsa-group/flat-bug/commit/{esc(code['commit'])}"><code>{esc(code['commit'][:12])}</code></a>
 · scorer v{esc(r['scorer']['version'])} · {esc(r['run'].get('finished', '')[:10])}</p>
+{speed_note(r)}
 <h2 id="per-dataset">Per dataset</h2>
 {dataset_chart(r['datasets'])}
 <details class="fb-details"><summary>Per-dataset numbers</summary>{dataset_table(r['datasets'])}</details>
 {compare}
+{examples(m)}
 <h2 id="run">Benchmark run</h2>
 {dl([("Benchmark", f"{esc(bench['name'])} · sha256 <code>{esc(bench['sha256'][:16])}…</code>"),
      ("Code", f"<code>{esc(code['commit'])}</code> {esc(code.get('subject', ''))}"),
