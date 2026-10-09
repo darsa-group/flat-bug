@@ -254,3 +254,48 @@ select.fb-compare {
 .fb-kind--hard { color: #b35c00; }
 .fb-kind--easy { color: #1f5fc4; }
 .fb-tile figcaption .fb-muted { margin-left: auto; }
+
+/* Two models on one tile: this page's model left of the divider, the compared one right */
+.fb-tile-box.is-cmp > svg:not(.fb-other) { clip-path: inset(0 calc(100% - var(--x, 50%)) 0 0); }
+.fb-tile-box > svg.fb-other { clip-path: inset(0 0 0 var(--x, 50%)); }
+.fb-wipe-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--x, 50%);
+  width: 2px;
+  margin-left: -1px;
+  background: #fff;
+  box-shadow: 0 0 0 1px #000;
+  pointer-events: none;
+}
+.fb-badge {
+  position: absolute;
+  top: 6px;
+  max-width: calc(50% - 12px);
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.fb-badge--a { left: 6px; }
+.fb-badge--b { right: 6px; }
+.fb-wipe {
+  display: grid;
+  grid-template-columns: minmax(0, auto) 1fr minmax(0, auto);
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  font-size: 0.75em;
+}
+.fb-wipe span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 9rem; }
+.fb-wipe input { width: 100%; accent-color: var(--color-brand-primary); margin: 0; }
+.fb-wipe-a::before { content: "◀ "; }
+.fb-wipe-b::after { content: " ▶"; }
+.fb-wipe-a { font-weight: 600; }

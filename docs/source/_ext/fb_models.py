@@ -100,13 +100,13 @@ def tile_figure(t: dict, mine: dict, bench: str) -> str:
     found = sum(1 for v in gt_iou if v is not None)
     fp = sum(1 for p in mine["pred"] if p["iou"] is None)
     src = f"../_static/models/tiles/{bench}/{t['id']}.jpg"
-    return (f'<figure class="fb-tile fb-tile--{t["kind"]}">'
+    return (f'<figure class="fb-tile fb-tile--{t["kind"]}" data-tile="{esc(t["id"])}">'
             f'<div class="fb-tile-box"><img src="{src}" width="{w}" height="{h}" loading="lazy" alt="{esc(t["dataset"])}, '
             f'{esc(t["kind"])} example">'
             f'<svg viewBox="0 0 {w} {h}" preserveAspectRatio="none"><g class="fb-layer">{gts}</g>'
             f'<g class="fb-layer">{preds}</g></svg></div>'
             f'<figcaption><b>{esc(t["dataset"])}</b> <span class="fb-kind fb-kind--{t["kind"]}">{t["kind"]}</span>'
-            f'<span class="fb-muted">{found}/{len(gt_iou)} found · {fp} false</span></figcaption></figure>')
+            f'<span class="fb-muted fb-count">{found}/{len(gt_iou)} found · {fp} false</span></figcaption></figure>')
 
 
 def examples(m: dict) -> str:
@@ -119,8 +119,9 @@ def examples(m: dict) -> str:
     return f"""<h2 id="examples">Examples</h2>
 <p>An easy and a hard image from each dataset, the same for every model: chosen once, as
 <code>{esc(ref['model'])}</code> saw them. Each outline is coloured by how closely it follows the hand-drawn
-one; hover an outline for its numbers. As in the scores, animals under 32 pixels are left out on both sides.</p>
-<div class="fb-examples">
+one; hover an outline for its numbers. As in the scores, animals under 32 pixels are left out on both sides.
+Pick a model under <a href="#compare">Compare</a> to see both side by side, with a slider under each image.</p>
+<div class="fb-examples" data-tiles="../_static/models/tiles/{esc(bench)}/" data-self="{esc(m['name'])}">
 <input type="checkbox" id="fb-l-gt" checked><input type="checkbox" id="fb-l-pr" checked>
 <input type="radio" name="fb-k" id="fb-k-all" checked><input type="radio" name="fb-k" id="fb-k-hard"><input type="radio" name="fb-k" id="fb-k-easy">
 <div class="fb-ex-bar">
