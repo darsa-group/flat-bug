@@ -6,8 +6,12 @@ The ``flatbug`` training script uses a lightly modified YOLO training interface
 
 See `scripts/experiments/best_train/default.yaml` for an example training config.
 
+Training refuses to start from a flat-bug checkout with uncommitted changes or untracked files,
+so that every set of weights can be traced to a commit (see ``flat_bug.manifest``). Each run
+writes ``manifest.train.yaml`` and ``data_inventory.csv.gz`` into its run folder.
+
 Usage:
-    ``fb_train [-d DATA_DIR] [-c CONFIG_FILE] [-r [CKPT]]``
+    ``fb_train [-d DATA_DIR] [-c CONFIG_FILE] [-r [CKPT]] [--allow-dirty]``
 
 
 Options:
@@ -18,6 +22,8 @@ Options:
                         A YAML-formatted config file that overrides the default training meta-parameters
     -r [CKPT], --resume [CKPT]
                         resume training, optionally from the given checkpoint
+    --allow-dirty         train even if the checkout has uncommitted changes or untracked files;
+                          the changes are saved next to the manifest as code.diff
 """
 
 import argparse
@@ -28,7 +34,7 @@ import ultralytics.data.utils as ultralytics_data_utils
 import ultralytics.utils as ultralytics_utils
 import yaml
 
-from flat_bug import logger
+from flat_bug import logger, manifest
 from flat_bug.trainers import FlatBugSegmentationTrainer, parse_device
 
 
@@ -64,6 +70,16 @@ def _make_parser() -> argparse.ArgumentParser:
         default=False,
         help="resume training, optionally from the given checkpoint (default: the `model` override)",
     )
+    args_parse.add_argument(
+        "--allow-dirty",
+        dest="allow_dirty",
+        action="store_true",
+        help=(
+            "Train even if the flat-bug checkout has uncommitted changes or untracked files.\n"
+            "Refused by default, so that weights can be traced to a commit; when allowed, the changes\n"
+            "are saved next to the training manifest as code.diff. Same as `fb_allow_dirty: true`."
+        ),
+    )
     return args_parse
 
 
@@ -96,6 +112,9 @@ def main():  # noqa: D103
         "fb_custom_eval": False,
         "fb_custom_eval_num_images": -1,
         "fb_exclude_datasets": [],
+        # Train even if the flat-bug checkout has uncommitted changes or untracked files (refused
+        # by default). The changes are saved next to the training manifest as code.diff.
+        "fb_allow_dirty": False,
         "cache": False,
     }
     args_parse = _make_parser()
@@ -151,6 +170,14 @@ def main():  # noqa: D103
 
     # Update with cli overrides
     overrides.update(cli_overrides)
+    if option_dict["allow_dirty"]:
+        overrides["fb_allow_dirty"] = True
+
+    # Fail before any data loading or DDP start-up, not after.
+    try:
+        manifest.check_clean(bool(overrides.get("fb_allow_dirty", False)))
+    except manifest.DirtyCheckoutError as e:
+        raise SystemExit(str(e)) from None
 
     # Update data directory and resume flag from the command line
     overrides["data"] = os.path.join(option_dict["data_dir"], "data.yaml")
@@ -208,6 +235,7 @@ def main():  # noqa: D103
 
     # Instantiate trainer
     trainer = FlatBugSegmentationTrainer(overrides=overrides)
+    trainer.fb_config_file = option_dict["config_file"]  # recorded verbatim in manifest.train.yaml
 
     if not option_dict["resume"]:
         trainer.start_epoch = 0

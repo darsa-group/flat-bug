@@ -58,7 +58,7 @@ except ImportError:  # older releases leave the list alone, and `_setup_ddp` can
         return device
 
 
-from flat_bug import logger
+from flat_bug import logger, manifest
 from flat_bug.bbox_only_loss import enable_bbox_only_segmentation_loss
 from flat_bug.bbox_only_val import FlatBugSegmentationValidator
 from flat_bug.datasets import FlatBugYOLODataset, FlatBugYOLOValidationDataset
@@ -715,6 +715,17 @@ class FlatBugSegmentationTrainer(SegmentationTrainer):
                 )
 
         self.add_callback("on_train_start", log_data)
+
+        def manifest_start(self):
+            path = manifest.write_start(
+                self,
+                config_file=getattr(self, "fb_config_file", None),
+                allow_dirty=bool(getattr(self.args, "fb_allow_dirty", False)),
+            )
+            logger.info(f"Training manifest: {path}")
+
+        self.add_callback("on_train_start", manifest_start)
+        self.add_callback("on_train_end", manifest.write_end)
 
     def get_validator(self) -> yolo.segment.SegmentationValidator:
         """Return an instance of SegmentationValidator for validation of YOLO model."""

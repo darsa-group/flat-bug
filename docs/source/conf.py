@@ -2,74 +2,63 @@
 #
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
+#
+# The site has four parts: the home page (index.md), the user guide, the models page and the API
+# reference. The models table and the per-model pages are generated at build time by
+# _ext/fb_models.py from _static/models/, so publishing a model or a benchmark result means adding
+# files there, not editing pages.
 
-# -- Project information -----------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
-
-project = 'flat-bug'
-copyright = '2024, Asger Svenning, Quentin Geissmann'
-author = 'Asger Svenning, Quentin Geissmann'
-
-# -- General configuration ---------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
-
-extensions = [
-    'sphinx.ext.autodoc',
-    'sphinx.ext.napoleon',
-    'sphinx.ext.intersphinx',
-    'myst_parser'
-]
-
-templates_path = ['_templates']
-exclude_patterns = []
-
-
-
-# -- Options for HTML output -------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
-
-html_theme = 'furo'
-html_theme_options = {
-    "navigation_depth": 2,
-}
-html_static_path = ["_static"]
-
-# Myst setup
 import os
-import re
 import shutil
 import sys
 
-sys.path.insert(0, os.path.abspath('../src/bin'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "_ext"))
 
-def copy_and_adjust_readme():
-    source_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
-    dest_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "_static"))
-    readme_path = os.path.join(source_dir, "README.md")
-    processed_readme_path = os.path.join(os.path.dirname(__file__), "README_sphinx.md")
+# -- Project information -----------------------------------------------------
 
-    os.makedirs(dest_dir, exist_ok=True)
+project = "flat-bug"
+copyright = "2024-2026, the flat-bug authors"
+author = "Asger Svenning, Quentin Geissmann and contributors"
 
-    with open(readme_path) as file:
-        content = file.read()
+# -- General configuration ---------------------------------------------------
 
-        # Find and copy images while adjusting paths in README content
-        image_paths = re.findall(r'<img src="([^"]+)"', content)
-        for image_path in image_paths:
-            src_path = os.path.join(source_dir, image_path)
-            dest_path = os.path.join(dest_dir, os.path.basename(image_path))
-            if os.path.exists(src_path):
-                shutil.copy(src_path, dest_path)
-                # Replace original path with the path pointing to _static
-                content = content.replace(image_path, f"_static/{os.path.basename(image_path)}")
-            else:
-                print(f"Warning: {src_path} not found.")
+extensions = [
+    "sphinx.ext.autodoc",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.intersphinx",
+    "myst_parser",
+    "fb_models",  # _ext/fb_models.py: the models table and one page per model, from _static/models/
+]
+myst_enable_extensions = ["colon_fence", "attrs_inline", "attrs_block"]
+myst_heading_anchors = 3
 
-    # Write modified README content for Sphinx
-    with open(processed_readme_path, "w") as file:
-        file.write(content)
+templates_path = ["_templates"]
+exclude_patterns = ["_generated"]
 
-copy_and_adjust_readme()
+# -- Options for HTML output -------------------------------------------------
 
-# Ensure Sphinx recognizes _static
+html_theme = "furo"
+html_title = "flat-bug"
 html_static_path = ["_static"]
+html_css_files = ["flatbug.css"]
+# DARSA green (darsa.info), with a lighter shade for dark backgrounds.
+html_theme_options = {
+    "source_repository": "https://github.com/darsa-group/flat-bug/",
+    "source_branch": "main",
+    "source_directory": "docs/source/",
+    "light_css_variables": {
+        "color-brand-primary": "#017b33",
+        "color-brand-content": "#017b33",
+        "color-brand-visited": "#015220",
+    },
+    "dark_css_variables": {
+        "color-brand-primary": "#3fcf8e",
+        "color-brand-content": "#3fcf8e",
+        "color-brand-visited": "#2fae74",
+    },
+}
+
+# The figure on the home page is the one in the repository README.
+_here = os.path.dirname(__file__)
+os.makedirs(os.path.join(_here, "_static"), exist_ok=True)
+shutil.copy(os.path.join(_here, "..", "..", "prediction.jpg"), os.path.join(_here, "_static", "prediction.jpg"))
