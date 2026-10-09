@@ -103,7 +103,8 @@ def tile_figure(t: dict, mine: dict, bench: str) -> str:
     return (f'<figure class="fb-tile fb-tile--{t["kind"]}">'
             f'<div class="fb-tile-box"><img src="{src}" width="{w}" height="{h}" loading="lazy" alt="{esc(t["dataset"])}, '
             f'{esc(t["kind"])} example">'
-            f'<svg viewBox="0 0 {w} {h}" preserveAspectRatio="none">{gts}{preds}</svg></div>'
+            f'<svg viewBox="0 0 {w} {h}" preserveAspectRatio="none"><g class="fb-layer">{gts}</g>'
+            f'<g class="fb-layer">{preds}</g></svg></div>'
             f'<figcaption><b>{esc(t["dataset"])}</b> <span class="fb-kind fb-kind--{t["kind"]}">{t["kind"]}</span>'
             f'<span class="fb-muted">{found}/{len(gt_iou)} found · {fp} false</span></figcaption></figure>')
 
