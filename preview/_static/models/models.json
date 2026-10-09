@@ -1,0 +1,105 @@
+{
+  "schema": "flatbug-site-models/1",
+  "updated": "2026-10-09",
+  "zoo_url": "https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/",
+  "benchmark": {
+    "name": "flatbug-bench-v1",
+    "status": "in preparation",
+    "description": "The validation split of the dataset published with the flat-bug paper: 23 datasets, scored end to end on whole images.",
+    "source_doi": "10.5281/zenodo.14761446",
+    "scorer": "IoU >= 0.5, instances >= 32 px, one-to-one matching; precision, recall and F1 pooled over instances",
+    "doi": null
+  },
+  "models": [
+    {
+      "name": "flatbug-M-2026.09",
+      "status": "candidate",
+      "date": "2026-09-22",
+      "size": "M",
+      "architecture": "YOLO26-M segmentation",
+      "bytes": 54616682,
+      "sha256": "2c8e7426455a0a8391da7f3dab0b80eb736ea3bdf5550b6954051572ce28a50e",
+      "url": null,
+      "summary": "500 epochs on the 2026 corpus (40 datasets, 21,970 images), with magnified-crop augmentation, meant to run with the refiner (a magnified second pass on each detection).",
+      "training": {
+        "commit": "0a75d694183f022b91a5ff22877d1a43c1f965f0",
+        "commit_note": "inferred from timing; this model predates training manifests",
+        "epochs": 500,
+        "datasets": 40,
+        "images": 21970,
+        "hardware": "2 × NVIDIA L40S, ~99 h",
+        "base_model": "yolo26m-seg.pt",
+        "ultralytics": "8.4.51"
+      },
+      "inference": {"REFINE": true, "REFINE_MIN_PX": 96, "REFINE_OCCUPANCY": 0.67, "REFINE_MIN_AGREEMENT": 0.5, "REFINE_MAX_GROWTH": 1.15},
+      "internal_eval": {
+        "label": "corpus validation split (not the benchmark)",
+        "f1": 0.9104, "precision": 0.8853, "recall": 0.9370, "instances": 25566
+      },
+      "benchmark": null
+    },
+    {
+      "name": "flat_bug_M_v2",
+      "status": "default",
+      "date": "2026-07-07",
+      "size": "M",
+      "architecture": null,
+      "bytes": 54585258,
+      "sha256": null,
+      "url": "https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_M_v2.pt",
+      "summary": "The current default of fb_predict and Predictor.",
+      "training": null,
+      "inference": null,
+      "internal_eval": null,
+      "benchmark": null
+    },
+    {
+      "name": "flat_bug_L",
+      "status": "released",
+      "date": "2024-10-23",
+      "size": "L",
+      "architecture": null,
+      "bytes": 84085321,
+      "sha256": null,
+      "url": "https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_L.pt",
+      "summary": "Published with the paper.",
+      "training": null, "inference": null, "internal_eval": null, "benchmark": null
+    },
+    {
+      "name": "flat_bug_M",
+      "status": "released",
+      "date": "2024-10-23",
+      "size": "M",
+      "architecture": null,
+      "bytes": 49694305,
+      "sha256": null,
+      "url": "https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_M.pt",
+      "summary": "Published with the paper.",
+      "training": null, "inference": null, "internal_eval": null, "benchmark": null
+    },
+    {
+      "name": "flat_bug_S",
+      "status": "released",
+      "date": "2024-10-23",
+      "size": "S",
+      "architecture": null,
+      "bytes": 21398649,
+      "sha256": null,
+      "url": "https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_S.pt",
+      "summary": "Published with the paper.",
+      "training": null, "inference": null, "internal_eval": null, "benchmark": null
+    },
+    {
+      "name": "flat_bug_N",
+      "status": "released",
+      "date": "2024-10-23",
+      "size": "N",
+      "architecture": null,
+      "bytes": 6275129,
+      "sha256": null,
+      "url": "https://anon.erda.au.dk/share_redirect/Bb0CR1FHG6/models/flat_bug_N.pt",
+      "summary": "Published with the paper.",
+      "training": null, "inference": null, "internal_eval": null, "benchmark": null
+    }
+  ]
+}
